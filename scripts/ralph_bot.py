@@ -95,23 +95,55 @@ def get_log_tail(n: int = 15) -> str:
 
 async def send_message(text: str, reply_markup: dict | None = None) -> None:
     """Send message via Telegram API."""
-    import urllib.parse
     import urllib.request
 
-    payload: dict = {
-        "chat_id": CHAT_ID,
-        "text": text[:4096],
-        "parse_mode": "HTML",
-    }
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
+    if not text:
+        return
 
-    data = urllib.parse.urlencode(payload).encode()
-    req = urllib.request.Request(f"{API}/sendMessage", data=data)
-    try:
-        urllib.request.urlopen(req, timeout=10)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[bot] Send error: {exc}", file=sys.stderr)
+    max_len = 4000
+    chunks: list[str] = []
+    while len(text) > max_len:
+        cut = text.rfind("\n", 0, max_len)
+        if cut < 100:
+            cut = max_len
+        chunks.append(text[:cut])
+        text = text[cut:].lstrip("\n")
+    chunks.append(text)
+
+    for idx, chunk in enumerate(chunks):
+        payload: dict[str, object] = {
+            "chat_id": CHAT_ID,
+            "text": chunk,
+            "parse_mode": "Markdown",
+        }
+        if reply_markup and idx == 0:
+            payload["reply_markup"] = reply_markup
+
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{API}/sendMessage",
+                data=data,
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            retry_payload: dict[str, object] = {
+                "chat_id": CHAT_ID,
+                "text": chunk,
+            }
+            if reply_markup and idx == 0:
+                retry_payload["reply_markup"] = reply_markup
+            try:
+                data = json.dumps(retry_payload).encode("utf-8")
+                req = urllib.request.Request(
+                    f"{API}/sendMessage",
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                )
+                urllib.request.urlopen(req, timeout=10)
+            except Exception as exc2:  # noqa: BLE001
+                print(f"[bot] Send error (retry failed): {exc2}", file=sys.stderr)
 
 
 async def cmd_status() -> None:
@@ -428,8 +460,13 @@ async def poll_updates() -> None:
     while True:
         try:
             url = f"{API}/getUpdates?offset={offset}&timeout=30"
-            resp = urllib.request.urlopen(url, timeout=35)
-            data = json.loads(resp.read())
+            try:
+                resp = urllib.request.urlopen(url, timeout=35)
+                data = json.loads(resp.read())
+            except Exception as exc:  # noqa: BLE001
+                print(f"[bot] Poll request error: {exc}", file=sys.stderr)
+                await asyncio.sleep(5)
+                continue
             for update in data.get("result", []):
                 offset = update["update_id"] + 1
                 try:
