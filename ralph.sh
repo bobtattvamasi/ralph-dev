@@ -271,7 +271,7 @@ $HUMAN_COMMENT"
         PRE_HASH=$(git rev-parse HEAD)
 
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
-        gtimeout "$TASK_TIMEOUT" codex exec -s danger-full-access "$CODER_PROMPT" 2>&1 | tee "$CODER_OUTPUT"
+        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" codex exec -s danger-full-access "$CODER_PROMPT" 2>&1 | tee "$CODER_OUTPUT"
         CODEX_EXIT=$?
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
@@ -327,7 +327,7 @@ Output ONLY a JSON object with your decision."
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
-        gtimeout "$TASK_TIMEOUT" codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" 2>&1 | tee "$LEAD_OUTPUT"
+        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" 2>&1 | tee "$LEAD_OUTPUT"
         CODEX_EXIT=$?
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
