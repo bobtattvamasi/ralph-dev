@@ -1,31 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ralph v2 — Two-agent development orchestrator (Coder + Tech Lead)
-#
-# Usage:
-#   ./ralph.sh task P5-T01          Run one specific task
-#   ./ralph.sh phase 5              Run all pending in phase
-#   ./ralph.sh auto                 Run all pending until done/failure
-#   ./ralph.sh redo P5-T01 "notes"  Reset task to pending
-#   ./ralph.sh status               Show progress
+# Ralph v3 — Project-agnostic AI dev team orchestrator
+# RALPH_DIR = where ralph.sh lives (ralph-dev/)
+# PROJECT_DIR = where the project lives (has tasks.json, AGENTS.md)
 
 MODE="${1:-status}"
 TARGET="${2:-}"
 EXTRA="${3:-}"
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RALPH_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -f "./tasks.json" ]; then
+    PROJECT_DIR="$(pwd)"
+elif [ -f "$RALPH_DIR/../tasks.json" ]; then
+    PROJECT_DIR="$(cd "$RALPH_DIR/.." && pwd)"
+else
+    echo "❌ No tasks.json found. Run from project dir or run ralph-init.sh first."
+    exit 1
+fi
+
 cd "$PROJECT_DIR"
 
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
 SESSION_TOKENS=0
 SESSION_TASKS=0
-LOG_DIR="logs"
+LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
-grep -q "^logs/$" .gitignore 2>/dev/null || echo "logs/" >> .gitignore
-sed -i.bak '/^ralph_session\.log$/d' .gitignore 2>/dev/null || true
-rm -f .gitignore.bak 2>/dev/null || true
 RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 
@@ -100,7 +102,7 @@ except: pass
 }
 
 notify() {
-    python3 scripts/ralph_notify.py "$*" >/dev/null 2>&1 || true
+    python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" >/dev/null 2>&1 || true
 }
 
 alert_human() {
@@ -149,10 +151,10 @@ fi
 # ─── Redo ───
 if [ "$MODE" = "redo" ]; then
     if [ -z "$TARGET" ]; then
-        echo "Usage: ./ralph.sh redo <task_id> [revision notes]"
+        echo "Usage: ralph.sh redo <task_id> [revision notes]"
         exit 1
     fi
-    python3 scripts/update_task.py "$TARGET" pending "${EXTRA:-Redo requested}"
+    python3 "$RALPH_DIR/scripts/update_task.py" "$TARGET" pending "${EXTRA:-Redo requested}"
     log "Task $TARGET reset to pending"
     exit 0
 fi
@@ -171,18 +173,18 @@ write_state "idle" "" "" "Ready"
 NEXT_ARGS=""
 case "$MODE" in
     task)
-        [ -z "$TARGET" ] && { echo "Usage: ./ralph.sh task <id>"; exit 1; }
+        [ -z "$TARGET" ] && { echo "Usage: ralph.sh task <id>"; exit 1; }
         NEXT_ARGS="--task $TARGET"
         ;;
     phase)
-        [ -z "$TARGET" ] && { echo "Usage: ./ralph.sh phase <num>"; exit 1; }
+        [ -z "$TARGET" ] && { echo "Usage: ralph.sh phase <num>"; exit 1; }
         NEXT_ARGS="--phase $TARGET"
         ;;
     auto)
         NEXT_ARGS=""
         ;;
     *)
-        echo "Usage: ./ralph.sh {task|phase|auto|redo|status} [target]"
+        echo "Usage: ralph.sh {task|phase|auto|redo|status} [target]"
         exit 1
         ;;
 esac
@@ -196,7 +198,7 @@ while true; do
         exit 0
     fi
 
-    TASK_JSON=$(python3 scripts/next_task.py $NEXT_ARGS 2>/dev/null || echo "null")
+    TASK_JSON=$(python3 "$RALPH_DIR/scripts/next_task.py" $NEXT_ARGS 2>/dev/null || echo "null")
 
     if [ "$TASK_JSON" = "null" ] || [ -z "$TASK_JSON" ]; then
         log "🎉 No more pending tasks!"
@@ -384,8 +386,8 @@ for m in re.findall(r'\{[^{}]*\}',text,re.DOTALL):
 print('Task completed')
 " 2>/dev/null || echo "done")
 
-                python3 scripts/update_task.py "$TASK_ID" done
-                python3 scripts/update_progress.py "$TASK_ID" "$PROGRESS_NOTE"
+                python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" done
+                python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
                 git add -A
                 git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
                 log "✅ $TASK_ID done"
@@ -480,7 +482,7 @@ print('Unknown issue')
     [ "$MODE" = "task" ] && break
 
     if [ "$MODE" = "phase" ]; then
-        REMAINING=$(python3 scripts/next_task.py --phase "$TARGET" 2>/dev/null || echo "null")
+        REMAINING=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" 2>/dev/null || echo "null")
         [ "$REMAINING" = "null" ] && { log "🎉 Phase $TARGET complete!"; break; }
     fi
 done
@@ -491,4 +493,4 @@ log "═════════════════════════
 log "💰 SESSION TOTAL: ${SESSION_TASKS} tasks, ~$(format_tokens "$SESSION_TOKENS") tokens (~\$$(estimate_cost "$SESSION_TOKENS"))"
 log "════════════════════════════════════════════════════"
 log "📊 Final:"
-./ralph.sh status
+"$RALPH_DIR"/"ralph.sh" status

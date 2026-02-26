@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent.parent
+RALPH_DIR = Path(__file__).parent.parent
 STATE_FILE = PROJECT_DIR / "ralph_state.json"
 CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
 TASKS_FILE = PROJECT_DIR / "tasks.json"
@@ -128,7 +129,7 @@ async def cmd_start_task(task_id: str) -> None:
         return
     write_control("continue", "")
     ralph_process = subprocess.Popen(
-        ["./ralph.sh", "task", task_id],
+        [str(RALPH_DIR / "ralph.sh"), "task", task_id],
         cwd=str(PROJECT_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -145,7 +146,7 @@ async def cmd_start_phase(phase: str) -> None:
         return
     write_control("continue", "")
     ralph_process = subprocess.Popen(
-        ["./ralph.sh", "phase", phase],
+        [str(RALPH_DIR / "ralph.sh"), "phase", phase],
         cwd=str(PROJECT_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -162,7 +163,7 @@ async def cmd_start_auto() -> None:
         return
     write_control("continue", "")
     ralph_process = subprocess.Popen(
-        ["./ralph.sh", "auto"],
+        [str(RALPH_DIR / "ralph.sh"), "auto"],
         cwd=str(PROJECT_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
