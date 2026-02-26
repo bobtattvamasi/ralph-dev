@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -285,6 +286,43 @@ async def cmd_progress(n: int = 20) -> None:
     await send_message(f"<pre>{chr(10).join(tail)}</pre>")
 
 
+async def cmd_tail(n: int = 20) -> None:
+    """Show last N lines from most recent codex output file."""
+    import glob
+
+    patterns = ["/tmp/ralph_coder_*.txt", "/tmp/ralph_lead_*.txt"]
+    all_files = []
+    for pattern in patterns:
+        all_files.extend(glob.glob(pattern))
+
+    if not all_files:
+        await send_message("No codex output files found in /tmp/")
+        return
+
+    latest = max(all_files, key=lambda f: Path(f).stat().st_mtime)
+    name = Path(latest).name
+    age_sec = int(time.time() - Path(latest).stat().st_mtime)
+
+    try:
+        lines = Path(latest).read_text(encoding="utf-8", errors="replace").strip().splitlines()
+        tail = lines[-n:] if len(lines) > n else lines
+
+        if age_sec < 60:
+            freshness = f"🟢 {age_sec}s ago (likely running)"
+        elif age_sec < 300:
+            freshness = f"🟡 {age_sec // 60}m ago"
+        else:
+            freshness = f"🔴 {age_sec // 60}m ago (stale)"
+
+        header = f"📡 {name} — {freshness}\n"
+        text = header + "\n".join(tail)
+        if len(text) > 4000:
+            text = text[:4000] + "\n... (truncated)"
+        await send_message(f"<pre>{text}</pre>")
+    except Exception as e:  # noqa: BLE001
+        await send_message(f"Error reading {name}: {e}")
+
+
 async def cmd_help() -> None:
     """Send help text."""
     await send_message(
@@ -300,6 +338,7 @@ async def cmd_help() -> None:
         "/comment text — instruction for next task\n"
         "/log [N] — last N lines from ralph execution log\n"
         "/progress [N] — last N lines from progress.md\n"
+        "/tail [N] — last N lines of live codex output\n"
         "/cost — token usage & cost estimate\n"
         "/diff — last commit changes\n"
     )
@@ -356,6 +395,9 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/progress":
         n = int(args) if args.isdigit() else 20
         await cmd_progress(n)
+    elif cmd == "/tail":
+        n = int(args) if args.isdigit() else 20
+        await cmd_tail(n)
     elif cmd == "/cost":
         await cmd_cost()
     elif cmd == "/diff":

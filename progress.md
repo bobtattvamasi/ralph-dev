@@ -2,8 +2,8 @@
 
 ## Current State
 - **Phase**: R0 (Setup)
-- **Completed**: R0-01, R0-02, R0-03, R0-04, R1-01, R1-02, R1-03
-- **Next**: R1-04 (/log shows ralph log tail)
+- **Completed**: R0-01, R0-02, R0-03, R0-04, R1-01, R1-02, R1-03, R1-04
+- **Next**: R1-05 (/tail live codex output)
 
 ## Session Log
 
@@ -15,3 +15,4 @@
 - R1-01: Bot supports --project-dir arg and RALPH_PROJECT_DIR env var
 - R1-02: Per-task timeout from tasks.json (default 180s, gtimeout uses task.timeout)
 - R1-03: Added /cost command (token usage + cost estimate from daily logs)
+- R1-04: /log shows ralph execution log tail, added /progress for progress.md
