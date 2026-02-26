@@ -72,12 +72,23 @@ def get_tasks_summary(phase: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def get_progress_tail(n: int = 10) -> str:
-    """Get last N lines from progress.md."""
-    if not PROGRESS_FILE.exists():
-        return "No progress.md found"
-    lines = PROGRESS_FILE.read_text(encoding="utf-8").strip().split("\n")
-    return "\n".join(lines[-n:])
+def get_log_tail(n: int = 15) -> str:
+    """Get last N lines from the most recent ralph log file."""
+    if not LOG_DIR.exists():
+        return "No logs/ directory found"
+
+    log_files = sorted(LOG_DIR.glob("ralph_*.log"), reverse=True)
+    if not log_files:
+        return "No ralph log files found"
+
+    latest = log_files[0]
+    try:
+        lines = latest.read_text(encoding="utf-8").strip().splitlines()
+        tail = lines[-n:] if len(lines) > n else lines
+        header = f"📋 {latest.name} (last {len(tail)} lines)\n"
+        return header + "\n".join(tail)
+    except Exception as e:  # noqa: BLE001
+        return f"Error reading {latest.name}: {e}"
 
 
 async def send_message(text: str, reply_markup: dict | None = None) -> None:
@@ -264,6 +275,16 @@ async def cmd_cost() -> None:
     await send_message(msg)
 
 
+async def cmd_progress(n: int = 20) -> None:
+    """Show tail of progress.md."""
+    if not PROGRESS_FILE.exists():
+        await send_message("No progress.md found")
+        return
+    lines = PROGRESS_FILE.read_text(encoding="utf-8").strip().splitlines()
+    tail = lines[-n:] if len(lines) > n else lines
+    await send_message(f"<pre>{chr(10).join(tail)}</pre>")
+
+
 async def cmd_help() -> None:
     """Send help text."""
     await send_message(
@@ -277,7 +298,8 @@ async def cmd_help() -> None:
         "/stop now — kill immediately\n"
         "/redo TASK_ID [notes] — redo task\n"
         "/comment text — instruction for next task\n"
-        "/log [N] — last N progress entries\n"
+        "/log [N] — last N lines from ralph execution log\n"
+        "/progress [N] — last N lines from progress.md\n"
         "/cost — token usage & cost estimate\n"
         "/diff — last commit changes\n"
     )
@@ -329,8 +351,11 @@ async def handle_update(update: dict) -> None:
         write_control("comment", args)
         await send_message(f"📝 Comment saved for next task:\n{args}")
     elif cmd == "/log":
-        n = int(args) if args.isdigit() else 10
-        await send_message(f"<pre>{get_progress_tail(n)}</pre>")
+        n = int(args) if args.isdigit() else 15
+        await send_message(f"<pre>{get_log_tail(n)}</pre>")
+    elif cmd == "/progress":
+        n = int(args) if args.isdigit() else 20
+        await cmd_progress(n)
     elif cmd == "/cost":
         await cmd_cost()
     elif cmd == "/diff":
