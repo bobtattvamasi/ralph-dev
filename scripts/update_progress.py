@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 """Append entry to progress.md."""
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROGRESS_FILE = Path(__file__).parent.parent / "progress.md"
+
+def get_project_dir() -> Path:
+    """Get project directory from env or default to script parent."""
+    env = os.environ.get("RALPH_PROJECT_DIR")
+    if env:
+        return Path(env)
+    return Path(__file__).parent.parent
+
+
+PROJECT_DIR = get_project_dir()
+PROGRESS_FILE = PROJECT_DIR / "progress.md"
 
 
 def main():

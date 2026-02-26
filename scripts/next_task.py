@@ -2,10 +2,21 @@
 """Pick next pending task from tasks.json."""
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
-TASKS_FILE = Path(__file__).parent.parent / "tasks.json"
+
+def get_project_dir() -> Path:
+    """Get project directory from env or default to script parent."""
+    env = os.environ.get("RALPH_PROJECT_DIR")
+    if env:
+        return Path(env)
+    return Path(__file__).parent.parent
+
+
+PROJECT_DIR = get_project_dir()
+TASKS_FILE = PROJECT_DIR / "tasks.json"
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 

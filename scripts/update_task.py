@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
 """Update task status in tasks.json."""
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-TASKS_FILE = Path(__file__).parent.parent / "tasks.json"
+
+def get_project_dir() -> Path:
+    """Get project directory from env or default to script parent."""
+    env = os.environ.get("RALPH_PROJECT_DIR")
+    if env:
+        return Path(env)
+    return Path(__file__).parent.parent
+
+
+PROJECT_DIR = get_project_dir()
+TASKS_FILE = PROJECT_DIR / "tasks.json"
 
 
 def main():
