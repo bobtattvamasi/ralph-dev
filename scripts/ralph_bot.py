@@ -11,12 +11,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).parent.parent
-RALPH_DIR = Path(__file__).parent.parent
+RALPH_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = Path.cwd()  # overridden in __main__
 STATE_FILE = PROJECT_DIR / "ralph_state.json"
 CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
 TASKS_FILE = PROJECT_DIR / "tasks.json"
 PROGRESS_FILE = PROJECT_DIR / "progress.md"
+LOG_DIR = PROJECT_DIR / "logs"
 
 TOKEN = ""
 CHAT_ID = ""
@@ -359,11 +360,49 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    import argparse
     from dotenv import load_dotenv
+
+    parser = argparse.ArgumentParser(description="Ralph Telegram Bot")
+    parser.add_argument(
+        "--project-dir",
+        type=str,
+        default=None,
+        help="Path to the project directory (contains tasks.json)",
+    )
+    args = parser.parse_args()
+
+    # RALPH_DIR is always where this script lives
+    RALPH_DIR = Path(__file__).resolve().parent.parent
+
+    # PROJECT_DIR priority: --project-dir > RALPH_PROJECT_DIR env > cwd
+    if args.project_dir:
+        PROJECT_DIR = Path(args.project_dir).resolve()
+    elif os.environ.get("RALPH_PROJECT_DIR"):
+        PROJECT_DIR = Path(os.environ["RALPH_PROJECT_DIR"]).resolve()
+    else:
+        PROJECT_DIR = Path.cwd()
+
+    if not (PROJECT_DIR / "tasks.json").exists():
+        print(f"❌ No tasks.json in {PROJECT_DIR}")
+        print("Run ralph-init.sh first or pass --project-dir")
+        sys.exit(1)
+
+    # Update all paths that depend on PROJECT_DIR
+    STATE_FILE = PROJECT_DIR / "ralph_state.json"
+    CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
+    TASKS_FILE = PROJECT_DIR / "tasks.json"
+    PROGRESS_FILE = PROJECT_DIR / "progress.md"
+    LOG_DIR = PROJECT_DIR / "logs"
 
     load_dotenv(PROJECT_DIR / ".env")
     TOKEN = os.environ.get("RALPH_TELEGRAM_TOKEN", "")
     CHAT_ID = os.environ.get("RALPH_TELEGRAM_CHAT_ID", "")
     API = f"https://api.telegram.org/bot{TOKEN}"
+
+    print("🤖 Ralph Bot")
+    print(f"   RALPH_DIR:   {RALPH_DIR}")
+    print(f"   PROJECT_DIR: {PROJECT_DIR}")
+    print(f"   Tasks:       {TASKS_FILE}")
 
     asyncio.run(main())
