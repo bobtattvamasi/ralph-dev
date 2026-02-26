@@ -1,0 +1,8 @@
+logs/
+*.pyc
+__pycache__/
+.env
+ralph_state.json
+ralph_control.json
+ralph_alerts.log
+.DS_Store
