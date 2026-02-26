@@ -217,6 +217,53 @@ async def cmd_diff() -> None:
         await send_message(f"❌ {exc}")
 
 
+async def cmd_cost() -> None:
+    """Show today's token usage and estimated cost."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_file = LOG_DIR / f"ralph_{today}.log"
+
+    if not log_file.exists():
+        await send_message(f"📊 No log for today ({today})")
+        return
+
+    total_tokens = 0
+    task_count = 0
+
+    with log_file.open(encoding="utf-8") as f:
+        for line in f:
+            if "tokens=" in line:
+                try:
+                    for part in line.split():
+                        if part.startswith("tokens="):
+                            tokens = int(part.split("=")[1].rstrip(","))
+                            total_tokens += tokens
+                            task_count += 1
+                except (ValueError, IndexError):
+                    pass
+            elif "Tokens:" in line:
+                # Backward-compatible parsing for current log format:
+                # "... [CODER] Tokens: 1,234 | ..."
+                try:
+                    token_part = line.split("Tokens:", 1)[1].strip().split()[0]
+                    tokens = int(token_part.replace(",", ""))
+                    total_tokens += tokens
+                    task_count += 1
+                except (ValueError, IndexError):
+                    pass
+
+    # Rough estimate for mixed Codex usage.
+    cost_estimate = total_tokens / 1000 * 0.01
+
+    msg = (
+        f"📊 Cost Report — {today}\n"
+        f"Tasks completed: {task_count}\n"
+        f"Total tokens: {total_tokens:,}\n"
+        f"Estimated cost: ${cost_estimate:.2f}\n"
+        f"Log: {log_file.name}"
+    )
+    await send_message(msg)
+
+
 async def cmd_help() -> None:
     """Send help text."""
     await send_message(
@@ -231,6 +278,7 @@ async def cmd_help() -> None:
         "/redo TASK_ID [notes] — redo task\n"
         "/comment text — instruction for next task\n"
         "/log [N] — last N progress entries\n"
+        "/cost — token usage & cost estimate\n"
         "/diff — last commit changes\n"
     )
 
@@ -283,6 +331,8 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/log":
         n = int(args) if args.isdigit() else 10
         await send_message(f"<pre>{get_progress_tail(n)}</pre>")
+    elif cmd == "/cost":
+        await cmd_cost()
     elif cmd == "/diff":
         await cmd_diff()
     elif cmd == "/help" or (cmd == "/start" and not args):
