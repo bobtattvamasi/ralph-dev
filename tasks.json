@@ -136,7 +136,8 @@
       ],
       "test_steps": ["grep 'cmd_cost\\|/cost' scripts/ralph_bot.py"],
       "dependencies": ["R1-01"],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-02-26"
     },
     {
       "id": "R1-04",
