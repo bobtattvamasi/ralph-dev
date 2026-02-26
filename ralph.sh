@@ -207,10 +207,17 @@ while true; do
 
     TASK_ID=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
     TASK_TITLE=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
+    # Extract timeout from task (default 180s)
+    TASK_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
+import sys, json
+task = json.load(sys.stdin)
+print(task.get('timeout', 180))
+" 2>/dev/null || echo "180")
     TASK_START=$(date +%s)
 
     log "📋 Task: $TASK_ID — $TASK_TITLE"
     log "📋 TASK_START task_id=$TASK_ID title=\"$TASK_TITLE\" timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    log "⏱  Timeout: ${TASK_TIMEOUT}s"
 
     FIX_RETRY=0
     TASK_DONE=false
@@ -263,10 +270,10 @@ $HUMAN_COMMENT"
         PRE_HASH=$(git rev-parse HEAD)
 
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
-        gtimeout 180 codex exec -s danger-full-access "$CODER_PROMPT" 2>&1 | tee "$CODER_OUTPUT"
+        gtimeout "$TASK_TIMEOUT" codex exec -s danger-full-access "$CODER_PROMPT" 2>&1 | tee "$CODER_OUTPUT"
         CODEX_EXIT=$?
         if [ "$CODEX_EXIT" -eq 124 ]; then
-            log "⏰ TIMEOUT: codex exceeded 180s"
+            log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
         CODER_TOKENS=$(extract_tokens "$CODER_OUTPUT")
         TASK_TOKENS=$((TASK_TOKENS + ${CODER_TOKENS:-0}))
@@ -319,10 +326,10 @@ Output ONLY a JSON object with your decision."
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
-        gtimeout 180 codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" 2>&1 | tee "$LEAD_OUTPUT"
+        gtimeout "$TASK_TIMEOUT" codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" 2>&1 | tee "$LEAD_OUTPUT"
         CODEX_EXIT=$?
         if [ "$CODEX_EXIT" -eq 124 ]; then
-            log "⏰ TIMEOUT: codex exceeded 180s"
+            log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
         LEAD_TOKENS=$(extract_tokens "$LEAD_OUTPUT")
         TASK_TOKENS=$((TASK_TOKENS + ${LEAD_TOKENS:-0}))

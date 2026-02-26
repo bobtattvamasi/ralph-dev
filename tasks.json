@@ -117,6 +117,7 @@
       ],
       "test_steps": ["bash -n ralph.sh", "grep timeout ralph.sh"],
       "dependencies": ["R0-04"],
+      "timeout": 300,
       "status": "pending"
     },
     {
