@@ -278,10 +278,9 @@ $HUMAN_COMMENT"
         PRE_HASH=$(git rev-parse HEAD)
 
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
-        # Run codex, capture PID of gtimeout for kill support
         gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
             codex exec -s danger-full-access "$CODER_PROMPT" \
-            > >(tee "$CODER_OUTPUT") 2>&1 &
+            > "$CODER_OUTPUT" 2>&1 &
         CODEX_PID=$!
         echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
         log "Codex PID: $CODEX_PID"
@@ -290,6 +289,7 @@ $HUMAN_COMMENT"
         CODEX_EXIT=$?
         set -e
         rm -f "$PROJECT_DIR/ralph_codex.pid"
+        [ -f "$CODER_OUTPUT" ] && cat "$CODER_OUTPUT"
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
@@ -346,7 +346,7 @@ Output ONLY a JSON object with your decision."
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
         gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
             codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" \
-            > >(tee "$LEAD_OUTPUT") 2>&1 &
+            > "$LEAD_OUTPUT" 2>&1 &
         CODEX_PID=$!
         echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
         log "Lead PID: $CODEX_PID"
@@ -355,6 +355,7 @@ Output ONLY a JSON object with your decision."
         CODEX_EXIT=$?
         set -e
         rm -f "$PROJECT_DIR/ralph_codex.pid"
+        [ -f "$LEAD_OUTPUT" ] && cat "$LEAD_OUTPUT"
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi

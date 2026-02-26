@@ -114,7 +114,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
         payload: dict[str, object] = {
             "chat_id": CHAT_ID,
             "text": chunk,
-            "parse_mode": "Markdown",
+            "parse_mode": "HTML",
         }
         if reply_markup and idx == 0:
             payload["reply_markup"] = reply_markup
@@ -131,6 +131,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
             retry_payload: dict[str, object] = {
                 "chat_id": CHAT_ID,
                 "text": chunk,
+                "parse_mode": "HTML",
             }
             if reply_markup and idx == 0:
                 retry_payload["reply_markup"] = reply_markup
