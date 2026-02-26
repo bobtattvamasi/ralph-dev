@@ -170,7 +170,8 @@
       ],
       "test_steps": ["grep 'cmd_tail\\|/tail' scripts/ralph_bot.py"],
       "dependencies": ["R1-01"],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-02-26"
     },
     {
       "id": "R2-01",

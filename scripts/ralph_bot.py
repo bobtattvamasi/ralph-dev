@@ -53,7 +53,7 @@ def get_tasks_summary(phase: str | None = None) -> str:
     data = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
     tasks = data["tasks"]
     if phase:
-        tasks = [item for item in tasks if str(item["phase"]) == phase]
+        tasks = [item for item in tasks if str(item.get("phase", "")) == phase]
     done = [item for item in tasks if item["status"] == "done"]
     pending = [item for item in tasks if item["status"] == "pending"]
     lines = [f"📊 Tasks: {len(done)}/{len(tasks)} done\n"]
@@ -67,7 +67,7 @@ def get_tasks_summary(phase: str | None = None) -> str:
                 unmet = [dep for dep in deps if dep not in done_ids]
                 if unmet:
                     dep_str = f" ⛔ needs {','.join(unmet)}"
-            lines.append(f"  {task['id']} [{task['priority']}] {task['title']}{dep_str}")
+            lines.append(f"  {task['id']} [{task.get('priority', 'medium')}] {task['title']}{dep_str}")
     if done:
         lines.append(f"\n✅ Done: {', '.join(item['id'] for item in done)}")
     return "\n".join(lines)
