@@ -40,8 +40,12 @@ fi
 
 # .env
 if [ ! -f "$PROJECT_DIR/.env" ]; then
-    cp "$RALPH_DIR/.env.example" "$PROJECT_DIR/.env"
-    echo "   ✅ Created .env (edit with your tokens)"
+    if [ -f "$RALPH_DIR/.env.example" ]; then
+        cp "$RALPH_DIR/.env.example" "$PROJECT_DIR/.env"
+        echo "   ✅ Created .env (edit with your tokens)"
+    else
+        echo "   ⚠️  .env.example not found in ralph-dev, skipping .env"
+    fi
 fi
 
 # Add to .gitignore

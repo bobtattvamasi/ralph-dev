@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "project": "ralph-dev",
+  "agent_instructions": {
+    "read_first": ["AGENTS.md", "progress.md"],
+    "test_command": "bash -n ralph.sh && python3 -c \"import ast; ast.parse(open('scripts/ralph_bot.py').read())\"",
+    "rules": [
+      "ONE task at a time",
+      "Do NOT modify tasks.json or progress.md",
+      "ralph.sh must stay project-agnostic (RALPH_DIR/PROJECT_DIR)",
+      "All script paths use $RALPH_DIR in bash, RALPH_DIR in python",
+      "No external Python dependencies except dotenv",
+      "bash -n ralph.sh must pass after changes",
+      "Commit with message format: feat(TASK_ID): title"
+    ]
+  },
+  "phases": {
+    "R0": {"name": "Setup", "description": "Extract ralph into standalone repo"},
+    "R1": {"name": "Stability", "description": "Fix bugs, improve reliability"},
+    "R2": {"name": "Convenience", "description": "Better bot UX, new commands"}
+  },
+  "tasks": [
+    {
+      "id": "R0-01",
+      "phase": "R0",
+      "category": "setup",
+      "priority": "high",
+      "title": "Create ralph-dev repo structure",
+      "description": "Done manually. Initial structure with ralph.sh, scripts/, templates/.",
+      "acceptance_criteria": ["ralph-dev repo exists with all files"],
+      "test_steps": ["ls ralph.sh scripts/ templates/"],
+      "dependencies": [],
+      "status": "done",
+      "completed_at": "2026-02-26"
+    },
+    {
+      "id": "R0-02",
+      "phase": "R0",
+      "category": "setup",
+      "priority": "high",
+      "title": "Make ralph.sh project-agnostic",
+      "description": "Done. RALPH_DIR/PROJECT_DIR separation, all paths fixed.",
+      "acceptance_criteria": ["No hardcoded project paths in ralph.sh"],
+      "test_steps": ["grep 'python3 scripts/' ralph.sh returns nothing"],
+      "dependencies": ["R0-01"],
+      "status": "done",
+      "completed_at": "2026-02-26"
+    },
+    {
+      "id": "R0-03",
+      "phase": "R0",
+      "category": "setup",
+      "priority": "high",
+      "title": "AGENTS.md and project docs for ralph-dev",
+      "description": "Done. AGENTS.md describes ralph architecture and rules.",
+      "acceptance_criteria": ["AGENTS.md exists", ".gitignore exists"],
+      "test_steps": ["test -f AGENTS.md"],
+      "dependencies": ["R0-01"],
+      "status": "done",
+      "completed_at": "2026-02-26"
+    },
+    {
+      "id": "R0-04",
+      "phase": "R0",
+      "category": "setup",
+      "priority": "high",
+      "title": "Create test project for ralph validation",
+      "description": "Create a minimal Python project (test-ralph-app/) next to ralph-dev/ to validate ralph works end-to-end on a fresh project. The test project should have: a simple Python module, pytest tests, Makefile with 'make test', and be initialized with ralph-init.sh.",
+      "acceptance_criteria": [
+        "test-ralph-app/ exists as separate git repo",
+        "Has at least 1 Python file and 1 test",
+        "make test passes",
+        "ralph-init.sh creates AGENTS.md, tasks.json, progress.md in it",
+        "ralph.sh status works from test-ralph-app/"
+      ],
+      "test_steps": [
+        "cd test-ralph-app && make test",
+        "test -f tasks.json",
+        "test -f AGENTS.md",
+        "../ralph-dev/ralph.sh status"
+      ],
+      "dependencies": ["R0-02", "R0-03"],
+      "status": "done",
+      "completed_at": "2026-02-26"
+    },
+    {
+      "id": "R1-01",
+      "phase": "R1",
+      "category": "bugfix",
+      "priority": "high",
+      "title": "Fix bot PROJECT_DIR for external projects",
+      "description": "ralph_bot.py sets PROJECT_DIR = Path(__file__).parent.parent which points to ralph-dev/. When bot runs for external project, PROJECT_DIR must point to the actual project. Add --project-dir CLI argument or read from env RALPH_PROJECT_DIR.",
+      "acceptance_criteria": [
+        "Bot accepts --project-dir or RALPH_PROJECT_DIR env",
+        "STATE_FILE, TASKS_FILE, PROGRESS_FILE use correct PROJECT_DIR",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": [
+        "python3 scripts/ralph_bot.py --help shows project-dir option",
+        "python3 -c \"import ast; ast.parse(open('scripts/ralph_bot.py').read())\""
+      ],
+      "dependencies": ["R0-04"],
+      "status": "pending"
+    },
+    {
+      "id": "R1-02",
+      "phase": "R1",
+      "category": "bugfix",
+      "priority": "high",
+      "title": "Per-task timeout from tasks.json",
+      "description": "Add optional 'timeout' field to tasks. Default 180s for simple, 600s for complex. ralph.sh reads timeout from task JSON and uses it for gtimeout.",
+      "acceptance_criteria": [
+        "ralph.sh reads timeout field from task JSON",
+        "Default 180s if not specified",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": ["bash -n ralph.sh", "grep timeout ralph.sh"],
+      "dependencies": ["R0-04"],
+      "status": "pending"
+    },
+    {
+      "id": "R1-03",
+      "phase": "R1",
+      "category": "feature",
+      "priority": "medium",
+      "title": "Bot: /cost command",
+      "description": "Add /cost command that reads the current day's log file, sums token counts, and reports total tokens + estimated cost.",
+      "acceptance_criteria": [
+        "/cost command exists in ralph_bot.py",
+        "Reads from logs/ralph_YYYY-MM-DD.log",
+        "Shows total tokens and estimated cost",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": ["grep 'cmd_cost\\|/cost' scripts/ralph_bot.py"],
+      "dependencies": ["R1-01"],
+      "status": "pending"
+    },
+    {
+      "id": "R1-04",
+      "phase": "R1",
+      "category": "feature",
+      "priority": "medium",
+      "title": "Bot: /log shows ralph log tail",
+      "description": "Change /log command to show tail of latest ralph log from logs/ directory instead of progress.md. /log 20 shows last 20 lines.",
+      "acceptance_criteria": [
+        "/log reads from logs/ralph_*.log",
+        "Shows last N lines (default 15)",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": ["grep 'LOG_DIR\\|ralph_.*\\.log' scripts/ralph_bot.py"],
+      "dependenci\u001b[1084;1:3ues": ["R1-01"],
+      "status": "pending"
+    },
+    {
+      "id": "R1-05",
+      "phase": "R1",
+      "category": "feature",
+      "priority": "medium",
+      "title": "Bot: /tail live codex output",
+      "description": "Add /tail command that sends last 20 lines of /tmp/ralph_coder_*.txt or /tmp/ralph_lead_*.txt — whichever was modified most recently.",
+      "acceptance_criteria": [
+        "/tail command exists",
+        "Reads most recent /tmp/ralph_coder_*.txt or /tmp/ralph_lead_*.txt",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": ["grep 'cmd_tail\\|/tail' scripts/ralph_bot.py"],
+      "dependencies": ["R1-01"],
+      "status": "pending"
+    },
+    {
+      "id": "R2-01",
+      "phase": "R2",
+      "category": "feature",
+      "priority": "medium",
+      "title": "Bot: /plan command",
+      "description": "Add /plan command that shows formatted tasks.json summary grouped by phase with status indicators.",
+      "acceptance_criteria": [
+        "/plan command exists",
+        "Groups tasks by phase",
+        "Shows done/pending/total per phase",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": ["grep 'cmd_plan\\|/plan' scripts/ralph_bot.py"],
+      "dependencies": ["R1-01"],
+      "status": "pending"
+    },
+    {
+      "id": "R2-02",
+      "phase": "R2",
+      "category": "feature",
+      "priority": "medium",
+      "title": "Bot: /add command",
+      "description": "Add /add command to create new task from Telegram. Format: /add TASK-ID title | description. Adds to tasks.json with status pending.",
+      "acceptance_criteria": [
+        "/add command parses task ID, title, description",
+        "Appends to tasks.json",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": ["grep 'cmd_add\\|/add' scripts/ralph_bot.py"],
+      "dependencies": ["R1-01"],
+      "status": "pending"
+    },
+    {
+      "id": "R2-03",
+      "phase": "R2",
+      "category": "feature",
+      "priority": "low",
+      "title": "Bot: /pause and /resume",
+      "description": "Add /pause (writes pause to ralph_control.json, ralph stops between tasks) and /resume (writes continue).",
+      "acceptance_criteria": [
+        "/pause and /resume commands exist",
+        "ralph.sh checks control file between tasks",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": ["grep 'pause\\|resume' scripts/ralph_bot.py"],
+      "dependencies": ["R1-01"],
+      "status": "pending"
+    }
+  ]
+}
