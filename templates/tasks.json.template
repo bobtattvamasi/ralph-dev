@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "project": "PROJECT_NAME",
+  "agent_instructions": {
+    "read_first": ["AGENTS.md", "progress.md"],
+    "test_command": "make test",
+    "rules": [
+      "ONE task at a time",
+      "Do NOT modify tasks.json or progress.md",
+      "Run make test before and after",
+      "If tests fail, fix before proceeding",
+      "Commit with message format: feat(TASK_ID): title"
+    ]
+  },
+  "phases": {},
+  "tasks": []
+}

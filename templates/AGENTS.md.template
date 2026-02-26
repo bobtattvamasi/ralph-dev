@@ -1,0 +1,62 @@
+# AGENTS.md — Index for AI Agents
+
+## Project: Neuromesh
+AI agent engine: vector+graph RAG, tracing, multi-app.
+Stack: Python 3.11, FastAPI, FAISS, NetworkX, Streamlit, SQLite.
+
+## Key Docs
+- `docs/ARCHITECTURE.md` — full architecture
+- `AGENTS_CODER.md` — coder agent instructions
+- `AGENTS_LEAD.md` — tech lead agent instructions
+- `progress.md` — what's done, what's next
+- `tasks.json` — machine-readable task list (source of truth)
+
+## Architecture (brief)
+User query → Router → Retriever (vector/graph/hybrid) → Generator → Trace → Answer
+
+## Core Rules
+1. Every component has an ABC. Implementations swappable.
+2. Every LLM call traced (TraceStep with input/output/duration/sources).
+3. `core/` imports nothing from `apps/` or `api/`. Direction: apps→core, api→core.
+4. Config via `core/config.py` (Pydantic Settings, `.env`).
+5. Async-first. All I/O uses async/await.
+6. Type hints everywhere. Python 3.11 syntax: `str | None`.
+7. Google-style docstrings. Functions ≤ ~30 lines.
+8. `dataclasses` in core, `pydantic.BaseModel` in api.
+
+## Project Structure (key dirs)
+- `core/` — reusable engine (llm, ingestion, storage, retrieval, routing, generation, tracing, pipeline)
+- `apps/` — domain apps (jobhunter, techlead). Each has app.py, prompts/, knowledge/
+- `api/` — FastAPI routes (query, ingest, jobhunter, traces, graph, health, settings)
+- `demo/` — Streamlit UI
+- `tests/` — pytest, mirrors core/apps/api
+- `scripts/` — CLI tools + ralph bot
+- `data/` — runtime data (gitignored)
+
+## How to Add New Components
+- **LLM Provider**: `core/llm/{name}.py` → implement ABC → add to factory → add test
+- **Storage Backend**: `core/storage/{type}/{name}.py` → implement ABC → add test
+- **App**: `apps/{name}/` with app.py subclassing OverlayApp → auto-discovered
+
+## Testing
+- `make test` — all tests
+- MockLLMProvider in `tests/conftest.py`
+- Async: pytest-asyncio, `asyncio_mode = "auto"`
+
+## Session Protocol
+1. Read `progress.md` → understand state
+2. Read `tasks.json` → find next task
+3. `make test` → verify nothing broken
+4. ONE task at a time
+5. `make test` after each change
+6. Commit after each task
+
+## Apps
+
+### jobhunter
+Analyze vacancies vs CV. Cover letters, match scores, gap analysis, speech prep.
+Storage: `apps/jobhunter/storage.py` (SQLite). Prompts: Jinja2 in `apps/jobhunter/prompts/`.
+API: POST/GET/DELETE /jobhunter/analyses/*
+
+### techlead (legacy)
+Technical decisions from knowledge base.
