@@ -23,6 +23,12 @@ fi
 cd "$PROJECT_DIR"
 export RALPH_PROJECT_DIR="$PROJECT_DIR"
 
+cleanup() {
+    rm -f "$PROJECT_DIR/ralph_codex.pid"
+    rm -f "$PROJECT_DIR/ralph_main.pid"
+}
+trap cleanup EXIT
+
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
 SESSION_TOKENS=0
@@ -31,6 +37,7 @@ LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
+echo "$$" > "$PROJECT_DIR/ralph_main.pid"
 
 log() {
     local msg="[ralph] $(date +%H:%M:%S) $*"
@@ -271,8 +278,15 @@ $HUMAN_COMMENT"
         PRE_HASH=$(git rev-parse HEAD)
 
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
-        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" codex exec -s danger-full-access "$CODER_PROMPT" 2>&1 | tee "$CODER_OUTPUT"
+        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" codex exec -s danger-full-access "$CODER_PROMPT" 2>&1 | tee "$CODER_OUTPUT" &
+        CODEX_PID=$!
+        echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
+        log "🔧 Codex PID: $CODEX_PID"
+        set +e
+        wait "$CODEX_PID"
         CODEX_EXIT=$?
+        set -e
+        rm -f "$PROJECT_DIR/ralph_codex.pid"
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
@@ -327,8 +341,15 @@ Output ONLY a JSON object with your decision."
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
-        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" 2>&1 | tee "$LEAD_OUTPUT"
+        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" 2>&1 | tee "$LEAD_OUTPUT" &
+        CODEX_PID=$!
+        echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
+        log "🔧 Lead PID: $CODEX_PID"
+        set +e
+        wait "$CODEX_PID"
         CODEX_EXIT=$?
+        set -e
+        rm -f "$PROJECT_DIR/ralph_codex.pid"
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi

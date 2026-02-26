@@ -5,4 +5,6 @@ __pycache__/
 ralph_state.json
 ralph_control.json
 ralph_alerts.log
+ralph_codex.pid
+ralph_main.pid
 .DS_Store

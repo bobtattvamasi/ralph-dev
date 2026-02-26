@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -188,14 +189,25 @@ async def cmd_stop(force: bool = False) -> None:
     """Stop or kill Ralph."""
     global ralph_process
     write_control("stop_now" if force else "stop", "")
-    if ralph_process and ralph_process.poll() is None:
-        if force:
+    if force:
+        for pf in ["ralph_codex.pid", "ralph_main.pid"]:
+            p = PROJECT_DIR / pf
+            if p.exists():
+                try:
+                    pid = int(p.read_text().strip())
+                    os.kill(pid, signal.SIGKILL)
+                    subprocess.run(["pkill", "-P", str(pid)], capture_output=True)
+                except (ProcessLookupError, ValueError):
+                    pass
+                p.unlink(missing_ok=True)
+        if ralph_process and ralph_process.poll() is None:
             ralph_process.kill()
-            await send_message("⏹ Ralph killed immediately")
-        else:
-            await send_message("⏹ Ralph will stop after current task")
+        await send_message("⏹ Ralph killed immediately")
     else:
-        await send_message("⏸ Ralph is not running")
+        if ralph_process and ralph_process.poll() is None:
+            await send_message("⏹ Ralph will stop after current task")
+        else:
+            await send_message("⏸ Ralph is not running")
     ralph_process = None
 
 
