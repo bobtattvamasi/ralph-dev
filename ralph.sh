@@ -288,7 +288,6 @@ $HUMAN_COMMENT"
         CODEX_EXIT=$?
         set -e
         rm -f "$PROJECT_DIR/ralph_codex.pid"
-        [ -f "$CODER_OUTPUT" ] && cat "$CODER_OUTPUT"
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
@@ -352,7 +351,6 @@ Output ONLY a JSON object with your decision."
         CODEX_EXIT=$?
         set -e
         rm -f "$PROJECT_DIR/ralph_codex.pid"
-        [ -f "$LEAD_OUTPUT" ] && cat "$LEAD_OUTPUT"
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
