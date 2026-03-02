@@ -85,7 +85,7 @@ def get_log_tail(n: int = 15) -> str:
 
     latest = log_files[0]
     try:
-        lines = latest.read_text(encoding="utf-8").strip().splitlines()
+        lines = latest.read_text(encoding="utf-8", errors="replace").strip().splitlines()
         tail = lines[-n:] if len(lines) > n else lines
         header = f"📋 {latest.name} (last {len(tail)} lines)\n"
         return header + "\n".join(tail)
@@ -229,7 +229,7 @@ async def cmd_stop(force: bool = False) -> None:
                 try:
                     pid = int(p.read_text().strip())
                     os.kill(pid, signal.SIGKILL)
-                    subprocess.run(["pkill", "-P", str(pid)], capture_output=True)
+                    subprocess.run(["pkill", "-KILL", "-P", str(pid)], capture_output=True)
                 except (ProcessLookupError, ValueError):
                     pass
                 p.unlink(missing_ok=True)
@@ -286,7 +286,7 @@ async def cmd_cost() -> None:
     total_tokens = 0
     task_count = 0
 
-    with log_file.open(encoding="utf-8") as f:
+    with log_file.open(encoding="utf-8", errors="replace") as f:
         for line in f:
             if "tokens=" in line:
                 try:
