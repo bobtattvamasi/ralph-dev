@@ -11,20 +11,25 @@ if [ -z "${TIMEOUT}" ] || [ -z "${OUTPUT_FILE}" ] || [ "$#" -eq 0 ]; then
     exit 2
 fi
 
-kill_session() {
-    local sid="$1"
-    pkill -TERM -s "$sid" 2>/dev/null || true
-    sleep 5
-    pkill -KILL -s "$sid" 2>/dev/null || true
+kill_tree() {
+    local pid="$1"
+    local sig="${2:-TERM}"
+    # Kill all children first, then parent
+    for child in $(pgrep -P "$pid" 2>/dev/null); do
+        kill_tree "$child" "$sig"
+    done
+    kill -"$sig" "$pid" 2>/dev/null || true
 }
 
-setsid codex "$@" >"$OUTPUT_FILE" 2>&1 &
+codex "$@" >"$OUTPUT_FILE" 2>&1 &
 CODEX_PID=$!
 
 (
     sleep "$TIMEOUT"
     if kill -0 "$CODEX_PID" 2>/dev/null; then
-        kill_session "$CODEX_PID"
+        kill_tree "$CODEX_PID" TERM
+        sleep 5
+        kill_tree "$CODEX_PID" KILL
     fi
 ) &
 WATCHDOG_PID=$!
