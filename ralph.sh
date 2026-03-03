@@ -515,6 +515,8 @@ print('Unknown issue')
         REMAINING=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" 2>/dev/null || echo "null")
         [ "$REMAINING" = "null" ] && { log "🎉 Phase $TARGET complete!"; break; }
     fi
+    log "DEBUG: Finished task $TASK_ID, continuing to next..."
+    continue
 done
 
 write_state "idle" "" "" "All tasks complete"

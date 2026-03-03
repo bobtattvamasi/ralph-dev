@@ -147,6 +147,29 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
                 print(f"[bot] Send error (retry failed): {exc2}", file=sys.stderr)
 
 
+async def safe_send(text: str, reply_markup: dict | None = None) -> None:
+    """Best-effort message send; never raises to caller."""
+    try:
+        await send_message(text, reply_markup=reply_markup)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[bot] Send error: {exc}", file=sys.stderr)
+
+
+def set_idle_state(message: str = "Idle") -> None:
+    """Force state file to idle when bot detects runner failure/exit."""
+    payload = {
+        "status": "idle",
+        "current_task": None,
+        "current_phase_step": None,
+        "last_update": datetime.now(timezone.utc).isoformat(),
+        "message": message,
+    }
+    try:
+        STATE_FILE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(f"[bot] State write error: {exc}", file=sys.stderr)
+
+
 async def cmd_status() -> None:
     """Send status overview."""
     state = read_state()
@@ -164,7 +187,7 @@ async def cmd_status() -> None:
     if state.get("message"):
         lines.append(f"💬 {state['message']}")
 
-    await send_message("\n".join(lines))
+    await safe_send("\n".join(lines))
 
 
 async def cmd_start_task(task_id: str) -> None:
@@ -172,7 +195,7 @@ async def cmd_start_task(task_id: str) -> None:
     global ralph_process
     state = read_state()
     if state.get("status") == "running":
-        await send_message("⚠️ Ralph already running. /stop first.")
+        await safe_send("⚠️ Ralph already running. /stop first.")
         return
     write_control("continue", "")
     ralph_process = subprocess.Popen(
@@ -181,7 +204,7 @@ async def cmd_start_task(task_id: str) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    await send_message(f"▶️ Started task {task_id}\nPID: {ralph_process.pid}")
+    await safe_send(f"▶️ Started task {task_id}\nPID: {ralph_process.pid}")
 
 
 async def cmd_start_phase(phase: str) -> None:
@@ -189,7 +212,7 @@ async def cmd_start_phase(phase: str) -> None:
     global ralph_process
     state = read_state()
     if state.get("status") == "running":
-        await send_message("⚠️ Ralph already running. /stop first.")
+        await safe_send("⚠️ Ralph already running. /stop first.")
         return
     write_control("continue", "")
     ralph_process = subprocess.Popen(
@@ -198,7 +221,7 @@ async def cmd_start_phase(phase: str) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    await send_message(f"▶️ Started phase {phase}\nPID: {ralph_process.pid}")
+    await safe_send(f"▶️ Started phase {phase}\nPID: {ralph_process.pid}")
 
 
 async def cmd_start_auto() -> None:
@@ -206,16 +229,20 @@ async def cmd_start_auto() -> None:
     global ralph_process
     state = read_state()
     if state.get("status") == "running":
-        await send_message("⚠️ Ralph already running. /stop first.")
+        await safe_send("⚠️ Ralph already running. /stop first.")
         return
-    write_control("continue", "")
-    ralph_process = subprocess.Popen(
-        [str(RALPH_DIR / "ralph.sh"), "auto"],
-        cwd=str(PROJECT_DIR),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    await send_message(f"🚀 Auto mode started\nPID: {ralph_process.pid}")
+    try:
+        write_control("continue", "")
+        ralph_process = subprocess.Popen(
+            [str(RALPH_DIR / "ralph.sh"), "auto"],
+            cwd=str(PROJECT_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        await safe_send(f"🚀 Auto mode started\nPID: {ralph_process.pid}")
+    except Exception as exc:  # noqa: BLE001
+        set_idle_state("Ralph failed to start")
+        await safe_send(f"❌ Ralph crashed: {exc}")
 
 
 async def cmd_stop(force: bool = False) -> None:
@@ -235,12 +262,12 @@ async def cmd_stop(force: bool = False) -> None:
                 p.unlink(missing_ok=True)
         if ralph_process and ralph_process.poll() is None:
             ralph_process.kill()
-        await send_message("⏹ Ralph killed immediately")
+        await safe_send("⏹ Ralph killed immediately")
     else:
         if ralph_process and ralph_process.poll() is None:
-            await send_message("⏹ Ralph will stop after current task")
+            await safe_send("⏹ Ralph will stop after current task")
         else:
-            await send_message("⏸ Ralph is not running")
+            await safe_send("⏸ Ralph is not running")
     ralph_process = None
 
 
@@ -254,9 +281,9 @@ async def cmd_redo(task_id: str, notes: str) -> None:
             capture_output=True,
         )
         suffix = f"\nNotes: {notes}" if notes else ""
-        await send_message(f"🔄 {task_id} reset to pending{suffix}")
+        await safe_send(f"🔄 {task_id} reset to pending{suffix}")
     except subprocess.CalledProcessError as exc:
-        await send_message(f"❌ Error: {exc.stderr.decode()}")
+        await safe_send(f"❌ Error: {exc.stderr.decode()}")
 
 
 async def cmd_diff() -> None:
@@ -269,9 +296,9 @@ async def cmd_diff() -> None:
             text=True,
         )
         diff = result.stdout[:3000] or "No changes"
-        await send_message(f"<pre>{diff}</pre>")
+        await safe_send(f"<pre>{diff}</pre>")
     except Exception as exc:  # noqa: BLE001
-        await send_message(f"❌ {exc}")
+        await safe_send(f"❌ {exc}")
 
 
 async def cmd_cost() -> None:
@@ -280,7 +307,7 @@ async def cmd_cost() -> None:
     log_file = LOG_DIR / f"ralph_{today}.log"
 
     if not log_file.exists():
-        await send_message(f"📊 No log for today ({today})")
+        await safe_send(f"📊 No log for today ({today})")
         return
 
     total_tokens = 0
@@ -318,17 +345,17 @@ async def cmd_cost() -> None:
         f"Estimated cost: ${cost_estimate:.2f}\n"
         f"Log: {log_file.name}"
     )
-    await send_message(msg)
+    await safe_send(msg)
 
 
 async def cmd_progress(n: int = 20) -> None:
     """Show tail of progress.md."""
     if not PROGRESS_FILE.exists():
-        await send_message("No progress.md found")
+        await safe_send("No progress.md found")
         return
     lines = PROGRESS_FILE.read_text(encoding="utf-8").strip().splitlines()
     tail = lines[-n:] if len(lines) > n else lines
-    await send_message(f"<pre>{chr(10).join(tail)}</pre>")
+    await safe_send(f"<pre>{chr(10).join(tail)}</pre>")
 
 
 async def cmd_tail(n: int = 20) -> None:
@@ -341,7 +368,7 @@ async def cmd_tail(n: int = 20) -> None:
         all_files.extend(glob.glob(pattern))
 
     if not all_files:
-        await send_message("No codex output files found in /tmp/")
+        await safe_send("No codex output files found in /tmp/")
         return
 
     latest = max(all_files, key=lambda f: Path(f).stat().st_mtime)
@@ -363,14 +390,14 @@ async def cmd_tail(n: int = 20) -> None:
         text = header + "\n".join(tail)
         if len(text) > 4000:
             text = text[:4000] + "\n... (truncated)"
-        await send_message(f"<pre>{text}</pre>")
+        await safe_send(f"<pre>{text}</pre>")
     except Exception as e:  # noqa: BLE001
-        await send_message(f"Error reading {name}: {e}")
+        await safe_send(f"Error reading {name}: {e}")
 
 
 async def cmd_help() -> None:
     """Send help text."""
-    await send_message(
+    await safe_send(
         "🤖 <b>Ralph Bot</b>\n\n"
         "/status — current state\n"
         "/tasks [phase] — task list\n"
@@ -404,7 +431,7 @@ async def handle_update(update: dict) -> None:
         elif data.startswith("skip:"):
             task_id = data.split(":", 1)[1]
             write_control("skip", task_id)
-            await send_message(f"⏭ Skipping {task_id}")
+            await safe_send(f"⏭ Skipping {task_id}")
         return
 
     if not text.startswith("/"):
@@ -417,7 +444,7 @@ async def handle_update(update: dict) -> None:
     if cmd == "/status":
         await cmd_status()
     elif cmd == "/tasks":
-        await send_message(get_tasks_summary(args or None))
+        await safe_send(get_tasks_summary(args or None))
     elif cmd == "/start" and args:
         await cmd_start_task(args)
     elif cmd == "/phase" and args:
@@ -433,10 +460,10 @@ async def handle_update(update: dict) -> None:
         await cmd_redo(task_id, notes)
     elif cmd == "/comment" and args:
         write_control("comment", args)
-        await send_message(f"📝 Comment saved for next task:\n{args}")
+        await safe_send(f"📝 Comment saved for next task:\n{args}")
     elif cmd == "/log":
         n = int(args) if args.isdigit() else 15
-        await send_message(f"<pre>{get_log_tail(n)}</pre>")
+        await safe_send(f"<pre>{get_log_tail(n)}</pre>")
     elif cmd == "/progress":
         n = int(args) if args.isdigit() else 20
         await cmd_progress(n)
@@ -450,7 +477,7 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/help" or (cmd == "/start" and not args):
         await cmd_help()
     else:
-        await send_message("Unknown command. Try /help")
+        await safe_send("Unknown command. Try /help")
 
 
 async def poll_updates() -> None:
@@ -458,16 +485,19 @@ async def poll_updates() -> None:
     import urllib.request
 
     offset = 0
+    consecutive_errors = 0
+    backoff_seconds = 5
     while True:
         try:
             url = f"{API}/getUpdates?offset={offset}&timeout=30"
-            try:
-                resp = urllib.request.urlopen(url, timeout=35)
-                data = json.loads(resp.read())
-            except Exception as exc:  # noqa: BLE001
-                print(f"[bot] Poll request error: {exc}", file=sys.stderr)
-                await asyncio.sleep(5)
-                continue
+            resp = urllib.request.urlopen(url, timeout=35)
+            data = json.loads(resp.read())
+
+            if consecutive_errors > 0:
+                await safe_send(f"⚠️ Bot reconnected after {consecutive_errors} poll errors")
+                consecutive_errors = 0
+                backoff_seconds = 5
+
             for update in data.get("result", []):
                 offset = update["update_id"] + 1
                 try:
@@ -475,29 +505,44 @@ async def poll_updates() -> None:
                 except Exception as exc:  # noqa: BLE001
                     print(f"[bot] Handler error: {exc}", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
-            print(f"[bot] Poll error: {exc}", file=sys.stderr)
-            await asyncio.sleep(5)
+            consecutive_errors += 1
+            delay = min(backoff_seconds, 60)
+            print(f"[bot] Poll error #{consecutive_errors}, retry in {delay}s: {exc}", file=sys.stderr)
+            await asyncio.sleep(delay)
+            backoff_seconds = min(backoff_seconds * 2, 60)
 
 
 async def watch_state() -> None:
     """Watch ralph_state.json for notifications."""
+    global ralph_process
+
     last_task = None
     last_status = None
+    last_exit_code: int | None = None
 
     while True:
         await asyncio.sleep(3)
+
+        if ralph_process and ralph_process.poll() is not None:
+            code = ralph_process.returncode
+            if code != 0 and code != last_exit_code:
+                await safe_send(f"⚠️ Ralph exited with code {code}")
+            last_exit_code = code
+            set_idle_state(f"Ralph exited with code {code}")
+            ralph_process = None
+
         state = read_state()
         status = state.get("status")
         task = state.get("current_task")
 
         if task != last_task and task:
             last_task = task
-            await send_message(f"📋 Working on: <b>{task}</b>")
+            await safe_send(f"📋 Working on: <b>{task}</b>")
 
         if status != last_status:
             if status == "waiting_human":
                 reason = state.get("alert_reason", "Unknown")
-                await send_message(
+                await safe_send(
                     f"🚨 <b>HUMAN NEEDED</b>\n\n{reason}",
                     reply_markup={
                         "inline_keyboard": [
@@ -512,7 +557,7 @@ async def watch_state() -> None:
                     },
                 )
             elif status == "idle" and last_status == "running":
-                await send_message("✅ Ralph finished!")
+                await safe_send("✅ Ralph finished!")
             last_status = status
 
 
@@ -522,7 +567,7 @@ async def main() -> None:
         print("Set RALPH_TELEGRAM_TOKEN and RALPH_TELEGRAM_CHAT_ID in .env")
         sys.exit(1)
 
-    await send_message("🤖 Ralph Bot started! Type /help for commands.")
+    await safe_send("🤖 Ralph Bot started! Type /help for commands.")
     await asyncio.gather(poll_updates(), watch_state())
 
 
