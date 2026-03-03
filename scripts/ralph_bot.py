@@ -25,6 +25,7 @@ TOKEN = ""
 CHAT_ID = ""
 API = ""
 ralph_process: subprocess.Popen | None = None
+caffeinate_process: subprocess.Popen | None = None
 
 
 def read_state() -> dict:
@@ -226,13 +227,17 @@ async def cmd_start_phase(phase: str) -> None:
 
 async def cmd_start_auto() -> None:
     """Start auto mode."""
-    global ralph_process
+    global ralph_process, caffeinate_process
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
         return
     try:
         write_control("continue", "")
+        try:
+            caffeinate_process = subprocess.Popen(["caffeinate", "-dims"])
+        except FileNotFoundError:
+            caffeinate_process = None
         ralph_process = subprocess.Popen(
             [str(RALPH_DIR / "ralph.sh"), "auto"],
             cwd=str(PROJECT_DIR),
@@ -247,7 +252,7 @@ async def cmd_start_auto() -> None:
 
 async def cmd_stop(force: bool = False) -> None:
     """Stop or kill Ralph."""
-    global ralph_process
+    global ralph_process, caffeinate_process
     write_control("stop_now" if force else "stop", "")
     if force:
         for pf in ["ralph_codex.pid", "ralph_main.pid"]:
@@ -268,6 +273,9 @@ async def cmd_stop(force: bool = False) -> None:
             await safe_send("⏹ Ralph will stop after current task")
         else:
             await safe_send("⏸ Ralph is not running")
+    if caffeinate_process:
+        caffeinate_process.terminate()
+        caffeinate_process = None
     ralph_process = None
 
 
@@ -514,7 +522,7 @@ async def poll_updates() -> None:
 
 async def watch_state() -> None:
     """Watch ralph_state.json for notifications."""
-    global ralph_process
+    global ralph_process, caffeinate_process
 
     last_task = None
     last_status = None
@@ -529,6 +537,9 @@ async def watch_state() -> None:
                 await safe_send(f"⚠️ Ralph exited with code {code}")
             last_exit_code = code
             set_idle_state(f"Ralph exited with code {code}")
+            if caffeinate_process:
+                caffeinate_process.terminate()
+                caffeinate_process = None
             ralph_process = None
 
         state = read_state()
@@ -616,5 +627,6 @@ if __name__ == "__main__":
     print(f"   RALPH_DIR:   {RALPH_DIR}")
     print(f"   PROJECT_DIR: {PROJECT_DIR}")
     print(f"   Tasks:       {TASKS_FILE}")
+    print("   caffeinate: enabled during auto mode")
 
     asyncio.run(main())
