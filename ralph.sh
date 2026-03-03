@@ -328,8 +328,24 @@ print(task.get('timeout', 180))
         notify "🤖 [CODER] Starting: $TASK_ID — $TASK_TITLE"
         CODER_START=$(date +%s)
 
+        # Inject memory context
+        MEMORY_CORE=""
+        MEMORY_RECENT=""
+        if [ -f ".ralph/memory/core.md" ]; then
+            MEMORY_CORE=$(cat .ralph/memory/core.md 2>/dev/null || true)
+        fi
+        if [ -f ".ralph/memory/recent.md" ]; then
+            MEMORY_RECENT=$(cat .ralph/memory/recent.md 2>/dev/null || true)
+        fi
+
         CODER_PROMPT="Read AGENTS.md and AGENTS_CODER.md first. Then read progress.md.
 Run make test to verify current state.
+
+## Project Context (from memory)
+${MEMORY_CORE:-No core context yet. Read AGENTS.md for project info.}
+
+## Recent Tasks (what was done before you)
+${MEMORY_RECENT:-No recent tasks yet. This may be the first task.}
 
 ## Your Task
 $TASK_JSON"
@@ -486,6 +502,9 @@ print('Task completed')
 
                 python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" done
                 python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
+                # Update memory with task summary
+                CHANGED_FILES=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
+                python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
                 git add -A
                 git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
                 log "✅ $TASK_ID done"

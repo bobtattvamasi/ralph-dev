@@ -30,6 +30,14 @@ copy_if_missing "$RALPH_DIR/templates/AGENTS_CODER.md" "$PROJECT_DIR/AGENTS_CODE
 copy_if_missing "$RALPH_DIR/templates/AGENTS_LEAD.md" "$PROJECT_DIR/AGENTS_LEAD.md"
 copy_if_missing "$RALPH_DIR/templates/progress.md.template" "$PROJECT_DIR/progress.md"
 
+# Memory templates (.ralph/memory)
+mkdir -p "$PROJECT_DIR/.ralph/memory"
+for tpl in "$RALPH_DIR"/templates/memory/*.template; do
+    [ -f "$tpl" ] || continue
+    base="$(basename "$tpl" .template)"
+    copy_if_missing "$tpl" "$PROJECT_DIR/.ralph/memory/$base"
+done
+
 # tasks.json with project name
 if [ -f "$PROJECT_DIR/tasks.json" ]; then
     echo "   ⏭  tasks.json already exists, skipping"
