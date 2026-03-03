@@ -90,7 +90,15 @@ cleanup() {
     rm -f "$PROJECT_DIR/ralph_codex.pid"
     rm -f "$PROJECT_DIR/ralph_main.pid"
 }
-trap cleanup EXIT INT TERM
+handle_interrupt() {
+    log "⛔ Interrupt signal received, stopping Ralph..."
+    write_state "stopped" "" "" "Interrupted by signal"
+    notify "⛔ Ralph interrupted by signal and stopped"
+    cleanup
+    exit 130
+}
+trap cleanup EXIT
+trap handle_interrupt INT TERM
 
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
@@ -134,7 +142,7 @@ estimate_cost() {
 write_state() {
     local status="$1" task="${2:-}" step="${3:-}" message="${4:-}"
     python3 -c "
-import json
+import json, os, tempfile
 from datetime import datetime, timezone
 state = {
     'status': '$status',
@@ -143,7 +151,10 @@ state = {
     'last_update': datetime.now(timezone.utc).isoformat(),
     'message': '''$message''',
 }
-open('ralph_state.json','w').write(json.dumps(state, indent=2))
+fd, tmp_path = tempfile.mkstemp(prefix='ralph_state_', suffix='.tmp', dir='.')
+with os.fdopen(fd, 'w', encoding='utf-8') as f:
+    f.write(json.dumps(state, indent=2))
+os.replace(tmp_path, 'ralph_state.json')
 "
 }
 
@@ -181,6 +192,84 @@ except: pass
 
 notify() {
     python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" >/dev/null 2>&1 || true
+}
+
+RECOVERY_MODE=0
+PREV_STATUS=""
+check_and_recover_state() {
+    local state_file=""
+    local stale_main_pid=""
+    local stale_codex_pid=""
+
+    # Prefer hidden state file if present, then regular state file.
+    if [ -f ".ralph_state.json" ]; then
+        state_file=".ralph_state.json"
+    elif [ -f "ralph_state.json" ]; then
+        state_file="ralph_state.json"
+    fi
+
+    if [ -n "$state_file" ]; then
+        PREV_STATUS=$(python3 -c "
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+try:
+    d = json.loads(p.read_text(encoding='utf-8'))
+    print(d.get('status', 'unknown'))
+except Exception:
+    print('unknown')
+" "$state_file" 2>/dev/null || echo "unknown")
+    fi
+
+    if [ -n "$PREV_STATUS" ] && [ "$PREV_STATUS" != "idle" ] && [ "$PREV_STATUS" != "stopped" ]; then
+        RECOVERY_MODE=1
+        log "⚠️ Auto-recovery: previous non-idle state detected ('$PREV_STATUS')"
+        notify "⚠️ Auto-recovery: previous run detected as crashed. Resuming..."
+    else
+        RECOVERY_MODE=0
+    fi
+
+    # If previous run appears crashed/hung, kill stale process trees from pid files.
+    if [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+        stale_main_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
+        case "$stale_main_pid" in
+            ''|*[!0-9]*) stale_main_pid="" ;;
+        esac
+        if [ -n "$stale_main_pid" ] && [ "$stale_main_pid" != "$$" ]; then
+            if kill -0 "$stale_main_pid" 2>/dev/null; then
+                if [ "$RECOVERY_MODE" -eq 1 ]; then
+                    log "⚠️ Found stale ralph_main.pid=$stale_main_pid, killing process tree"
+                    kill_tree "$stale_main_pid"
+                else
+                    log "ℹ️ Found active ralph_main.pid=$stale_main_pid (leaving as-is)"
+                fi
+            else
+                log "ℹ️ Removing dead ralph_main.pid ($stale_main_pid)"
+            fi
+        fi
+    fi
+
+    if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
+        stale_codex_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
+        case "$stale_codex_pid" in
+            ''|*[!0-9]*) stale_codex_pid="" ;;
+        esac
+        if [ -n "$stale_codex_pid" ]; then
+            if kill -0 "$stale_codex_pid" 2>/dev/null; then
+                if [ "$RECOVERY_MODE" -eq 1 ]; then
+                    log "⚠️ Found stale ralph_codex.pid=$stale_codex_pid, killing process tree"
+                    kill_tree "$stale_codex_pid"
+                fi
+            else
+                log "ℹ️ Removing dead ralph_codex.pid ($stale_codex_pid)"
+            fi
+        fi
+    fi
+
+    # Ensure stale pid files are removed after recovery check.
+    rm -f "$PROJECT_DIR/ralph_codex.pid"
+    rm -f "$PROJECT_DIR/ralph_main.pid"
+    echo "$$" > "$PROJECT_DIR/ralph_main.pid"
 }
 
 file_mtime() {
@@ -410,6 +499,8 @@ if [ "$MODE" = "redo" ]; then
 fi
 
 # ─── Smoke test ───
+check_and_recover_state
+
 log "🔍 Smoke test..."
 if ! make test > /tmp/ralph_test.log 2>&1; then
     log "❌ Tests failing!"
@@ -417,7 +508,11 @@ if ! make test > /tmp/ralph_test.log 2>&1; then
     alert_human "Tests broken before start. Fix manually."
 fi
 log "✅ Tests pass"
-write_state "idle" "" "" "Ready"
+if [ "$RECOVERY_MODE" -eq 1 ]; then
+    write_state "running" "" "recovery" "Recovered from previous non-idle state ($PREV_STATUS)"
+else
+    write_state "idle" "" "idle" "Ready"
+fi
 
 # ─── Task selection args ───
 NEXT_ARGS=""
@@ -837,7 +932,7 @@ print('Unknown issue')
     continue
 done
 
-write_state "idle" "" "" "All tasks complete"
+write_state "idle" "" "idle" "All tasks complete"
 notify "🎉 Ralph finished! Run /status for details."
 log "════════════════════════════════════════════════════"
 log "💰 SESSION TOTAL: ${SESSION_TASKS} tasks, ~$(format_tokens "$SESSION_TOKENS") tokens (~\$$(estimate_cost "$SESSION_TOKENS"))"
