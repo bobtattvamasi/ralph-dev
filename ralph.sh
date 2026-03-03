@@ -31,6 +31,11 @@ trap cleanup EXIT
 
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
+MAX_CODEX_RETRIES=3
+CODEX_RETRY_DELAYS=(60 120 300)
+RATE_LIMIT_PAUSE=1800
+CONSECUTIVE_FAILURES=0
+MAX_CONSECUTIVE_FAILURES=3
 SESSION_TOKENS=0
 SESSION_TASKS=0
 LOG_DIR="$PROJECT_DIR/logs"
@@ -111,6 +116,84 @@ except: pass
 
 notify() {
     python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" >/dev/null 2>&1 || true
+}
+
+run_codex() {
+    local prompt="$1"
+    local output_file="$2"
+    local review_file="${3:-}"
+    local timeout="$4"
+    local retry=0
+    local exit_code=0
+
+    while [ $retry -le $MAX_CODEX_RETRIES ]; do
+        echo "$$" > "$PROJECT_DIR/ralph_codex.pid"
+        set +e
+        if [ -n "$review_file" ]; then
+            (
+                export GIT_EDITOR=true
+                export GIT_TERMINAL_PROMPT=0
+                export GIT_AUTHOR_NAME='Ralph Coder'
+                export GIT_AUTHOR_EMAIL='ralph@dev'
+                gtimeout --foreground --kill-after=10 "$timeout" \
+                    codex exec -s danger-full-access -o "$review_file" "$prompt" \
+                    > "$output_file" 2>&1
+            )
+            exit_code=$?
+        else
+            (
+                export GIT_EDITOR=true
+                export GIT_TERMINAL_PROMPT=0
+                export GIT_AUTHOR_NAME='Ralph Coder'
+                export GIT_AUTHOR_EMAIL='ralph@dev'
+                gtimeout --foreground --kill-after=10 "$timeout" \
+                    codex exec -s danger-full-access "$prompt" \
+                    > "$output_file" 2>&1
+            )
+            exit_code=$?
+        fi
+        set -e
+        rm -f "$PROJECT_DIR/ralph_codex.pid"
+        pkill -P "$$" 2>/dev/null || true
+
+        # Success
+        if [ $exit_code -eq 0 ]; then
+            CONSECUTIVE_FAILURES=0
+            return 0
+        fi
+
+        # Timeout (124) - no retry, return as-is
+        if [ $exit_code -eq 124 ]; then
+            log "⏰ TIMEOUT: codex exceeded ${timeout}s"
+            return 124
+        fi
+
+        # Check for rate limit in output
+        if grep -qi 'rate.limit\|429\|throttl\|too many requests\|capacity' "$output_file" 2>/dev/null; then
+            log "🚦 RATE LIMIT detected! Pausing ${RATE_LIMIT_PAUSE}s (30 min)..."
+            notify "🚦 Rate limit hit. Pausing 30 min. Task: ${TASK_ID:-unknown}"
+            write_state "paused" "${TASK_ID:-}" "rate_limit" "Rate limit - pausing 30 min"
+            sleep $RATE_LIMIT_PAUSE
+            write_state "running" "${TASK_ID:-}" "retry" "Resuming after rate limit pause"
+            retry=$((retry + 1))
+            continue
+        fi
+
+        # Other error - exponential backoff
+        if [ $retry -lt $MAX_CODEX_RETRIES ]; then
+            local delay=${CODEX_RETRY_DELAYS[$retry]}
+            log "⚠️ Codex failed (exit $exit_code). Retry $((retry+1))/$MAX_CODEX_RETRIES in ${delay}s..."
+            notify "⚠️ Codex error on ${TASK_ID:-unknown}. Retrying in ${delay}s..."
+            sleep $delay
+            retry=$((retry + 1))
+        else
+            log "❌ Codex failed after $MAX_CODEX_RETRIES retries"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            return $exit_code
+        fi
+    done
+    CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+    return 1
 }
 
 alert_human() {
@@ -278,27 +361,11 @@ $HUMAN_COMMENT"
         PRE_HASH=$(git rev-parse HEAD)
 
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
-        # Write PID file for /stop support (this script's PID)
-        CODEX_PID=$$
-        echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
-        log "Codex PID: $CODEX_PID"
         set +e
-        (
-            export GIT_EDITOR=true
-            export GIT_TERMINAL_PROMPT=0
-            export GIT_AUTHOR_NAME='Ralph Coder'
-            export GIT_AUTHOR_EMAIL='ralph@dev'
-            gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
-                codex exec -s danger-full-access "$CODER_PROMPT" \
-                > "$CODER_OUTPUT" 2>&1
-        )
+        # run_codex handles retries/backoff for codex execution
+        run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT"
         CODEX_EXIT=$?
         set -e
-        rm -f "$PROJECT_DIR/ralph_codex.pid"
-        pkill -P "$CODEX_PID" 2>/dev/null || true
-        if [ "$CODEX_EXIT" -eq 124 ]; then
-            log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
-        fi
         CODER_TOKENS=$(extract_tokens "$CODER_OUTPUT")
         TASK_TOKENS=$((TASK_TOKENS + ${CODER_TOKENS:-0}))
         SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
@@ -350,26 +417,11 @@ Output ONLY a JSON object with your decision."
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
-        CODEX_PID=$$
-        echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
-        log "Lead PID: $CODEX_PID"
         set +e
-        (
-            export GIT_EDITOR=true
-            export GIT_TERMINAL_PROMPT=0
-            export GIT_AUTHOR_NAME='Ralph Coder'
-            export GIT_AUTHOR_EMAIL='ralph@dev'
-            gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
-                codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" \
-                > "$LEAD_OUTPUT" 2>&1
-        )
+        # run_codex handles retries/backoff for codex execution
+        run_codex "$LEAD_PROMPT" "$LEAD_OUTPUT" "$REVIEW_FILE" "$TASK_TIMEOUT"
         CODEX_EXIT=$?
         set -e
-        rm -f "$PROJECT_DIR/ralph_codex.pid"
-        pkill -P "$CODEX_PID" 2>/dev/null || true
-        if [ "$CODEX_EXIT" -eq 124 ]; then
-            log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
-        fi
         LEAD_TOKENS=$(extract_tokens "$LEAD_OUTPUT")
         TASK_TOKENS=$((TASK_TOKENS + ${LEAD_TOKENS:-0}))
         SESSION_TOKENS=$((SESSION_TOKENS + ${LEAD_TOKENS:-0}))
@@ -532,6 +584,13 @@ print('Unknown issue')
         [ "$REMAINING" = "null" ] && { log "🎉 Phase $TARGET complete!"; break; }
     fi
     log "DEBUG: Finished task $TASK_ID, continuing to next..."
+    # Circuit breaker check
+    if [ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]; then
+        log "🔴 CIRCUIT BREAKER: $CONSECUTIVE_FAILURES consecutive failures!"
+        notify "🔴 CIRCUIT BREAKER: $CONSECUTIVE_FAILURES consecutive failures. Ralph stopped."
+        write_state "circuit_breaker" "" "" "$CONSECUTIVE_FAILURES consecutive failures"
+        break
+    fi
     continue
 done
 
