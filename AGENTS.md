@@ -66,3 +66,27 @@ Orchestrator (ralph.sh)
 ## Current Plan
 See tasks.json for current development tasks.
 Phases: R0 (setup) → R1 (stability) → R2 (convenience) → R3 (multi-project)
+
+### Memory System (.ralph/memory/)
+Ralph maintains persistent memory across tasks:
+- core.md — project architecture, conventions (static, updated manually)
+- recent.md — last 5 task summaries (auto-updated after each approved task)
+- patterns.md — recurring error patterns and solutions (grows over time)
+- decisions.md — architectural decisions log (grows over time)
+
+Before each coder task, ralph.sh injects core.md + recent.md into the prompt.
+
+### Circuit Breaker
+3 consecutive agent failures → pipeline stops, human notified.
+Rate limit detected → 30 minute pause → retry.
+Exponential backoff: 60s → 120s → 300s between retries.
+
+### Model Routing
+Tasks with complexity: simple → codex-mini (saves rate limit budget)
+Tasks with complexity: complex → codex-max (default)
+Tasks with agent_suitable: false → skip, notify human
+
+### Task Schema (enhanced)
+Required: id, phase, title, description, status
+Optional: complexity (simple/moderate/complex), required_context (file list),
+agent_suitable (true/false/partial), timeout, model, dependencies

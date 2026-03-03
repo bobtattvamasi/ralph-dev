@@ -18,3 +18,11 @@
 - R1-04: /log shows ralph execution log tail, added /progress for progress.md
 - R1-05: Added /tail command (live codex output with freshness indicator)
 - R1 Phase Complete — all stability tasks done
+
+## 2026-03-03: Research & Planning Sprint
+- Analyzed multi-agent orchestration best practices (Perplexity research)
+- Sources: Anthropic, Factory.ai, Nubank/Devin, Spotify, Amazon
+- Added 8 new tasks across R1.5/R3/R4 phases
+- Total tasks: 44 (36 existing + 8 new)
+- Key decisions: memory system, circuit breaker, model routing, exponential backoff
+- Priority: reliability first, then agent quality, then bot UX

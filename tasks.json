@@ -26,21 +26,21 @@
       "name": "Stability",
       "description": "Fix bugs, improve reliability"
     },
-    "R2": {
-      "name": "Convenience",
-      "description": "Better bot UX, new commands"
-    },
     "R1.5": {
       "name": "Reliability",
-      "description": "Fix edge cases, prevent hangs, improve recovery"
+      "description": "Fix edge cases, prevent hangs, circuit breakers, retry logic"
+    },
+    "R2": {
+      "name": "Convenience",
+      "description": "Bot UX, task management commands"
     },
     "R3": {
       "name": "Agent Quality",
-      "description": "Better prompts, context injection, agent memory"
+      "description": "Context injection, memory system, model routing, smart prompts"
     },
     "R4": {
       "name": "Packaging",
-      "description": "CLI tool, config file, multi-project support"
+      "description": "CLI tool, config, multi-project, vector DB, parallel execution"
     }
   },
   "tasks": [
@@ -822,6 +822,175 @@
       ],
       "dependencies": [
         "R4-02"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-13",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "critical",
+      "title": "Circuit breaker for agent failures",
+      "description": "Track consecutive failures per agent (coder/lead). After 3 consecutive failures in a row, stop pipeline, set state to paused, notify human via Telegram. Reset failure counter on any success. Add FAILURE_COUNT variable to ralph.sh main loop. On codex exit code != 0 and not timeout, increment counter. On success, reset to 0. On counter >= 3, call ralph_notify.py with alert message and break loop.",
+      "acceptance_criteria": [
+        "ralph.sh tracks failure count per agent cycle",
+        "Pipeline stops after 3 consecutive failures",
+        "Telegram alert is sent when circuit breaker trips",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "grep FAILURE_COUNT ralph.sh",
+        "grep -E 'circuit.breaker|consecutive' ralph.sh",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R1-14",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "high",
+      "title": "Exponential backoff on codex failures",
+      "description": "When codex exec fails (non-zero exit, not timeout), retry with exponential backoff. Retry delays: 60s, 120s, 300s. On rate limit detection (grep stderr for 'rate limit' or 'throttl' or '429'), pause 1800s (30 min). After 3 retries exhausted, mark task as failed and continue to next. Add RETRY_COUNT, MAX_RETRIES=3, RETRY_DELAYS=(60 120 300) to ralph.sh. Wrap codex exec call in retry loop.",
+      "acceptance_criteria": [
+        "ralph.sh retries failed codex runs with 60/120/300 backoff",
+        "Rate limit patterns trigger 30-minute pause",
+        "After max retries task is marked failed and pipeline continues",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "grep RETRY_COUNT ralph.sh",
+        "grep -E 'rate.limit|backoff|RETRY_DELAY|RETRY_DELAYS' ralph.sh",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R3-08",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "critical",
+      "title": "Memory system - .ralph/memory/ directory",
+      "description": "Create .ralph/memory/ system with 4 files. core.md contains project architecture, tech stack, coding conventions - extracted from AGENTS.md once. recent.md contains summaries of last 3-5 completed tasks (what changed, files modified, decisions made). patterns.md contains recurring error patterns and their solutions. decisions.md contains architectural decisions log. ralph.sh creates .ralph/memory/ if not exists. Before each coder prompt, ralph.sh reads core.md and recent.md and appends their content to the prompt. Add helper script scripts/update_memory.py that appends structured summary to recent.md and trims to last 5 entries.",
+      "acceptance_criteria": [
+        ".ralph/memory directory is created with core/recent/patterns/decisions files",
+        "ralph.sh injects core.md and recent.md into coder prompt",
+        "scripts/update_memory.py exists and updates recent.md correctly",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "test -d .ralph/memory",
+        "grep -E 'memory/core.md|memory/recent.md' ralph.sh",
+        "python3 -c 'import ast; ast.parse(open(\"scripts/update_memory.py\").read())'"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R3-09",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "high",
+      "title": "Structured task summaries after completion",
+      "description": "After each approved task, ralph.sh calls scripts/update_memory.py with task ID, title, list of changed files (from git diff --name-only), test results (pass/fail), and any fix_instructions that were needed. update_memory.py generates a structured 5-line summary and appends to .ralph/memory/recent.md. Format per entry: '## TASK_ID: title\\nFiles: file1, file2\\nResult: approved after N retries\\nNotes: any fix instructions\\nTimestamp: ISO datetime'. Trim recent.md to last 5 entries.",
+      "acceptance_criteria": [
+        "ralph.sh invokes update_memory.py after approve",
+        "recent.md receives structured summary entries",
+        "recent.md retains only last 5 entries",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "grep update_memory ralph.sh",
+        "grep recent.md scripts/update_memory.py",
+        "python3 scripts/update_memory.py --help"
+      ],
+      "dependencies": [
+        "R3-08"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-10",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "high",
+      "title": "Task complexity field and model routing",
+      "description": "Add optional fields to task JSON schema - complexity (simple/moderate/complex) and required_context (list of file paths). ralph.sh reads complexity from task. If simple, use 'codex exec -m codex-mini'. If complex or not specified, use default model. For lead review of simple tasks with tag trivial, skip lead entirely and auto-approve. required_context files are read and appended to coder prompt so coder has guaranteed access to relevant files.",
+      "acceptance_criteria": [
+        "ralph.sh reads complexity from task JSON",
+        "simple tasks route to codex-mini model",
+        "required_context files are injected into coder prompt",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "grep -E 'complexity|codex-mini|required_context' ralph.sh",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R3-11",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "medium",
+      "title": "Agent-suitable classification",
+      "description": "Add optional field agent_suitable (true/false/partial) to task JSON schema. ralph.sh reads this field. If false, skip task and send Telegram notification asking human to handle it. If partial, run coder but always require human review (send diff via Telegram before lead review). Default true if not specified.",
+      "acceptance_criteria": [
+        "ralph.sh checks agent_suitable value for each task",
+        "agent_suitable=false tasks are skipped with Telegram notice",
+        "agent_suitable=partial tasks request human review before lead",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "grep agent_suitable ralph.sh",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R4-05",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "low",
+      "title": "Vector DB for semantic task retrieval",
+      "description": "Add optional vector database (chromadb) for past task completions. After each task, embed task description + summary into local chroma collection. Before starting new task, retrieve top-3 most similar past tasks and inject their summaries into coder prompt. Only activate if chromadb is installed (graceful fallback if not). Add scripts/memory_search.py.",
+      "acceptance_criteria": [
+        "scripts/memory_search.py exists and runs",
+        "Missing chromadb is handled gracefully without crash",
+        "ralph.sh calls memory_search when feature is available"
+      ],
+      "test_steps": [
+        "test -f scripts/memory_search.py",
+        "python3 scripts/memory_search.py --help"
+      ],
+      "dependencies": [
+        "R3-08"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R4-06",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "low",
+      "title": "Parallel execution for independent tasks",
+      "description": "ralph.sh reads dependencies field from tasks. If multiple pending tasks have all dependencies met and no overlap in required_context files, run them in parallel (background subshells). Wait for all parallel tasks to complete before continuing. Add --parallel flag to ralph.sh. Default off.",
+      "acceptance_criteria": [
+        "ralph.sh supports --parallel runtime flag",
+        "Dependencies are checked before parallel launch",
+        "Parallel mode waits for all spawned tasks to finish",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "grep -E 'parallel|PARALLEL' ralph.sh",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [
+        "R3-10"
       ],
       "status": "pending"
     }
