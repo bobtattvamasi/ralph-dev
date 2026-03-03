@@ -279,15 +279,23 @@ $HUMAN_COMMENT"
 
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
         # Write PID file for /stop support (this script's PID)
-        echo $$ > "$PROJECT_DIR/ralph_codex.pid"
-        log "Codex PID: $$"
+        CODEX_PID=$$
+        echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
+        log "Codex PID: $CODEX_PID"
         set +e
-        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
-            codex exec -s danger-full-access "$CODER_PROMPT" \
-            > "$CODER_OUTPUT" 2>&1
+        (
+            export GIT_EDITOR=true
+            export GIT_TERMINAL_PROMPT=0
+            export GIT_AUTHOR_NAME='Ralph Coder'
+            export GIT_AUTHOR_EMAIL='ralph@dev'
+            gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
+                codex exec -s danger-full-access "$CODER_PROMPT" \
+                > "$CODER_OUTPUT" 2>&1
+        )
         CODEX_EXIT=$?
         set -e
         rm -f "$PROJECT_DIR/ralph_codex.pid"
+        pkill -P "$CODEX_PID" 2>/dev/null || true
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
@@ -342,15 +350,23 @@ Output ONLY a JSON object with your decision."
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
-        echo $$ > "$PROJECT_DIR/ralph_codex.pid"
-        log "Lead PID: $$"
+        CODEX_PID=$$
+        echo "$CODEX_PID" > "$PROJECT_DIR/ralph_codex.pid"
+        log "Lead PID: $CODEX_PID"
         set +e
-        gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
-            codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" \
-            > "$LEAD_OUTPUT" 2>&1
+        (
+            export GIT_EDITOR=true
+            export GIT_TERMINAL_PROMPT=0
+            export GIT_AUTHOR_NAME='Ralph Coder'
+            export GIT_AUTHOR_EMAIL='ralph@dev'
+            gtimeout --foreground --kill-after=10 "$TASK_TIMEOUT" \
+                codex exec -s danger-full-access -o "$REVIEW_FILE" "$LEAD_PROMPT" \
+                > "$LEAD_OUTPUT" 2>&1
+        )
         CODEX_EXIT=$?
         set -e
         rm -f "$PROJECT_DIR/ralph_codex.pid"
+        pkill -P "$CODEX_PID" 2>/dev/null || true
         if [ "$CODEX_EXIT" -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${TASK_TIMEOUT}s"
         fi
