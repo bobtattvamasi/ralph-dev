@@ -1,26 +1,60 @@
-## Context: Neuromesh + Ralph
+## Context: Ralph Dev
 
-I'm Bogdan, AI/fullstack engineer building neuromesh — a modular AI agent 
-engine (vector+graph RAG, tracing, multi-app). 
+I'm Bogdan, AI/fullstack engineer building ralph-dev — a modular AI dev team 
+orchestrator that runs Codex CLI agents in a loop, controlled via Telegram bot.
 
-I have an automated dev system called "ralph" that orchestrates codex CLI 
-to execute tasks from tasks.json. It has 3 agent roles:
-- Coder (codex exec, writes code)
-- Tech Lead (codex exec, reviews diffs)  
-- Orchestrator (ralph.sh, bash script)
+### What Ralph does
+Automated dev pipeline: Telegram command → ralph.sh reads tasks.json → 
+runs Codex CLI (coder agent) → runs Codex CLI (tech lead review) → 
+approve/fix/alert → commit → next task. Can run 40+ tasks unattended.
 
-Control: Telegram bot (scripts/ralph_bot.py)
-Tasks: tasks.json (JSON, not markdown)
-Progress: progress.md
-Agent docs: AGENTS.md (index), AGENTS_CODER.md, AGENTS_LEAD.md
+### Architecture
+- **Orchestrator**: ralph.sh (bash) — reads tasks, builds prompts, runs codex, 
+  handles timeouts/retries
+- **Coder agent**: codex exec (full-auto) — writes code, runs tests
+- **Tech Lead agent**: codex exec — reviews diff, returns JSON verdict
+- **Bot**: scripts/ralph_bot.py — Telegram control (/auto, /stop, /status, /tail)
+- **State**: tasks.json, ralph_state.json, ralph_control.json (all JSON)
+- **Docs**: AGENTS.md (agent instructions), progress.md (auto-log), 
+  CHANGELOG.md (versions), SESSION_NOTES.md (debugging notes)
 
-Current state: ralph works for small tasks (DIAG series passed).
-Large tasks (P5-T01) caused codex to hang. Adding timeout + diagnostics.
+### Project structure (ralph-dev/)
+ralph.sh, ralph-init.sh, scripts/ (ralph_bot.py, next_task.py, 
+update_task.py, update_progress.py, ralph_notify.py), 
+templates/ (AGENTS.md.template, AGENTS_CODER.md, AGENTS_LEAD.md, 
+tasks.json.template, progress.md.template), tests/
 
-Key files: ralph.sh, scripts/ralph_bot.py, tasks.json, AGENTS.md
-Stack: Python 3.11, FastAPI, FAISS, NetworkX, Streamlit, SQLite
-Tests: pytest, 101 passing
+### How projects use Ralph
+1. ralph-init.sh copies templates into target project
+2. Target project gets: AGENTS.md, AGENTS_CODER.md, AGENTS_LEAD.md, 
+   tasks.json, progress.md
+3. Bot starts: python3 ralph-dev/scripts/ralph_bot.py --project-dir ./target
+4. Telegram: /auto → ralph.sh runs all pending tasks
 
-My goal: develop neuromesh by sending telegram commands, 
-monitoring progress, and iterating on the plan — 
-like the harness approach from Anthropic/OpenAI articles.
+### Current state
+- MVP works: 40-task projects complete automatically
+- Known issues: git commit hangs (fixed with GIT_EDITOR=true), 
+  /stop now didn't reset state (fixed with set_idle_state), 
+  bot needs restart after code changes
+- Stack: Bash, Python 3.11, Codex CLI, Telegram Bot API (urllib)
+- Tests: 18 passing (pytest)
+- Codex limits: Plus plan, ~45-225 local messages per 5 hours
+
+### Key files to reference
+- ralph.sh (~400 lines) — main loop, coder/lead execution
+- scripts/ralph_bot.py (~600 lines) — all telegram commands
+- tasks.json — task definitions with phases R0/R1/R2
+- AGENTS.md — architecture docs, agent rules
+
+### What I need from you
+- Plan tasks for ralph-dev improvement (reliability, bot UX, agent quality)
+- Generate codex prompts that I paste into terminal
+- Debug issues when ralph hangs or produces wrong output
+- Keep context across sessions about what works and what's broken
+
+### My workflow
+1. I describe what I want or paste error output
+2. You generate a codex prompt or direct fix
+3. I run it, paste results back
+4. You iterate until working
+5. We plan next batch of tasks, I run /auto overnight

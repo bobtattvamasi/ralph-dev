@@ -2,7 +2,10 @@
   "version": 1,
   "project": "ralph-dev",
   "agent_instructions": {
-    "read_first": ["AGENTS.md", "progress.md"],
+    "read_first": [
+      "AGENTS.md",
+      "progress.md"
+    ],
     "test_command": "bash -n ralph.sh && python3 -c \"import ast; ast.parse(open('scripts/ralph_bot.py').read())\"",
     "rules": [
       "ONE task at a time",
@@ -15,9 +18,30 @@
     ]
   },
   "phases": {
-    "R0": {"name": "Setup", "description": "Extract ralph into standalone repo"},
-    "R1": {"name": "Stability", "description": "Fix bugs, improve reliability"},
-    "R2": {"name": "Convenience", "description": "Better bot UX, new commands"}
+    "R0": {
+      "name": "Setup",
+      "description": "Extract ralph into standalone repo"
+    },
+    "R1": {
+      "name": "Stability",
+      "description": "Fix bugs, improve reliability"
+    },
+    "R2": {
+      "name": "Convenience",
+      "description": "Better bot UX, new commands"
+    },
+    "R1.5": {
+      "name": "Reliability",
+      "description": "Fix edge cases, prevent hangs, improve recovery"
+    },
+    "R3": {
+      "name": "Agent Quality",
+      "description": "Better prompts, context injection, agent memory"
+    },
+    "R4": {
+      "name": "Packaging",
+      "description": "CLI tool, config file, multi-project support"
+    }
   },
   "tasks": [
     {
@@ -27,8 +51,12 @@
       "priority": "high",
       "title": "Create ralph-dev repo structure",
       "description": "Done manually. Initial structure with ralph.sh, scripts/, templates/.",
-      "acceptance_criteria": ["ralph-dev repo exists with all files"],
-      "test_steps": ["ls ralph.sh scripts/ templates/"],
+      "acceptance_criteria": [
+        "ralph-dev repo exists with all files"
+      ],
+      "test_steps": [
+        "ls ralph.sh scripts/ templates/"
+      ],
       "dependencies": [],
       "status": "done",
       "completed_at": "2026-02-26"
@@ -40,9 +68,15 @@
       "priority": "high",
       "title": "Make ralph.sh project-agnostic",
       "description": "Done. RALPH_DIR/PROJECT_DIR separation, all paths fixed.",
-      "acceptance_criteria": ["No hardcoded project paths in ralph.sh"],
-      "test_steps": ["grep 'python3 scripts/' ralph.sh returns nothing"],
-      "dependencies": ["R0-01"],
+      "acceptance_criteria": [
+        "No hardcoded project paths in ralph.sh"
+      ],
+      "test_steps": [
+        "grep 'python3 scripts/' ralph.sh returns nothing"
+      ],
+      "dependencies": [
+        "R0-01"
+      ],
       "status": "done",
       "completed_at": "2026-02-26"
     },
@@ -53,9 +87,16 @@
       "priority": "high",
       "title": "AGENTS.md and project docs for ralph-dev",
       "description": "Done. AGENTS.md describes ralph architecture and rules.",
-      "acceptance_criteria": ["AGENTS.md exists", ".gitignore exists"],
-      "test_steps": ["test -f AGENTS.md"],
-      "dependencies": ["R0-01"],
+      "acceptance_criteria": [
+        "AGENTS.md exists",
+        ".gitignore exists"
+      ],
+      "test_steps": [
+        "test -f AGENTS.md"
+      ],
+      "dependencies": [
+        "R0-01"
+      ],
       "status": "done",
       "completed_at": "2026-02-26"
     },
@@ -79,7 +120,10 @@
         "test -f AGENTS.md",
         "../ralph-dev/ralph.sh status"
       ],
-      "dependencies": ["R0-02", "R0-03"],
+      "dependencies": [
+        "R0-02",
+        "R0-03"
+      ],
       "status": "done",
       "completed_at": "2026-02-26"
     },
@@ -99,7 +143,9 @@
         "python3 scripts/ralph_bot.py --help shows project-dir option",
         "python3 -c \"import ast; ast.parse(open('scripts/ralph_bot.py').read())\""
       ],
-      "dependencies": ["R0-04"],
+      "dependencies": [
+        "R0-04"
+      ],
       "status": "done",
       "completed_at": "2026-02-26"
     },
@@ -115,8 +161,13 @@
         "Default 180s if not specified",
         "bash -n ralph.sh passes"
       ],
-      "test_steps": ["bash -n ralph.sh", "grep timeout ralph.sh"],
-      "dependencies": ["R0-04"],
+      "test_steps": [
+        "bash -n ralph.sh",
+        "grep timeout ralph.sh"
+      ],
+      "dependencies": [
+        "R0-04"
+      ],
       "timeout": 300,
       "status": "done",
       "completed_at": "2026-02-26"
@@ -134,8 +185,12 @@
         "Shows total tokens and estimated cost",
         "python3 -c ast.parse passes"
       ],
-      "test_steps": ["grep 'cmd_cost\\|/cost' scripts/ralph_bot.py"],
-      "dependencies": ["R1-01"],
+      "test_steps": [
+        "grep 'cmd_cost\\|/cost' scripts/ralph_bot.py"
+      ],
+      "dependencies": [
+        "R1-01"
+      ],
       "status": "done",
       "completed_at": "2026-02-26"
     },
@@ -151,8 +206,12 @@
         "Shows last N lines (default 15)",
         "python3 -c ast.parse passes"
       ],
-      "test_steps": ["grep 'LOG_DIR\\|ralph_.*\\.log' scripts/ralph_bot.py"],
-      "dependenci\u001b[1084;1:3ues": ["R1-01"],
+      "test_steps": [
+        "grep 'LOG_DIR\\|ralph_.*\\.log' scripts/ralph_bot.py"
+      ],
+      "dependenci\u001b[1084;1:3ues": [
+        "R1-01"
+      ],
       "status": "done",
       "completed_at": "2026-02-26"
     },
@@ -168,8 +227,12 @@
         "Reads most recent /tmp/ralph_coder_*.txt or /tmp/ralph_lead_*.txt",
         "python3 -c ast.parse passes"
       ],
-      "test_steps": ["grep 'cmd_tail\\|/tail' scripts/ralph_bot.py"],
-      "dependencies": ["R1-01"],
+      "test_steps": [
+        "grep 'cmd_tail\\|/tail' scripts/ralph_bot.py"
+      ],
+      "dependencies": [
+        "R1-01"
+      ],
       "status": "done",
       "completed_at": "2026-02-26"
     },
@@ -186,8 +249,12 @@
         "Shows done/pending/total per phase",
         "python3 -c ast.parse passes"
       ],
-      "test_steps": ["grep 'cmd_plan\\|/plan' scripts/ralph_bot.py"],
-      "dependencies": ["R1-01"],
+      "test_steps": [
+        "grep 'cmd_plan\\|/plan' scripts/ralph_bot.py"
+      ],
+      "dependencies": [
+        "R1-01"
+      ],
       "status": "pending"
     },
     {
@@ -202,8 +269,12 @@
         "Appends to tasks.json",
         "python3 -c ast.parse passes"
       ],
-      "test_steps": ["grep 'cmd_add\\|/add' scripts/ralph_bot.py"],
-      "dependencies": ["R1-01"],
+      "test_steps": [
+        "grep 'cmd_add\\|/add' scripts/ralph_bot.py"
+      ],
+      "dependencies": [
+        "R1-01"
+      ],
       "status": "pending"
     },
     {
@@ -218,8 +289,540 @@
         "ralph.sh checks control file between tasks",
         "python3 -c ast.parse passes"
       ],
-      "test_steps": ["grep 'pause\\|resume' scripts/ralph_bot.py"],
-      "dependencies": ["R1-01"],
+      "test_steps": [
+        "grep 'pause\\|resume' scripts/ralph_bot.py"
+      ],
+      "dependencies": [
+        "R1-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-06",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "high",
+      "title": "Bot: /reload command",
+      "description": "Add /reload command that restarts the bot polling loop and reloads modules without killing the process. Use importlib.reload or subprocess re-exec.",
+      "acceptance_criteria": [
+        "/reload command is available in Telegram bot",
+        "Bot polling loop restarts without full process kill",
+        "Reload path handles errors and keeps bot responsive"
+      ],
+      "test_steps": [
+        "Run /reload in Telegram and confirm bot responds after restart",
+        "Check bot logs for successful reload marker",
+        "python3 -c \"import ast; ast.parse(open(\"scripts/ralph_bot.py\").read())\""
+      ],
+      "dependencies": [
+        "R1-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-07",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "high",
+      "title": "Watchdog: detect hung ralph.sh",
+      "description": "Bot monitors ralph log file. If no new output for 5 minutes while status=running, auto-kill ralph and notify via Telegram.",
+      "acceptance_criteria": [
+        "Watchdog checks log freshness while Ralph is running",
+        "If no updates for 5 minutes, bot force-stops Ralph",
+        "Telegram notification is sent on watchdog kill"
+      ],
+      "test_steps": [
+        "Simulate stalled ralph process with stale log timestamp",
+        "Verify bot triggers force kill",
+        "Verify notification message is delivered"
+      ],
+      "dependencies": [
+        "R1-06"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-08",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "high",
+      "title": "Rate limit detection",
+      "description": "Parse codex exec stderr/exit code for rate limit errors. On rate limit: pause 30 minutes, then retry. Log rate limit events. Notify via Telegram.",
+      "acceptance_criteria": [
+        "Rate-limit errors are detected from codex output/exit status",
+        "Workflow waits 30 minutes then retries task automatically",
+        "Rate-limit events are logged and sent to Telegram"
+      ],
+      "test_steps": [
+        "Inject mocked rate-limit error into codex output",
+        "Confirm backoff timer and retry path are triggered",
+        "Check log and bot message output"
+      ],
+      "dependencies": [
+        "R1-07"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-09",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "medium",
+      "title": "Process tree cleanup on timeout",
+      "description": "After codex timeout, kill entire process tree not just PID. Use pkill -P recursively. Verify with os.kill(pid,0).",
+      "acceptance_criteria": [
+        "Timeout cleanup kills parent and child processes recursively",
+        "No orphan codex child processes remain after timeout",
+        "Verification check confirms target pid is dead"
+      ],
+      "test_steps": [
+        "Run codex command that spawns child process and times out",
+        "Verify children are terminated via process table",
+        "Verify os.kill(pid, 0) fails for cleaned process"
+      ],
+      "dependencies": [
+        "R1-08"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-10",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "medium",
+      "title": "Auto-recovery: task rollback on crash",
+      "description": "If ralph.sh dies mid-task (detected by bot), set task back to pending, git reset changes, notify user.",
+      "acceptance_criteria": [
+        "Bot detects unexpected runner exit during active task",
+        "Current task is reverted to pending in tasks.json",
+        "Working tree rollback and Telegram alert are executed"
+      ],
+      "test_steps": [
+        "Force-kill ralph.sh mid-task and observe recovery",
+        "Verify task status is pending again",
+        "Check repo and notification state after rollback"
+      ],
+      "dependencies": [
+        "R1-07"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-11",
+      "phase": "R1.5",
+      "category": "reliability",
+      "priority": "medium",
+      "title": "Sanitize task titles",
+      "description": "Escape quotes and special chars in task titles before passing to codex prompt and git commit -m. Prevent shell injection and git hang.",
+      "acceptance_criteria": [
+        "Task title sanitizer is applied before shell/git usage",
+        "Unsafe symbols do not break commit command generation",
+        "Prompt generation remains readable after escaping"
+      ],
+      "test_steps": [
+        "Create task title with quotes and shell metacharacters",
+        "Verify generated commands are safe and non-interactive",
+        "Run unit test covering escaping function"
+      ],
+      "dependencies": [
+        "R1-10"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R1-12",
+      "phase": "R1.5",
+      "category": "testing",
+      "priority": "medium",
+      "title": "Integration tests for ralph.sh",
+      "description": "Add tests/test_integration.py: mock codex exec, run ralph.sh on test tasks.json, verify state transitions, log output, task status updates.",
+      "acceptance_criteria": [
+        "Integration test suite for ralph.sh exists",
+        "Tests cover state transitions and task status updates",
+        "Tests run with mocked codex process"
+      ],
+      "test_steps": [
+        "Run pytest tests/test_integration.py",
+        "Verify transition assertions for running/idle/waiting_human",
+        "Run full make test and confirm pass"
+      ],
+      "dependencies": [
+        "R1-11"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R2-04",
+      "phase": "R2",
+      "category": "convenience",
+      "priority": "medium",
+      "title": "Bot: /rm TASK_ID",
+      "description": "Remove or skip a task. Set status to skipped in tasks.json.",
+      "acceptance_criteria": [
+        "/rm command is available and parses TASK_ID",
+        "Task status updates to skipped in tasks.json",
+        "Bot confirms action in chat"
+      ],
+      "test_steps": [
+        "Invoke /rm on a pending task",
+        "Check tasks.json status becomes skipped",
+        "Verify /status reflects updated counts"
+      ],
+      "dependencies": [
+        "R2-02"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R2-05",
+      "phase": "R2",
+      "category": "convenience",
+      "priority": "low",
+      "title": "Bot: /edit TASK_ID new title",
+      "description": "Rename task title from Telegram.",
+      "acceptance_criteria": [
+        "/edit updates task title for valid TASK_ID",
+        "Changes persist in tasks.json",
+        "Invalid task id returns clear error"
+      ],
+      "test_steps": [
+        "Run /edit for existing task",
+        "Verify title changed in tasks.json",
+        "Run /edit with bad id and verify error message"
+      ],
+      "dependencies": [
+        "R2-04"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R2-06",
+      "phase": "R2",
+      "category": "convenience",
+      "priority": "medium",
+      "title": "Bot: /limits",
+      "description": "Show codex usage stats: tasks completed in last 5h, estimated messages used, remaining budget based on Plus plan limits.",
+      "acceptance_criteria": [
+        "/limits command reports recent completion count",
+        "Message usage estimation is displayed with assumptions",
+        "Output includes remaining budget indicator"
+      ],
+      "test_steps": [
+        "Populate logs with sample task completion entries",
+        "Run /limits and verify parsed metrics",
+        "Validate formatting in Telegram output"
+      ],
+      "dependencies": [
+        "R1-03"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R2-07",
+      "phase": "R2",
+      "category": "convenience",
+      "priority": "low",
+      "title": "Bot: /notify settings",
+      "description": "Configure notification level: all (every task), errors (only failures), done (only completion). Saves to ralph_control.json.",
+      "acceptance_criteria": [
+        "/notify accepts all/errors/done options",
+        "Selected level is saved in control/config file",
+        "Notification emission respects configured level"
+      ],
+      "test_steps": [
+        "Set each notify mode via command",
+        "Trigger success and failure events",
+        "Verify only expected messages are sent"
+      ],
+      "dependencies": [
+        "R2-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R2-08",
+      "phase": "R2",
+      "category": "convenience",
+      "priority": "high",
+      "title": "Bot: /reload",
+      "description": "Restart bot modules without full restart. Reimport ralph_bot.py functions.",
+      "acceptance_criteria": [
+        "/reload command triggers module refresh",
+        "Polling resumes after reload without manual restart",
+        "Reload errors are reported safely"
+      ],
+      "test_steps": [
+        "Run /reload in active bot session",
+        "Confirm subsequent commands still work",
+        "Inject reload failure and verify error handling"
+      ],
+      "dependencies": [
+        "R1-06"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R2-09",
+      "phase": "R2",
+      "category": "convenience",
+      "priority": "medium",
+      "title": "Auto-update progress.md",
+      "description": "After each approved task, append formatted entry to progress.md with timestamp, task title, files changed, test results.",
+      "acceptance_criteria": [
+        "Approved task appends formatted section to progress.md",
+        "Entry includes timestamp, title, changed files, test status",
+        "No duplicate append for same task"
+      ],
+      "test_steps": [
+        "Complete a task and inspect progress.md entry",
+        "Verify entry format against template",
+        "Re-run same task flow and ensure no duplicate append"
+      ],
+      "dependencies": [
+        "R2-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-01",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "high",
+      "title": "Context injection for coder",
+      "description": "Before coder runs, ralph.sh reads AGENTS.md + identifies relevant source files (grep task keywords in codebase). Injects file contents into coder prompt.",
+      "acceptance_criteria": [
+        "Coder prompt includes AGENTS.md context and relevant file snippets",
+        "Relevant file selection is based on task keyword matching",
+        "Prompt size guard prevents overly large payloads"
+      ],
+      "test_steps": [
+        "Run task with clear file keyword and inspect built prompt",
+        "Verify selected files are injected into coder prompt",
+        "Run bash syntax check after prompt-builder update"
+      ],
+      "dependencies": [
+        "R1-12"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-02",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "medium",
+      "title": "Smart file selection",
+      "description": "Add scripts/find_relevant.py: given task title+description, search codebase for relevant files using grep/ast. Return top 5-10 files. Ralph injects their paths into coder prompt.",
+      "acceptance_criteria": [
+        "find_relevant.py returns ranked file list for task input",
+        "Selection combines keyword and structural signals",
+        "ralph.sh consumes script output for prompt context"
+      ],
+      "test_steps": [
+        "Run find_relevant.py against sample task text",
+        "Verify top file list quality manually",
+        "Integrate into ralph.sh and validate path injection"
+      ],
+      "dependencies": [
+        "R3-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-03",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "medium",
+      "title": "Lead review with acceptance criteria",
+      "description": "Pass task acceptance_criteria and test_steps to lead agent along with diff. Lead checks each criterion explicitly in JSON response.",
+      "acceptance_criteria": [
+        "Lead prompt includes acceptance_criteria and test_steps",
+        "Lead response JSON contains per-criterion check results",
+        "Decision parser handles structured criterion results"
+      ],
+      "test_steps": [
+        "Run lead review on task with multiple criteria",
+        "Verify output JSON includes explicit criterion statuses",
+        "Validate decision parser behavior on new schema"
+      ],
+      "dependencies": [
+        "R3-02"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-04",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "low",
+      "title": "Token budget estimation",
+      "description": "Before running coder, estimate task complexity from description length and file count. Set dynamic timeout. Warn if task looks too big for single codex call.",
+      "acceptance_criteria": [
+        "Complexity estimator computes score from task metadata",
+        "Timeout is adjusted dynamically from complexity score",
+        "Large-task warning is logged and notified"
+      ],
+      "test_steps": [
+        "Run estimator on short and long tasks",
+        "Verify timeout values differ based on complexity",
+        "Check warning appears for oversized task"
+      ],
+      "dependencies": [
+        "R3-03"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-05",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "medium",
+      "title": "Coder memory across tasks",
+      "description": "After each task, save summary to .ralph/history/TASK_ID.md. Before next task, inject last 3 summaries into coder prompt for continuity.",
+      "acceptance_criteria": [
+        "Task summaries are saved after each completed task",
+        "Next task prompt includes last 3 summaries",
+        "History directory is created automatically if missing"
+      ],
+      "test_steps": [
+        "Complete multiple tasks and inspect .ralph/history files",
+        "Confirm prompt includes recent summaries",
+        "Verify behavior when history is empty"
+      ],
+      "dependencies": [
+        "R3-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-06",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "low",
+      "title": "Skip lead for trivial tasks",
+      "description": "If task has tag trivial or description is under 50 chars, skip lead review and auto-approve. Saves 1 codex message per trivial task.",
+      "acceptance_criteria": [
+        "Trivial-task heuristic correctly classifies simple tasks",
+        "Lead review is skipped only for qualifying tasks",
+        "Audit log records when review is skipped"
+      ],
+      "test_steps": [
+        "Run pipeline with trivial-tagged task",
+        "Verify lead step is skipped and task auto-approved",
+        "Run non-trivial task and verify lead still runs"
+      ],
+      "dependencies": [
+        "R3-03"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-07",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "low",
+      "title": "Model selection per task",
+      "description": "Add optional model field to task JSON. Use codex-mini for simple tasks, codex-max for complex. Saves rate limit budget.",
+      "acceptance_criteria": [
+        "Task schema supports optional model field",
+        "Runner selects model from task override or heuristic",
+        "Selection is logged for observability"
+      ],
+      "test_steps": [
+        "Define tasks with and without model field",
+        "Verify codex command includes selected model",
+        "Check logs for model selection entries"
+      ],
+      "dependencies": [
+        "R3-04"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R4-01",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "medium",
+      "title": "ralph.toml config file",
+      "description": "Replace scattered JSON configs with single ralph.toml. Sections: [project], [bot], [agents], [timeouts]. Ralph.sh and bot.py both read from it.",
+      "acceptance_criteria": [
+        "ralph.toml schema includes project/bot/agents/timeouts sections",
+        "ralph.sh and bot load values from toml config",
+        "Backwards compatibility path exists for existing JSON files"
+      ],
+      "test_steps": [
+        "Create sample ralph.toml and run ralph status/bot",
+        "Verify loaded values affect runtime behavior",
+        "Run tests for config parsing and fallback"
+      ],
+      "dependencies": [
+        "R3-07"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R4-02",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "medium",
+      "title": "CLI entrypoint: ralph command",
+      "description": "Add setup.py/pyproject.toml so pip install ralph-dev gives ralph CLI. Subcommands: ralph init, ralph auto, ralph status, ralph bot.",
+      "acceptance_criteria": [
+        "Package installs and exposes ralph CLI entrypoint",
+        "Core subcommands init/auto/status/bot are wired",
+        "CLI help documents usage"
+      ],
+      "test_steps": [
+        "Install package in virtual env and run ralph --help",
+        "Invoke each subcommand with dry-run or test project",
+        "Verify exit codes and help text"
+      ],
+      "dependencies": [
+        "R4-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R4-03",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "low",
+      "title": "Multi-project support in bot",
+      "description": "Bot can manage multiple projects. /project list, /project switch <name>. Each project has own tasks.json and state.",
+      "acceptance_criteria": [
+        "/project list and /project switch commands are implemented",
+        "Bot stores active project context per chat/session",
+        "State and task operations target selected project correctly"
+      ],
+      "test_steps": [
+        "Configure two sample projects and switch between them",
+        "Run /status and verify project-specific state",
+        "Validate isolation of control/state files"
+      ],
+      "dependencies": [
+        "R4-02"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R4-04",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "low",
+      "title": "Template system for new agents",
+      "description": "templates/agent_*.md files. ralph-init.sh asks which agents to include. Support: coder, lead, tester, planner.",
+      "acceptance_criteria": [
+        "Agent template files exist for coder/lead/tester/planner",
+        "ralph-init.sh prompts for agent selection",
+        "Selected templates are copied to target project"
+      ],
+      "test_steps": [
+        "Run ralph-init.sh and choose subset of agents",
+        "Verify only selected agent files are created",
+        "Run lint/syntax checks after init flow update"
+      ],
+      "dependencies": [
+        "R4-02"
+      ],
       "status": "pending"
     }
   ]
