@@ -253,8 +253,10 @@ async def cmd_start_auto() -> None:
 async def cmd_stop(force: bool = False) -> None:
     """Stop or kill Ralph."""
     global ralph_process, caffeinate_process
-    write_control("stop_now" if force else "stop", "")
+
     if force:
+        # 1. Kill all ralph processes by PID files
+        killed_pids = []
         for pf in ["ralph_codex.pid", "ralph_main.pid"]:
             p = PROJECT_DIR / pf
             if p.exists():
@@ -262,21 +264,58 @@ async def cmd_stop(force: bool = False) -> None:
                     pid = int(p.read_text().strip())
                     os.kill(pid, signal.SIGKILL)
                     subprocess.run(["pkill", "-KILL", "-P", str(pid)], capture_output=True)
+                    killed_pids.append(pid)
                 except (ProcessLookupError, ValueError):
                     pass
                 p.unlink(missing_ok=True)
+
+        # 2. Kill ralph_process if bot tracks it
         if ralph_process and ralph_process.poll() is None:
             ralph_process.kill()
-        await safe_send("⏹ Ralph killed immediately")
+            ralph_process.wait()
+
+        # 3. Kill caffeinate
+        if caffeinate_process:
+            caffeinate_process.terminate()
+            caffeinate_process = None
+
+        # 4. CRITICAL: Update state file to idle
+        set_idle_state("Stopped by user (force kill)")
+
+        # 5. Clean up control file
+        write_control("", "")
+
+        # 6. Reset globals
+        ralph_process = None
+
+        # 7. Confirm
+        await safe_send(f"⏹ Ralph killed. PIDs: {killed_pids or 'none'}\nState: idle")
     else:
+        # Graceful stop
+        write_control("stop", "")
         if ralph_process and ralph_process.poll() is None:
             await safe_send("⏹ Ralph will stop after current task")
+            # Wait up to 30 seconds for graceful shutdown
+            for _ in range(30):
+                await asyncio.sleep(1)
+                if ralph_process.poll() is not None:
+                    break
+            # If still running after 30s, force kill
+            if ralph_process.poll() is None:
+                await safe_send("⚠️ Ralph did not stop gracefully, force killing...")
+                await cmd_stop(force=True)
+                return
+            # Stopped gracefully
+            set_idle_state("Stopped gracefully by user")
+            if caffeinate_process:
+                caffeinate_process.terminate()
+                caffeinate_process = None
+            ralph_process = None
+            await safe_send("⏹ Ralph stopped gracefully. State: idle")
         else:
+            set_idle_state("Idle")
+            ralph_process = None
             await safe_send("⏸ Ralph is not running")
-    if caffeinate_process:
-        caffeinate_process.terminate()
-        caffeinate_process = None
-    ralph_process = None
 
 
 async def cmd_redo(task_id: str, notes: str) -> None:
@@ -577,6 +616,16 @@ async def main() -> None:
     if not TOKEN or not CHAT_ID:
         print("Set RALPH_TELEGRAM_TOKEN and RALPH_TELEGRAM_CHAT_ID in .env")
         sys.exit(1)
+
+    # Clean up orphaned state from previous bot crash
+    for pf in ["ralph_codex.pid", "ralph_main.pid"]:
+        p = PROJECT_DIR / pf
+        if p.exists():
+            try:
+                pid = int(p.read_text().strip())
+                os.kill(pid, 0)  # check if alive
+            except (ProcessLookupError, ValueError):
+                p.unlink(missing_ok=True)  # dead process, clean up
 
     await safe_send("🤖 Ralph Bot started! Type /help for commands.")
     await asyncio.gather(poll_updates(), watch_state())
