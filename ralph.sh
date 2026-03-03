@@ -23,11 +23,74 @@ fi
 cd "$PROJECT_DIR"
 export RALPH_PROJECT_DIR="$PROJECT_DIR"
 
+kill_tree() {
+    local pid="${1:-}"
+
+    # Guard rails: ignore empty/non-numeric/system pids.
+    [ -n "$pid" ] || return 0
+    case "$pid" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    [ "$pid" -gt 1 ] 2>/dev/null || return 0
+    kill -0 "$pid" 2>/dev/null || return 0
+
+    # Preferred path: recurse by direct children (pgrep -P).
+    if command -v pgrep >/dev/null 2>&1; then
+        local child
+        for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+            kill_tree "$child"
+        done
+    fi
+
+    # Hard kill with retries to avoid stale lingering processes.
+    local attempt
+    for attempt in 1 2 3; do
+        kill -9 "$pid" 2>/dev/null || true
+        sleep 1
+        kill -0 "$pid" 2>/dev/null || return 0
+    done
+    kill -9 "$pid" 2>/dev/null || true
+}
+
+CLEANUP_RUNNING=0
 cleanup() {
+    # Prevent recursive cleanup (explicit call + trap).
+    if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
+        return 0
+    fi
+    CLEANUP_RUNNING=1
+
+    local codex_pid=""
+    local main_pid=""
+
+    if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
+        codex_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
+    fi
+    if [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+        main_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
+    fi
+
+    # 1) Kill codex tree first.
+    [ -n "$codex_pid" ] && kill_tree "$codex_pid"
+
+    # 2) Kill all direct children of current orchestrator shell.
+    if command -v pgrep >/dev/null 2>&1; then
+        local child
+        for child in $(pgrep -P "$$" 2>/dev/null || true); do
+            kill_tree "$child"
+        done
+    fi
+
+    # 3) Kill main tree from pid-file if it points to another process.
+    # If it is this shell, only children are killed to allow clean EXIT flow.
+    if [ -n "$main_pid" ] && [ "$main_pid" != "$$" ]; then
+        kill_tree "$main_pid"
+    fi
+
     rm -f "$PROJECT_DIR/ralph_codex.pid"
     rm -f "$PROJECT_DIR/ralph_main.pid"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
@@ -36,6 +99,8 @@ CODEX_RETRY_DELAYS=(60 120 300)
 RATE_LIMIT_PAUSE=1800
 CONSECUTIVE_FAILURES=0
 MAX_CONSECUTIVE_FAILURES=3
+DEFAULT_MODEL=""
+MINI_MODEL="codex-mini"
 SESSION_TOKENS=0
 SESSION_TASKS=0
 LOG_DIR="$PROJECT_DIR/logs"
@@ -118,16 +183,83 @@ notify() {
     python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" >/dev/null 2>&1 || true
 }
 
+file_mtime() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        echo 0
+        return 0
+    fi
+    stat -f %m "$file" 2>/dev/null || stat -c %Y "$file" 2>/dev/null || echo 0
+}
+
+run_codex_watchdog() {
+    local output_file="$1"
+    local target_pid="$2"
+    local stale_timeout="${3:-300}"
+    local fired_flag="$4"
+    local last_activity
+    local last_mtime
+    local now
+
+    # Keep a tail follower running so output stream activity is continuously observed.
+    tail -n 0 -f "$output_file" >/dev/null 2>&1 &
+    local tail_pid=$!
+
+    last_activity=$(date +%s)
+    last_mtime=$(file_mtime "$output_file")
+
+    while kill -0 "$target_pid" 2>/dev/null; do
+        sleep 5
+        now=$(date +%s)
+
+        local current_mtime
+        current_mtime=$(file_mtime "$output_file")
+        if [ "$current_mtime" -gt "$last_mtime" ]; then
+            last_mtime="$current_mtime"
+            last_activity="$now"
+        fi
+
+        # 300s watchdog timeout window.
+        if [ $((now - last_activity)) -ge "$stale_timeout" ]; then
+            log "Watchdog timeout - killing stale codex process"
+            notify "🚨 Watchdog timeout - killing stale codex process. Task: ${TASK_ID:-unknown}"
+
+            if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
+                local stale_pid
+                stale_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
+                if [ -n "$stale_pid" ]; then
+                    kill -KILL "$stale_pid" 2>/dev/null || true
+                    pkill -P "$stale_pid" 2>/dev/null || true
+                fi
+            fi
+
+            kill -KILL "$target_pid" 2>/dev/null || true
+            pkill -P "$target_pid" 2>/dev/null || true
+            echo "watchdog_fired" > "$fired_flag"
+            break
+        fi
+    done
+
+    kill "$tail_pid" 2>/dev/null || true
+    wait "$tail_pid" 2>/dev/null || true
+}
+
 run_codex() {
     local prompt="$1"
     local output_file="$2"
     local review_file="${3:-}"
     local timeout="$4"
+    local model="${5:-}"
     local retry=0
     local exit_code=0
+    local watchdog_timeout=300
 
     while [ $retry -le $MAX_CODEX_RETRIES ]; do
         echo "$$" > "$PROJECT_DIR/ralph_codex.pid"
+        : > "$output_file"
+        local watchdog_flag
+        watchdog_flag="/tmp/ralph_watchdog_${$}_${retry}.flag"
+        rm -f "$watchdog_flag"
         set +e
         if [ -n "$review_file" ]; then
             (
@@ -136,10 +268,9 @@ run_codex() {
                 export GIT_AUTHOR_NAME='Ralph Coder'
                 export GIT_AUTHOR_EMAIL='ralph@dev'
                 gtimeout --foreground --kill-after=10 "$timeout" \
-                    codex exec -s danger-full-access -o "$review_file" "$prompt" \
+                    codex exec -s danger-full-access ${model:+-m "$model"} -o "$review_file" "$prompt" \
                     > "$output_file" 2>&1
-            )
-            exit_code=$?
+            ) &
         else
             (
                 export GIT_EDITOR=true
@@ -147,14 +278,42 @@ run_codex() {
                 export GIT_AUTHOR_NAME='Ralph Coder'
                 export GIT_AUTHOR_EMAIL='ralph@dev'
                 gtimeout --foreground --kill-after=10 "$timeout" \
-                    codex exec -s danger-full-access "$prompt" \
+                    codex exec -s danger-full-access ${model:+-m "$model"} "$prompt" \
                     > "$output_file" 2>&1
-            )
-            exit_code=$?
+            ) &
         fi
+        local codex_pid=$!
+        run_codex_watchdog "$output_file" "$codex_pid" "$watchdog_timeout" "$watchdog_flag" &
+        local watchdog_pid=$!
+
+        wait "$codex_pid"
+        exit_code=$?
+        kill "$watchdog_pid" 2>/dev/null || true
+        wait "$watchdog_pid" 2>/dev/null || true
         set -e
+
+        local watchdog_fired=0
+        if [ -s "$watchdog_flag" ]; then
+            watchdog_fired=1
+        fi
+        rm -f "$watchdog_flag"
+
         rm -f "$PROJECT_DIR/ralph_codex.pid"
         pkill -P "$$" 2>/dev/null || true
+
+        # Watchdog timeout - retry with backoff like other recoverable errors.
+        if [ "$watchdog_fired" -eq 1 ]; then
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            if [ $retry -lt $MAX_CODEX_RETRIES ]; then
+                local wd_delay=${CODEX_RETRY_DELAYS[$retry]}
+                log "⚠️ Watchdog triggered. Retry $((retry+1))/$MAX_CODEX_RETRIES in ${wd_delay}s..."
+                notify "⚠️ Watchdog timeout on ${TASK_ID:-unknown}. Retrying in ${wd_delay}s..."
+                sleep "$wd_delay"
+                retry=$((retry + 1))
+                continue
+            fi
+            return 1
+        fi
 
         # Success
         if [ $exit_code -eq 0 ]; then
@@ -286,6 +445,7 @@ while true; do
         log "⏹ Stop signal received"
         write_state "stopped" "" "" "Stopped by user"
         notify "⏹ Ralph stopped by user"
+        cleanup
         exit 0
     fi
 
@@ -304,6 +464,32 @@ import sys, json
 task = json.load(sys.stdin)
 print(task.get('timeout', 180))
 " 2>/dev/null || echo "180")
+
+    # Extract complexity (default: moderate)
+    TASK_COMPLEXITY=$(echo "$TASK_JSON" | python3 -c "
+import sys, json
+task = json.load(sys.stdin)
+print(task.get('complexity', 'moderate'))
+" 2>/dev/null || echo "moderate")
+
+    # Extract required_context files
+    TASK_CONTEXT_FILES=$(echo "$TASK_JSON" | python3 -c "
+import sys, json
+task = json.load(sys.stdin)
+files = task.get('required_context', [])
+print(' '.join(files) if files else '')
+" 2>/dev/null || echo "")
+
+    # Select model based on complexity
+    CODEX_MODEL=""
+    if [ "$TASK_COMPLEXITY" = "simple" ]; then
+        CODEX_MODEL="$MINI_MODEL"
+        log "🧠 Model: codex-mini (simple task)"
+    else
+        log "🧠 Model: default (complexity: $TASK_COMPLEXITY)"
+    fi
+
+    log "📋 Complexity: $TASK_COMPLEXITY"
     TASK_START=$(date +%s)
 
     log "📋 Task: $TASK_ID — $TASK_TITLE"
@@ -338,6 +524,19 @@ print(task.get('timeout', 180))
             MEMORY_RECENT=$(cat .ralph/memory/recent.md 2>/dev/null || true)
         fi
 
+        # Read required_context files
+        CONTEXT_CONTENT=""
+        if [ -n "$TASK_CONTEXT_FILES" ]; then
+            for ctx_file in $TASK_CONTEXT_FILES; do
+                if [ -f "$ctx_file" ]; then
+                    CONTEXT_CONTENT="${CONTEXT_CONTENT}
+## File: $ctx_file
+$(cat "$ctx_file" 2>/dev/null | head -200)
+"
+                fi
+            done
+        fi
+
         CODER_PROMPT="Read AGENTS.md and AGENTS_CODER.md first. Then read progress.md.
 Run make test to verify current state.
 
@@ -346,6 +545,9 @@ ${MEMORY_CORE:-No core context yet. Read AGENTS.md for project info.}
 
 ## Recent Tasks (what was done before you)
 ${MEMORY_RECENT:-No recent tasks yet. This may be the first task.}
+
+## Required Context Files
+${CONTEXT_CONTENT:-No specific files required.}
 
 ## Your Task
 $TASK_JSON"
@@ -379,7 +581,7 @@ $HUMAN_COMMENT"
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
         set +e
         # run_codex handles retries/backoff for codex execution
-        run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT"
+        run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
         CODEX_EXIT=$?
         set -e
         CODER_TOKENS=$(extract_tokens "$CODER_OUTPUT")
@@ -403,15 +605,38 @@ $HUMAN_COMMENT"
         fi
         TEST_OUTPUT=$(make test 2>&1 | tail -40 || echo "tests failed")
 
-        # ═══ TECH LEAD ═══
-        log "───────────────────────────────────────────"
-        log "👔 TECH LEAD — Reviewing"
-        log "───────────────────────────────────────────"
-        log "👔 [TECH LEAD] Reviewing..."
-        write_state "running" "$TASK_ID" "tech_lead" "Tech Lead reviewing..."
-        LEAD_START=$(date +%s)
+        REVIEW_FILE="/tmp/ralph_review_$$.txt"
+        LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
 
-        LEAD_PROMPT="Read AGENTS_LEAD.md first.
+        # Skip lead review for trivial tasks
+        SKIP_LEAD=$(echo "$TASK_JSON" | python3 -c "
+import sys, json
+task = json.load(sys.stdin)
+tags = task.get('tags', [])
+if 'trivial' in tags or task.get('skip_lead', False):
+    print('true')
+else:
+    print('false')
+" 2>/dev/null || echo "false")
+
+        if [ "$SKIP_LEAD" = "true" ]; then
+            log "⏭️ Skipping lead review (trivial task)"
+            DECISION="approve"
+            QUALITY="auto"
+            REVIEW='{"decision":"approve","quality_score":"auto","progress_note":"Auto-approved trivial task"}'
+            # Jump to decision handling — set vars that approve block needs
+            LEAD_TOKENS=0
+            LEAD_DURATION=0
+        else
+            # ═══ TECH LEAD ═══
+            log "───────────────────────────────────────────"
+            log "👔 TECH LEAD — Reviewing"
+            log "───────────────────────────────────────────"
+            log "👔 [TECH LEAD] Reviewing..."
+            write_state "running" "$TASK_ID" "tech_lead" "Tech Lead reviewing..."
+            LEAD_START=$(date +%s)
+
+            LEAD_PROMPT="Read AGENTS_LEAD.md first.
 
 ## Task
 $TASK_JSON
@@ -431,21 +656,20 @@ $(head -30 progress.md 2>/dev/null || echo 'none')
 
 Output ONLY a JSON object with your decision."
 
-        REVIEW_FILE="/tmp/ralph_review_$$.txt"
-        LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
-        set +e
-        # run_codex handles retries/backoff for codex execution
-        run_codex "$LEAD_PROMPT" "$LEAD_OUTPUT" "$REVIEW_FILE" "$TASK_TIMEOUT"
-        CODEX_EXIT=$?
-        set -e
-        LEAD_TOKENS=$(extract_tokens "$LEAD_OUTPUT")
-        TASK_TOKENS=$((TASK_TOKENS + ${LEAD_TOKENS:-0}))
-        SESSION_TOKENS=$((SESSION_TOKENS + ${LEAD_TOKENS:-0}))
-        log "💰 [LEAD]  Tokens: $(format_tokens "$LEAD_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
-        LEAD_DURATION=$(( $(date +%s) - LEAD_START ))
-        log "⏱️ Tech Lead took ${LEAD_DURATION}s"
-        REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
-        log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
+            set +e
+            # run_codex handles retries/backoff for codex execution
+            run_codex "$LEAD_PROMPT" "$LEAD_OUTPUT" "$REVIEW_FILE" "$TASK_TIMEOUT" "$CODEX_MODEL"
+            CODEX_EXIT=$?
+            set -e
+            LEAD_TOKENS=$(extract_tokens "$LEAD_OUTPUT")
+            TASK_TOKENS=$((TASK_TOKENS + ${LEAD_TOKENS:-0}))
+            SESSION_TOKENS=$((SESSION_TOKENS + ${LEAD_TOKENS:-0}))
+            log "💰 [LEAD]  Tokens: $(format_tokens "$LEAD_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
+            LEAD_DURATION=$(( $(date +%s) - LEAD_START ))
+            log "⏱️ Tech Lead took ${LEAD_DURATION}s"
+            REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
+            log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
+        fi
 
         DECISION=$(echo "$REVIEW" | python3 -c "
 import sys, json, re
