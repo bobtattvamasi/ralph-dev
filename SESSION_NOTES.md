@@ -52,3 +52,8 @@
 - Git safety (GIT_EDITOR=true) added to codex subshells
 - Orphan PID cleanup on bot startup added
 - Graceful stop with 30s timeout implemented
+
+### 2026-03-12 12:58 UTC
+Добавлен скрипт `scripts/auto_commit.sh` для автоматизации коммита через `codex exec`.
+Скрипт сам собирает staged diff, запрашивает у Codex summary и Conventional Commit message, затем парсит JSON-ответ.
+Перед коммитом он дописывает краткое описание с таймстампом в `SESSION_NOTES.md` и завершает `git commit` без открытия редактора.
