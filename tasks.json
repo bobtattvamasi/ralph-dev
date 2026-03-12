@@ -645,7 +645,8 @@
         "R1-03",
         "R2-01"
       ],
-      "status": "pending"
+      "status": "status",
+      "revision_notes": "done"
     },
     {
       "id": "R3-01",
