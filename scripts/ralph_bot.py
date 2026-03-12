@@ -22,6 +22,7 @@ CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
 TASKS_FILE = PROJECT_DIR / "tasks.json"
 PROGRESS_FILE = PROJECT_DIR / "progress.md"
 LOG_DIR = PROJECT_DIR / "logs"
+DAILY_COST_LIMIT_USD = 500.0
 
 TOKEN = ""
 CHAT_ID = ""
@@ -554,6 +555,45 @@ async def cmd_stats() -> None:
     await safe_send(msg)
 
 
+async def cmd_limits() -> None:
+    """Show today's usage against the current daily cost limit."""
+    metrics_file = LOG_DIR / "metrics.csv"
+    if not metrics_file.exists() or metrics_file.stat().st_size == 0:
+        await safe_send("📊 No metrics available yet. Run some tasks!")
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        with metrics_file.open(encoding="utf-8", errors="replace", newline="") as f:
+            rows = list(csv.DictReader(f))
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error reading metrics.csv: {exc}")
+        return
+
+    today_rows = [row for row in rows if str(row.get("timestamp", "")).startswith(today)]
+    if not today_rows:
+        await safe_send("📊 No metrics available yet. Run some tasks!")
+        return
+
+    def parse_float(row: dict, key: str) -> float:
+        try:
+            return float(row.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    total_tasks = len(today_rows)
+    total_cost = sum(parse_float(row, "cost_est") for row in today_rows)
+    status = "WARNING" if total_cost > DAILY_COST_LIMIT_USD else "OK"
+
+    msg = (
+        "💰 <b>Today's Usage</b>\n"
+        f"Tasks: {total_tasks}\n"
+        f"Cost: ${total_cost:.2f} / ${DAILY_COST_LIMIT_USD:.2f}\n"
+        f"Status: {status}"
+    )
+    await safe_send(msg)
+
+
 async def cmd_plan() -> None:
     """Show tasks grouped by phase plus next pending tasks."""
     if not TASKS_FILE.exists():
@@ -662,6 +702,7 @@ async def cmd_help() -> None:
         "/tail [N] — last N lines of live codex output\n"
         "/cost — token usage & cost estimate\n"
         "/stats — aggregated task metrics from metrics.csv\n"
+        "/limits — today's spend vs cost limit\n"
         "/diff — last commit changes\n"
     )
 
@@ -734,6 +775,8 @@ async def handle_update(update: dict) -> None:
         await cmd_cost()
     elif cmd == "/stats":
         await cmd_stats()
+    elif cmd == "/limits":
+        await cmd_limits()
     elif cmd == "/diff":
         await cmd_diff()
     elif cmd == "/help" or (cmd == "/start" and not args):
