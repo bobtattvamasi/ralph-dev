@@ -668,9 +668,9 @@
       "dependencies": [
         "R1-12"
       ],
-      "status": "done",
+      "status": "pending",
       "completed_at": "2026-03-12T18:44:58.001318+00:00",
-      "revision_notes": "Done via Telegram"
+      "revision_notes": "Redo via Telegram"
     },
     {
       "id": "R3-02",
