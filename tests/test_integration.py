@@ -39,6 +39,7 @@ from pathlib import Path
 
 args = sys.argv[1:]
 review_file = None
+prompt = args[-1] if args else ""
 i = 0
 while i < len(args):
     if args[i] in {"-s", "-m"}:
@@ -53,6 +54,7 @@ sleep_s = float(os.environ.get("MOCK_CODEX_SLEEP", "0"))
 mode = os.environ.get("MOCK_CODEX_MODE", "success")
 marker_file = os.environ.get("MOCK_RATE_LIMIT_MARKER", "")
 child_pid_file = os.environ.get("MOCK_CHILD_PID_FILE", "")
+prompt_capture_file = os.environ.get("MOCK_CODEX_CAPTURE_PROMPT_FILE", "")
 if review_file:
     payload = {
         "decision": "approve",
@@ -61,6 +63,8 @@ if review_file:
     }
     Path(review_file).write_text(json.dumps(payload), encoding="utf-8")
 else:
+    if prompt_capture_file:
+        Path(prompt_capture_file).write_text(prompt, encoding="utf-8")
     if mode == "rate_limit_once":
         marker = Path(marker_file) if marker_file else None
         if marker is not None and not marker.exists():
@@ -165,7 +169,7 @@ def create_test_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
                 "id": "T01",
                 "phase": "R1",
                 "title": "Integration test task",
-                "description": "Exercise ralph.sh integration flow",
+                "description": "Exercise prompt builder for context injection and keyword snippets",
                 "status": "pending",
                 "priority": "high",
                 "dependencies": [],
@@ -183,6 +187,15 @@ def create_test_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     (project_dir / ".ralph" / "memory" / "core.md").write_text("# Core\n", encoding="utf-8")
     (project_dir / ".ralph" / "memory" / "recent.md").write_text("# Recent\n", encoding="utf-8")
     (project_dir / "Makefile").write_text(".PHONY: test\n\ntest:\n\t@true\n", encoding="utf-8")
+    (project_dir / "src").mkdir()
+    (project_dir / "src" / "prompt_builder.ts").write_text(
+        "export function buildKeywordPrompt() {\n"
+        "  return 'context injection keyword matching prompt builder "
+        + ("alpha " * 120)
+        + "';\n"
+        "}\n",
+        encoding="utf-8",
+    )
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -221,6 +234,10 @@ def process_is_alive(pid: int) -> bool:
 
 def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
+    prompt_file = tmp_path / "coder_prompt.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["RALPH_CONTEXT_MAX_CHARS"] = "320"
+    env["RALPH_CODER_PROMPT_MAX_CHARS"] = "2200"
 
     result = subprocess.run(
         [str(RALPH_SH), "task", "T01"],
@@ -233,6 +250,15 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert load_task_status(project_dir) == "done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## AGENTS.md Context" in prompt
+    assert "# AGENTS" in prompt
+    assert "## Relevant Source Snippets" in prompt
+    assert "src/prompt_builder.ts" in prompt
+    assert "export function buildKeywordPrompt()" in prompt
+    assert "keyword matching prompt builder" in prompt
+    assert "... [truncated" in prompt
+    assert len(prompt) <= 2200 + 32
 
 
 def test_ralph_marks_task_skipped_on_skip_control(tmp_path: Path) -> None:

@@ -127,6 +127,7 @@ trap handle_interrupt INT TERM
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
 MAX_CODEX_RETRIES=3
+RALPH_TIMEOUT_LEAD="${RALPH_TIMEOUT_LEAD:-300}"
 CODEX_RETRY_DELAYS=(${RALPH_CODEX_RETRY_DELAYS:-60 120 300})
 RATE_LIMIT_PAUSE="${RALPH_RATE_LIMIT_PAUSE:-1800}"
 CONSECUTIVE_FAILURES=0
@@ -209,6 +210,24 @@ except Exception:
 " 2>/dev/null || printf "continue\n\n"
     else
         printf "continue\n\n"
+    fi
+}
+
+apply_timeout_override() {
+    local control_data action raw_value
+    control_data=$(read_control_file)
+    action=$(printf '%s\n' "$control_data" | sed -n '1p')
+    raw_value=$(printf '%s\n' "$control_data" | sed -n '2p')
+
+    case "$raw_value" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+
+    if [ "$action" = "timeout" ] && [ -n "$raw_value" ]; then
+        TASK_TIMEOUT="$raw_value"
+        TASK_LEAD_TIMEOUT="$raw_value"
+        log "⏱ Timeout override applied: coder=${TASK_TIMEOUT}s lead=${TASK_LEAD_TIMEOUT}s"
+        clear_control_action
     fi
 }
 
@@ -336,6 +355,192 @@ resolve_agent_prompt_file() {
     else
         printf '%s\n' "$fallback_file"
     fi
+}
+
+clip_chars() {
+    local max_chars="$1"
+    python3 -c "
+import sys
+limit = int(sys.argv[1])
+data = sys.stdin.read()
+if len(data) <= limit:
+    sys.stdout.write(data)
+else:
+    sys.stdout.write(data[:limit].rstrip() + '\n... [truncated]')
+" "$max_chars"
+}
+
+read_file_for_prompt() {
+    local file_path="$1"
+    local max_chars="$2"
+
+    if [ ! -f "$file_path" ]; then
+        return 0
+    fi
+
+    clip_chars "$max_chars" < "$file_path"
+}
+
+enforce_prompt_budget() {
+    local max_chars="${1:-${RALPH_PROMPT_MAX_CHARS:-40000}}"
+    clip_chars "$max_chars"
+}
+
+extract_task_keywords() {
+    python3 -c "
+import json
+import re
+import sys
+
+task = json.load(sys.stdin)
+parts = [
+    task.get('id', ''),
+    task.get('title', ''),
+    task.get('description', ''),
+    ' '.join(task.get('acceptance_criteria', []) or []),
+]
+text = ' '.join(parts).lower()
+tokens = re.findall(r'[a-z0-9_./-]{4,}', text)
+stopwords = {
+    'task', 'tasks', 'phase', 'high', 'medium', 'low', 'done', 'pending',
+    'with', 'from', 'that', 'this', 'into', 'only', 'must', 'then', 'than',
+    'when', 'uses', 'use', 'read', 'file', 'files', 'coder', 'prompt',
+    'before', 'after', 'based', 'large', 'overly', 'size', 'guard', 'includes',
+    'include', 'inject', 'injection', 'context', 'relevant', 'source',
+    'keyword', 'keywords', 'matching', 'project', 'agent', 'quality'
+}
+seen = []
+for token in tokens:
+    if token in stopwords:
+        continue
+    if token.startswith('r') and '-' in token:
+        continue
+    if token not in seen:
+        seen.append(token)
+for token in seen[:12]:
+    print(token)
+" 2>/dev/null || true
+}
+
+build_relevant_context() {
+    local task_json="$1"
+    local max_files="${RALPH_CONTEXT_MAX_FILES:-6}"
+    local max_chars="${RALPH_CONTEXT_MAX_CHARS:-12000}"
+    local tmp_keywords="/tmp/ralph_keywords_$$.txt"
+    local tmp_matches="/tmp/ralph_matches_$$.txt"
+    local tmp_output="/tmp/ralph_context_$$.txt"
+    : > "$tmp_keywords"
+    : > "$tmp_matches"
+    : > "$tmp_output"
+
+    printf '%s' "$task_json" | extract_task_keywords > "$tmp_keywords"
+    if [ ! -s "$tmp_keywords" ]; then
+        rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
+        return 0
+    fi
+
+    if ! command -v rg >/dev/null 2>&1; then
+        rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
+        return 0
+    fi
+
+    while IFS= read -r keyword; do
+        [ -n "$keyword" ] || continue
+        rg -l -i -m 1 --glob '!node_modules/**' --glob '!.git/**' --glob '!dist/**' \
+            --glob '!build/**' --glob '!.next/**' --glob '!coverage/**' --glob '!logs/**' \
+            --glob '!*.lock' --glob '!tasks.json' --glob '!progress.md' --glob '!AGENTS*.md' \
+            -- "$keyword" "$PROJECT_DIR" 2>/dev/null || true
+    done < "$tmp_keywords" | awk '!seen[$0]++' | head -n "$max_files" > "$tmp_matches"
+
+    if [ ! -s "$tmp_matches" ]; then
+        rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
+        return 0
+    fi
+
+    python3 - "$tmp_keywords" "$tmp_matches" "$PROJECT_DIR" "$max_chars" > "$tmp_output" <<'PY'
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+keywords_path = pathlib.Path(sys.argv[1])
+matches_path = pathlib.Path(sys.argv[2])
+project_dir = pathlib.Path(sys.argv[3])
+max_chars = int(sys.argv[4])
+per_file_limit = max(800, max_chars // 3)
+
+keywords = [line.strip() for line in keywords_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+matched_files = [line.strip() for line in matches_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+parts: list[str] = []
+parts.append("Selected by keyword match:")
+parts.append(", ".join(keywords))
+parts.append("")
+
+for matched_file in matched_files:
+    path = pathlib.Path(matched_file)
+    if not path.is_file():
+        continue
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            continue
+    except Exception:
+        continue
+
+    keyword_regexes = [re.compile(re.escape(keyword), re.IGNORECASE) for keyword in keywords]
+    hit_lines: list[int] = []
+    for index, line in enumerate(lines, start=1):
+        if any(regex.search(line) for regex in keyword_regexes):
+            hit_lines.append(index)
+        if len(hit_lines) >= 6:
+            break
+
+    ranges: list[tuple[int, int]] = []
+    context_radius = 4
+    for hit_line in hit_lines[:3]:
+        start = max(1, hit_line - context_radius)
+        end = min(len(lines), hit_line + context_radius)
+        if ranges and start <= ranges[-1][1] + 1:
+            ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
+        else:
+            ranges.append((start, end))
+
+    if not ranges:
+        end = min(len(lines), 40)
+        if end > 0:
+            ranges.append((1, end))
+
+    snippet_lines: list[str] = []
+    for start, end in ranges:
+        for line_no in range(start, end + 1):
+            snippet_lines.append(f"{line_no}: {lines[line_no - 1]}")
+        snippet_lines.append("...")
+
+    if snippet_lines and snippet_lines[-1] == "...":
+        snippet_lines.pop()
+
+    relative_path = path.relative_to(project_dir) if path.is_relative_to(project_dir) else path
+    body = "\n".join(snippet_lines)
+    file_section = f"## File: {relative_path}\n```text\n{body}\n```"
+    if len(file_section) > per_file_limit:
+        file_section = file_section[:per_file_limit].rstrip() + "\n... [truncated file snippet]"
+    parts.append(file_section)
+    parts.append("")
+
+output = "\n".join(parts).rstrip()
+if len(output) > max_chars:
+    output = output[:max_chars].rstrip() + "\n... [truncated]"
+sys.stdout.write(output)
+PY
+
+    cat "$tmp_output"
+    rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
 }
 
 get_human_comment() {
@@ -810,12 +1015,20 @@ while true; do
 
     TASK_ID=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
     TASK_TITLE=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
-    # Extract timeout from task (default 180s)
+    # Extract coder timeout from task (default 180s)
     TASK_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
 import sys, json
 task = json.load(sys.stdin)
 print(task.get('timeout', 180))
 " 2>/dev/null || echo "180")
+
+    # Extract lead timeout with a higher default for heavier review tasks.
+    TASK_LEAD_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
+import os, sys, json
+task = json.load(sys.stdin)
+default_lead = int(os.environ.get('RALPH_TIMEOUT_LEAD', '300'))
+print(task.get('lead_timeout', task.get('timeout', default_lead)))
+" 2>/dev/null || echo "$RALPH_TIMEOUT_LEAD")
 
     # Extract complexity (default: moderate)
     TASK_COMPLEXITY=$(echo "$TASK_JSON" | python3 -c "
@@ -846,8 +1059,8 @@ print(task.get('role', 'coder'))
 
     CODER_ROLE_FILE=$(resolve_agent_prompt_file "$TASK_ROLE" "AGENTS_CODER.md")
     LEAD_ROLE_FILE=$(resolve_agent_prompt_file "$TASK_ROLE" "AGENTS_LEAD.md")
-    CODER_ROLE_CONTENT=$(cat "$CODER_ROLE_FILE" 2>/dev/null || true)
-    LEAD_ROLE_CONTENT=$(cat "$LEAD_ROLE_FILE" 2>/dev/null || true)
+    CODER_ROLE_CONTENT=$(read_file_for_prompt "$CODER_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
+    LEAD_ROLE_CONTENT=$(read_file_for_prompt "$LEAD_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
 
     # Select model based on complexity
     CODEX_MODEL=""
@@ -861,11 +1074,12 @@ print(task.get('role', 'coder'))
     log "📋 Complexity: $TASK_COMPLEXITY"
     log "⚠️ Risk: $TASK_RISK"
     log "🧩 Role: $TASK_ROLE (coder instructions: $CODER_ROLE_FILE, lead instructions: $LEAD_ROLE_FILE)"
+    apply_timeout_override
     TASK_START=$(date +%s)
 
     log "📋 Task: $TASK_ID — $TASK_TITLE"
     log "📋 TASK_START task_id=$TASK_ID title=\"$TASK_TITLE\" timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    log "⏱  Timeout: ${TASK_TIMEOUT}s"
+    log "⏱  Timeout: coder=${TASK_TIMEOUT}s lead=${TASK_LEAD_TIMEOUT}s"
 
     FIX_RETRY=0
     TASK_DONE=false
@@ -899,16 +1113,31 @@ print(task.get('role', 'coder'))
         write_state "running" "$TASK_ID" "coder" "Coder implementing..."
         notify "🤖 [CODER] Starting: $TASK_ID — $TASK_TITLE"
         CODER_START=$(date +%s)
+        apply_timeout_override
 
         # Inject memory context
+        PROJECT_AGENTS=""
+        PROJECT_ARCHITECTURE=""
+        PROJECT_MEMORY_SYSTEM=""
         MEMORY_CORE=""
         MEMORY_RECENT=""
+        RELEVANT_CONTEXT=""
+        if [ -f "AGENTS.md" ]; then
+            PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
+        fi
+        if [ -f "ARCHITECTURE.md" ]; then
+            PROJECT_ARCHITECTURE=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
+        fi
+        if [ -f "MEMORY_SYSTEM.md" ]; then
+            PROJECT_MEMORY_SYSTEM=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
+        fi
         if [ -f ".ralph/memory/core.md" ]; then
-            MEMORY_CORE=$(cat .ralph/memory/core.md 2>/dev/null || true)
+            MEMORY_CORE=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
         fi
         if [ -f ".ralph/memory/recent.md" ]; then
-            MEMORY_RECENT=$(cat .ralph/memory/recent.md 2>/dev/null || true)
+            MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
         fi
+        RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" || true)
 
         # Read required_context files
         CONTEXT_CONTENT=""
@@ -917,19 +1146,10 @@ print(task.get('role', 'coder'))
                 if [ -f "$ctx_file" ]; then
                     CONTEXT_CONTENT="${CONTEXT_CONTENT}
 ## File: $ctx_file
-$(cat "$ctx_file" 2>/dev/null | head -200)
+$(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
 "
                 fi
             done
-        fi
-
-        PROJECT_ARCHITECTURE=""
-        PROJECT_MEMORY_SYSTEM=""
-        if [ -f "ARCHITECTURE.md" ]; then
-            PROJECT_ARCHITECTURE=$(cat ARCHITECTURE.md 2>/dev/null || true)
-        fi
-        if [ -f "MEMORY_SYSTEM.md" ]; then
-            PROJECT_MEMORY_SYSTEM=$(cat MEMORY_SYSTEM.md 2>/dev/null || true)
         fi
 
         CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Then read progress.md.
@@ -937,6 +1157,9 @@ Run make test to verify current state.
 
 ## Architecture Doc
 ${PROJECT_ARCHITECTURE:-No ARCHITECTURE.md provided. Use AGENTS.md and the repository structure.}
+
+## AGENTS.md Context
+${PROJECT_AGENTS:-No AGENTS.md provided.}
 
 ## Memory System Doc
 ${PROJECT_MEMORY_SYSTEM:-No MEMORY_SYSTEM.md provided. Use AGENTS.md and .ralph/memory/.}
@@ -952,6 +1175,9 @@ ${MEMORY_RECENT:-No recent tasks yet. This may be the first task.}
 
 ## Required Context Files
 ${CONTEXT_CONTENT:-No specific files required.}
+
+## Relevant Source Snippets
+${RELEVANT_CONTEXT:-No keyword-matched source snippets found.}
 
 ## Your Task
 $TASK_JSON"
@@ -990,6 +1216,7 @@ Expected response structure:
 \`\`\`python
 ... code ...
 \`\`\`"
+        CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
 
         PRE_HASH=$(git rev-parse HEAD)
 
@@ -1064,6 +1291,7 @@ else:
             log "👔 [TECH LEAD] Reviewing..."
             write_state "running" "$TASK_ID" "tech_lead" "Tech Lead reviewing..."
             LEAD_START=$(date +%s)
+            apply_timeout_override
 
             LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${LEAD_ROLE_FILE} first.
 
@@ -1090,7 +1318,7 @@ Output ONLY a JSON object with your decision."
 
             set +e
             # run_codex handles retries/backoff for codex execution
-            run_codex "$LEAD_PROMPT" "$LEAD_OUTPUT" "$REVIEW_FILE" "$TASK_TIMEOUT" "$CODEX_MODEL"
+            run_codex "$LEAD_PROMPT" "$LEAD_OUTPUT" "$REVIEW_FILE" "$TASK_LEAD_TIMEOUT" "$CODEX_MODEL"
             CODEX_EXIT=$?
             set -e
             LEAD_TOKENS=$(extract_tokens "$LEAD_OUTPUT")

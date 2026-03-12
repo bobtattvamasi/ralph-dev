@@ -188,6 +188,13 @@ def save_tasks_data(data: dict) -> None:
     TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def prepare_html_message(text: str) -> str:
+    """Escape plain text while preserving the bot's small allowed HTML subset."""
+    if any(tag in text for tag in ("<b>", "</b>", "<pre>", "</pre>", "<code>", "</code>")):
+        return text
+    return html.escape(text)
+
+
 def parse_metric_number(row: dict, key: str) -> float:
     """Parse a numeric metrics field with safe fallback."""
     try:
@@ -287,7 +294,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
 async def safe_send(text: str, reply_markup: dict | None = None) -> None:
     """Best-effort message send; never raises to caller."""
     try:
-        await send_message(text, reply_markup=reply_markup)
+        await send_message(prepare_html_message(text), reply_markup=reply_markup)
     except Exception as exc:  # noqa: BLE001
         print(f"[bot] Send error: {exc}", file=sys.stderr)
 
@@ -485,6 +492,35 @@ async def cmd_redo(task_id: str, notes: str) -> None:
         await safe_send(f"🔄 {task_id} reset to pending{suffix}")
     except subprocess.CalledProcessError as exc:
         await safe_send(f"❌ Error: {exc.stderr.decode()}")
+
+
+async def cmd_done(task_id: str) -> None:
+    """Mark a task as done from Telegram."""
+    if not task_id:
+        await safe_send("Usage: /done [task_id]")
+        return
+    try:
+        subprocess.run(
+            ["python3", "scripts/update_task.py", task_id, "done", "Done via Telegram"],
+            cwd=str(PROJECT_DIR),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        await safe_send(f"✅ Task {task_id} marked done")
+    except subprocess.CalledProcessError as exc:
+        err = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+        await safe_send(f"❌ Error: {err}")
+
+
+async def cmd_timeout(seconds: str) -> None:
+    """Store a timeout override in ralph_control.json."""
+    value = seconds.strip()
+    if not value.isdigit():
+        await safe_send("Usage: /timeout [seconds]")
+        return
+    write_control("timeout", value)
+    await safe_send(f"⏱ Timeout override set to {value}s for the next task step")
 
 
 async def cmd_pause() -> None:
@@ -900,7 +936,9 @@ async def cmd_help() -> None:
         "/auto — run all\n"
         "/stop — stop after current task\n"
         "/stop now — kill immediately\n"
+        "/done [task_id] — mark task done\n"
         "/redo [task_id] [notes] — redo task\n"
+        "/timeout [seconds] — set timeout override\n"
         "/comment text — instruction for next task\n"
         "/log [N] — last N lines from ralph execution log\n"
         "/progress [N] — last N lines from progress.md\n"
@@ -962,11 +1000,15 @@ async def handle_update(update: dict) -> None:
         await cmd_start_auto()
     elif cmd == "/stop":
         await cmd_stop(force="now" in args)
+    elif cmd == "/done":
+        await cmd_done(args.strip())
     elif cmd == "/redo" and args:
         args_parts = args.split(maxsplit=1)
         task_id = args_parts[0]
         notes = args_parts[1] if len(args_parts) > 1 else ""
         await cmd_redo(task_id, notes)
+    elif cmd == "/timeout":
+        await cmd_timeout(args.strip())
     elif cmd == "/comment" and args:
         write_control("comment", args)
         await safe_send(f"📝 Comment saved for next task:\n{args}")
