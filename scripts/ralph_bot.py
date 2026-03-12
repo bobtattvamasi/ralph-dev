@@ -7,6 +7,7 @@ import asyncio
 import csv
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -93,6 +94,16 @@ def get_log_tail(n: int = 15) -> str:
         return header + "\n".join(tail)
     except Exception as e:  # noqa: BLE001
         return f"Error reading {latest.name}: {e}"
+
+
+def load_tasks_data() -> dict:
+    """Load tasks.json as a dict."""
+    return json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+
+
+def save_tasks_data(data: dict) -> None:
+    """Persist tasks.json with stable formatting."""
+    TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 async def send_message(text: str, reply_markup: dict | None = None) -> None:
@@ -334,6 +345,94 @@ async def cmd_redo(task_id: str, notes: str) -> None:
         await safe_send(f"❌ Error: {exc.stderr.decode()}")
 
 
+async def cmd_add(args: str) -> None:
+    """Add a new pending task to tasks.json."""
+    parts = args.split(maxsplit=1)
+    if len(parts) < 2:
+        await safe_send("Usage: /add <phase> <title>")
+        return
+
+    phase, title = parts[0].strip(), parts[1].strip()
+    if not phase or not title:
+        await safe_send("Usage: /add <phase> <title>")
+        return
+
+    if not TASKS_FILE.exists():
+        await safe_send("No tasks.json found")
+        return
+
+    try:
+        data = load_tasks_data()
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error reading tasks.json: {exc}")
+        return
+
+    tasks = data.get("tasks", [])
+    phase_pattern = re.compile(rf"^{re.escape(phase)}-(\d+)$")
+    next_num = 1
+    for task in tasks:
+        match = phase_pattern.match(str(task.get("id", "")))
+        if match:
+            next_num = max(next_num, int(match.group(1)) + 1)
+
+    task_id = f"{phase}-{next_num:02d}"
+    new_task = {
+        "id": task_id,
+        "phase": phase,
+        "category": "feature",
+        "priority": "medium",
+        "title": title,
+        "description": title,
+        "acceptance_criteria": [],
+        "test_steps": [],
+        "dependencies": [],
+        "status": "pending",
+    }
+    tasks.append(new_task)
+    data["tasks"] = tasks
+
+    try:
+        save_tasks_data(data)
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error saving tasks.json: {exc}")
+        return
+
+    await safe_send(f"✅ Task {task_id} added")
+
+
+async def cmd_rm(args: str) -> None:
+    """Remove a task from tasks.json by id."""
+    task_id = args.strip()
+    if not task_id:
+        await safe_send("Usage: /rm <task_id>")
+        return
+
+    if not TASKS_FILE.exists():
+        await safe_send("No tasks.json found")
+        return
+
+    try:
+        data = load_tasks_data()
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error reading tasks.json: {exc}")
+        return
+
+    tasks = data.get("tasks", [])
+    filtered_tasks = [task for task in tasks if task.get("id") != task_id]
+    if len(filtered_tasks) == len(tasks):
+        await safe_send(f"❌ Task {task_id} not found")
+        return
+
+    data["tasks"] = filtered_tasks
+    try:
+        save_tasks_data(data)
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error saving tasks.json: {exc}")
+        return
+
+    await safe_send(f"🗑 Task {task_id} removed")
+
+
 async def cmd_diff() -> None:
     """Send last diff stat."""
     try:
@@ -535,6 +634,8 @@ async def cmd_help() -> None:
         "/status — current state\n"
         "/tasks [phase] — task list\n"
         "/plan — phase summary and next pending tasks\n"
+        "/add <phase> <title> — add a pending task\n"
+        "/rm <task_id> — remove a task\n"
         "/start TASK_ID — run one task\n"
         "/phase NUM — run phase\n"
         "/auto — run all\n"
@@ -582,6 +683,10 @@ async def handle_update(update: dict) -> None:
         await safe_send(get_tasks_summary(args or None))
     elif cmd == "/plan":
         await cmd_plan()
+    elif cmd == "/add" and args:
+        await cmd_add(args)
+    elif cmd == "/rm":
+        await cmd_rm(args)
     elif cmd == "/start" and args:
         await cmd_start_task(args)
     elif cmd == "/phase" and args:

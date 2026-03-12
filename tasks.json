@@ -300,7 +300,8 @@
       "dependencies": [
         "R1-01"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-12T13:06:55Z"
     },
     {
       "id": "R2-03",
@@ -499,7 +500,8 @@
       "dependencies": [
         "R2-02"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-12T13:06:55Z"
     },
     {
       "id": "R2-05",
