@@ -188,6 +188,48 @@ def save_tasks_data(data: dict) -> None:
     TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def parse_metric_number(row: dict, key: str) -> float:
+    """Parse a numeric metrics field with safe fallback."""
+    try:
+        return float(row.get(key, 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def summarize_metrics(rows: list[dict]) -> dict[str, float | int]:
+    """Aggregate task metrics for /stats output."""
+    total_tasks = len(rows)
+    success_rows = [row for row in rows if row.get("status") == "success"]
+    failed_rows = [row for row in rows if row.get("status") == "failed"]
+
+    avg_duration = (
+        sum(parse_metric_number(row, "duration_s") for row in rows) / total_tasks
+        if total_tasks
+        else 0.0
+    )
+    avg_attempts = (
+        sum(parse_metric_number(row, "attempts") for row in rows) / total_tasks
+        if total_tasks
+        else 0.0
+    )
+    avg_files_changed = (
+        sum(parse_metric_number(row, "files_changed") for row in rows) / total_tasks
+        if total_tasks
+        else 0.0
+    )
+    total_cost = sum(parse_metric_number(row, "cost_est") for row in rows)
+
+    return {
+        "total_tasks": total_tasks,
+        "success_count": len(success_rows),
+        "failed_count": len(failed_rows),
+        "avg_duration": avg_duration,
+        "avg_attempts": avg_attempts,
+        "avg_files_changed": avg_files_changed,
+        "total_cost": total_cost,
+    }
+
+
 async def send_message(text: str, reply_markup: dict | None = None) -> None:
     """Send message via Telegram API."""
     import urllib.request
@@ -625,31 +667,17 @@ async def cmd_stats() -> None:
         await safe_send("📊 No metrics available yet. Run some tasks!")
         return
 
-    total_tasks = len(rows)
-    success_rows = [row for row in rows if row.get("status") == "success"]
-    failed_rows = [row for row in rows if row.get("status") == "failed"]
-
-    def parse_float(row: dict, key: str) -> float:
-        try:
-            return float(row.get(key, 0) or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
-    avg_duration = (
-        sum(parse_float(row, "duration_s") for row in success_rows) / len(success_rows)
-        if success_rows
-        else 0.0
-    )
-    avg_attempts = sum(parse_float(row, "attempts") for row in rows) / total_tasks
-    total_cost = sum(parse_float(row, "cost_est") for row in rows)
+    summary = summarize_metrics(rows)
 
     msg = (
         "📊 <b>Ralph Stats</b>\n"
-        f"Всего задач: {total_tasks}\n"
-        f"Успешных vs Проваленных: {len(success_rows)} vs {len(failed_rows)}\n"
-        f"Среднее время выполнения: {avg_duration:.1f}s\n"
-        f"Среднее число попыток: {avg_attempts:.1f}\n"
-        f"Общая стоимость: ${total_cost:.2f}"
+        f"Всего задач: {summary['total_tasks']}\n"
+        f"Успешных: {summary['success_count']}\n"
+        f"Проваленных: {summary['failed_count']}\n"
+        f"Средняя длительность: {summary['avg_duration']:.1f}s\n"
+        f"Среднее число попыток: {summary['avg_attempts']:.1f}\n"
+        f"Среднее число измененных файлов: {summary['avg_files_changed']:.1f}\n"
+        f"Оценка стоимости: ${summary['total_cost']:.2f}"
     )
     await safe_send(msg)
 
