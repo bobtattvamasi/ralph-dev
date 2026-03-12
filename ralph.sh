@@ -52,6 +52,24 @@ kill_tree() {
     kill -9 "$pid" 2>/dev/null || true
 }
 
+kill_process_group() {
+    local pid="${1:-}"
+
+    [ -n "$pid" ] || return 0
+    case "$pid" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    [ "$pid" -gt 1 ] 2>/dev/null || return 0
+
+    local attempt
+    for attempt in 1 2 3; do
+        kill -TERM -"$pid" 2>/dev/null || true
+        sleep 1
+        kill -0 -"$pid" 2>/dev/null || return 0
+    done
+    kill -KILL -"$pid" 2>/dev/null || true
+}
+
 CLEANUP_RUNNING=0
 cleanup() {
     # Prevent recursive cleanup (explicit call + trap).
@@ -61,16 +79,21 @@ cleanup() {
     CLEANUP_RUNNING=1
 
     local codex_pid=""
+    local codex_pgid=""
     local main_pid=""
 
     if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
         codex_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
+    fi
+    if [ -f "$PROJECT_DIR/ralph_codex.pgid" ]; then
+        codex_pgid=$(cat "$PROJECT_DIR/ralph_codex.pgid" 2>/dev/null || echo "")
     fi
     if [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
         main_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
     fi
 
     # 1) Kill codex tree first.
+    [ -n "$codex_pgid" ] && kill_process_group "$codex_pgid"
     [ -n "$codex_pid" ] && kill_tree "$codex_pid"
 
     # 2) Kill all direct children of current orchestrator shell.
@@ -88,6 +111,7 @@ cleanup() {
     fi
 
     rm -f "$PROJECT_DIR/ralph_codex.pid"
+    rm -f "$PROJECT_DIR/ralph_codex.pgid"
     rm -f "$PROJECT_DIR/ralph_main.pid"
 }
 handle_interrupt() {
@@ -276,6 +300,7 @@ check_and_recover_state() {
     local state_file=""
     local stale_main_pid=""
     local stale_codex_pid=""
+    local stale_codex_pgid=""
 
     # Prefer hidden state file if present, then regular state file.
     if [ -f ".ralph_state.json" ]; then
@@ -341,9 +366,20 @@ except Exception:
             fi
         fi
     fi
+    if [ -f "$PROJECT_DIR/ralph_codex.pgid" ]; then
+        stale_codex_pgid=$(cat "$PROJECT_DIR/ralph_codex.pgid" 2>/dev/null || echo "")
+        case "$stale_codex_pgid" in
+            ''|*[!0-9]*) stale_codex_pgid="" ;;
+        esac
+        if [ -n "$stale_codex_pgid" ] && [ "$RECOVERY_MODE" -eq 1 ]; then
+            log "⚠️ Found stale ralph_codex.pgid=$stale_codex_pgid, killing process group"
+            kill_process_group "$stale_codex_pgid"
+        fi
+    fi
 
     # Ensure stale pid files are removed after recovery check.
     rm -f "$PROJECT_DIR/ralph_codex.pid"
+    rm -f "$PROJECT_DIR/ralph_codex.pgid"
     rm -f "$PROJECT_DIR/ralph_main.pid"
     echo "$$" > "$PROJECT_DIR/ralph_main.pid"
 }
@@ -355,6 +391,41 @@ file_mtime() {
         return 0
     fi
     stat -f %m "$file" 2>/dev/null || stat -c %Y "$file" 2>/dev/null || echo 0
+}
+
+terminate_codex_run() {
+    local target_pid="${1:-}"
+    local target_pgid="${2:-}"
+    local stale_pid=""
+    local stale_pgid=""
+
+    if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
+        stale_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
+        case "$stale_pid" in
+            ''|*[!0-9]*) stale_pid="" ;;
+        esac
+    fi
+    if [ -f "$PROJECT_DIR/ralph_codex.pgid" ]; then
+        stale_pgid=$(cat "$PROJECT_DIR/ralph_codex.pgid" 2>/dev/null || echo "")
+        case "$stale_pgid" in
+            ''|*[!0-9]*) stale_pgid="" ;;
+        esac
+    fi
+
+    if [ -n "$stale_pgid" ]; then
+        kill_process_group "$stale_pgid"
+    fi
+    if [ -n "$target_pgid" ] && [ "$target_pgid" != "$stale_pgid" ]; then
+        kill_process_group "$target_pgid"
+    fi
+
+    if [ -n "$stale_pid" ]; then
+        kill_tree "$stale_pid"
+    fi
+
+    if [ -n "$target_pid" ] && [ "$target_pid" != "$stale_pid" ]; then
+        kill_tree "$target_pid"
+    fi
 }
 
 run_codex_watchdog() {
@@ -391,21 +462,7 @@ run_codex_watchdog() {
             log "Watchdog timeout - killing stale codex process"
             notify "🚨 Watchdog timeout - killing stale codex process. Task: ${TASK_ID:-unknown}"
 
-            local stale_pid=""
-            if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
-                stale_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
-                case "$stale_pid" in
-                    ''|*[!0-9]*) stale_pid="" ;;
-                esac
-            fi
-
-            if [ -n "$stale_pid" ]; then
-                kill_tree "$stale_pid"
-            fi
-
-            if [ -z "$stale_pid" ] || [ "$stale_pid" != "$target_pid" ]; then
-                kill_tree "$target_pid"
-            fi
+            terminate_codex_run "$target_pid"
             : > "$fired_flag"
             break
         fi
@@ -428,33 +485,64 @@ run_codex() {
         watchdog_flag="/tmp/ralph_watchdog_${$}_${retry}.flag"
         rm -f "$watchdog_flag"
         set +e
-        if [ -n "$review_file" ]; then
-            (
-                export GIT_EDITOR=true
-                export GIT_TERMINAL_PROMPT=0
-                export GIT_AUTHOR_NAME='Ralph Coder'
-                export GIT_AUTHOR_EMAIL='ralph@dev'
-                gtimeout --foreground --kill-after=10 "$timeout" \
-                    codex exec -s danger-full-access ${model:+-m "$model"} -o "$review_file" "$prompt" \
-                    > "$output_file" 2>&1
-            ) &
-        else
-            (
-                export GIT_EDITOR=true
-                export GIT_TERMINAL_PROMPT=0
-                export GIT_AUTHOR_NAME='Ralph Coder'
-                export GIT_AUTHOR_EMAIL='ralph@dev'
-                gtimeout --foreground --kill-after=10 "$timeout" \
-                    codex exec -s danger-full-access ${model:+-m "$model"} "$prompt" \
-                    > "$output_file" 2>&1
-            ) &
+        local codex_cmd=(codex exec -s danger-full-access)
+        if [ -n "$model" ]; then
+            codex_cmd+=(-m "$model")
         fi
-        local codex_pid=$!
+        if [ -n "$review_file" ]; then
+            codex_cmd+=(-o "$review_file")
+        fi
+        codex_cmd+=("$prompt")
+
+        local runner=(gtimeout --foreground --kill-after=10 "$timeout")
+        runner+=("${codex_cmd[@]}")
+
+        local launcher_meta="/tmp/ralph_codex_meta_${$}_${retry}.txt"
+        rm -f "$launcher_meta"
+        GIT_EDITOR=true \
+        GIT_TERMINAL_PROMPT=0 \
+        GIT_AUTHOR_NAME='Ralph Coder' \
+        GIT_AUTHOR_EMAIL='ralph@dev' \
+        python3 - "$output_file" "$launcher_meta" "${runner[@]}" <<'PY' &
+import os
+import subprocess
+import sys
+
+output_file = sys.argv[1]
+meta_file = sys.argv[2]
+cmd = sys.argv[3:]
+
+with open(output_file, "wb") as out:
+    proc = subprocess.Popen(
+        cmd,
+        stdout=out,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        env=os.environ.copy(),
+    )
+    with open(meta_file, "w", encoding="utf-8") as meta:
+        meta.write(f"{proc.pid}\n")
+        meta.write(f"{os.getpgid(proc.pid)}\n")
+    sys.exit(proc.wait())
+PY
+        local launcher_pid=$!
+        local codex_pid="$launcher_pid"
+        local codex_pgid=""
+        local meta_wait_loops=0
+        while [ ! -s "$launcher_meta" ] && [ $meta_wait_loops -lt 50 ]; do
+            sleep 0.1
+            meta_wait_loops=$((meta_wait_loops + 1))
+        done
+        if [ -s "$launcher_meta" ]; then
+            codex_pid=$(sed -n '1p' "$launcher_meta" 2>/dev/null || echo "$launcher_pid")
+            codex_pgid=$(sed -n '2p' "$launcher_meta" 2>/dev/null || echo "")
+        fi
         echo "$codex_pid" > "$PROJECT_DIR/ralph_codex.pid"
+        [ -n "$codex_pgid" ] && echo "$codex_pgid" > "$PROJECT_DIR/ralph_codex.pgid" || rm -f "$PROJECT_DIR/ralph_codex.pgid"
         run_codex_watchdog "$output_file" "$codex_pid" "$watchdog_timeout" "$watchdog_flag" &
         local watchdog_pid=$!
 
-        wait "$codex_pid"
+        wait "$launcher_pid"
         exit_code=$?
         local watchdog_wait_loops=0
         while kill -0 "$watchdog_pid" 2>/dev/null; do
@@ -475,6 +563,8 @@ run_codex() {
         rm -f "$watchdog_flag"
 
         rm -f "$PROJECT_DIR/ralph_codex.pid"
+        rm -f "$PROJECT_DIR/ralph_codex.pgid"
+        rm -f "$launcher_meta"
         pkill -P "$$" 2>/dev/null || true
 
         # Watchdog timeout - retry with backoff like other recoverable errors.
@@ -488,6 +578,7 @@ run_codex() {
                 retry=$((retry + 1))
                 continue
             fi
+            log "❌ Codex failed after $MAX_CODEX_RETRIES retries"
             return 1
         fi
 
@@ -497,9 +588,20 @@ run_codex() {
             return 0
         fi
 
-        # Timeout (124) - no retry, return as-is
+        # Timeout (124) - clean up aggressively, then retry with backoff.
         if [ $exit_code -eq 124 ]; then
             log "⏰ TIMEOUT: codex exceeded ${timeout}s"
+            notify "⏰ Codex timeout on ${TASK_ID:-unknown}. Cleaning up process tree."
+            terminate_codex_run "$codex_pid" "$codex_pgid"
+            if [ $retry -lt $MAX_CODEX_RETRIES ]; then
+                local timeout_delay=${CODEX_RETRY_DELAYS[$retry]}
+                log "⚠️ Timeout cleanup complete. Retry $((retry+1))/$MAX_CODEX_RETRIES in ${timeout_delay}s..."
+                sleep "$timeout_delay"
+                retry=$((retry + 1))
+                continue
+            fi
+            log "❌ Codex timed out after $MAX_CODEX_RETRIES retries"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             return 124
         fi
 
@@ -507,8 +609,8 @@ run_codex() {
         if grep -qi 'rate.limit\|429\|throttl\|too many requests\|capacity' "$output_file" 2>/dev/null; then
             log "🚦 RATE LIMIT detected! Pausing ${RATE_LIMIT_PAUSE}s (30 min)..."
             notify "🚦 Rate limit hit. Pausing 30 min. Task: ${TASK_ID:-unknown}"
-            write_state "paused" "${TASK_ID:-}" "rate_limit" "Rate limit - pausing 30 min"
-            sleep $RATE_LIMIT_PAUSE
+            write_state "paused" "${TASK_ID:-}" "rate_limit" "rate_limit"
+            sleep "$RATE_LIMIT_PAUSE"
             write_state "running" "${TASK_ID:-}" "retry" "Resuming after rate limit pause"
             retry=$((retry + 1))
             continue

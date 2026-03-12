@@ -280,7 +280,8 @@
       "dependencies": [
         "R1-01"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-12T14:20:43Z"
     },
     {
       "id": "R2-02",
@@ -344,7 +345,8 @@
       "dependencies": [
         "R1-01"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-12T14:20:43Z"
     },
     {
       "id": "R1-07",

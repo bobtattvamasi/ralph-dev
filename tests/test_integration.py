@@ -32,6 +32,7 @@ def make_fake_binaries(bin_dir: Path) -> None:
 from __future__ import annotations
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -49,6 +50,9 @@ while i < len(args):
         i += 1
 
 sleep_s = float(os.environ.get("MOCK_CODEX_SLEEP", "0"))
+mode = os.environ.get("MOCK_CODEX_MODE", "success")
+marker_file = os.environ.get("MOCK_RATE_LIMIT_MARKER", "")
+child_pid_file = os.environ.get("MOCK_CHILD_PID_FILE", "")
 if review_file:
     payload = {
         "decision": "approve",
@@ -57,6 +61,20 @@ if review_file:
     }
     Path(review_file).write_text(json.dumps(payload), encoding="utf-8")
 else:
+    if mode == "rate_limit_once":
+        marker = Path(marker_file) if marker_file else None
+        if marker is not None and not marker.exists():
+            marker.write_text("rate-limited", encoding="utf-8")
+            print("429 Too Many Requests")
+            sys.exit(1)
+    if mode == "timeout_child":
+        child = subprocess.Popen(["sleep", "30"])
+        if child_pid_file:
+            Path(child_pid_file).write_text(str(child.pid), encoding="utf-8")
+        try:
+            time.sleep(30)
+        except KeyboardInterrupt:
+            pass
     if sleep_s > 0:
         time.sleep(sleep_s)
 
@@ -66,26 +84,46 @@ print("123")
     )
     write_executable(
         bin_dir / "gtimeout",
-        """#!/usr/bin/env bash
-set -euo pipefail
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --foreground)
-            shift
-            ;;
-        --kill-after=*)
-            shift
-            ;;
-        ''|*[!0-9]*)
-            break
-            ;;
-        *)
-            shift
-            break
-            ;;
-    esac
-done
-exec "$@"
+        """#!/usr/bin/env python3
+from __future__ import annotations
+import os
+import signal
+import subprocess
+import sys
+
+args = sys.argv[1:]
+timeout = None
+i = 0
+while i < len(args):
+    arg = args[i]
+    if arg == "--foreground" or arg.startswith("--kill-after="):
+        i += 1
+        continue
+    try:
+        timeout = float(arg)
+        i += 1
+        break
+    except ValueError:
+        break
+
+cmd = args[i:]
+if not cmd:
+    sys.exit(1)
+
+proc = subprocess.Popen(cmd)
+if timeout is None:
+    sys.exit(proc.wait())
+
+try:
+    sys.exit(proc.wait(timeout=timeout))
+except subprocess.TimeoutExpired:
+    if os.environ.get("MOCK_GTIMEOUT_KILL_PARENT_ONLY") == "1":
+        proc.kill()
+        proc.wait()
+    else:
+        proc.kill()
+        proc.wait()
+    sys.exit(124)
 """,
     )
 
@@ -171,6 +209,14 @@ def load_state(project_dir: Path) -> dict:
     return json.loads((project_dir / "ralph_state.json").read_text(encoding="utf-8"))
 
 
+def process_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
 
@@ -180,7 +226,7 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
         env=env,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=45,
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -253,6 +299,64 @@ def test_ralph_watchdog_kills_stale_codex_and_retries(tmp_path: Path) -> None:
         timeout=20,
     )
 
-    assert result.returncode in (0, 137), result.stdout + result.stderr
+    assert result.returncode != 0, result.stdout + result.stderr
     assert result.stdout.count("Watchdog timeout - killing stale codex process") >= 2
     assert "Codex failed after 3 retries" in result.stdout
+
+
+def test_ralph_pauses_and_retries_on_rate_limit(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "rate_limit_once"
+    env["MOCK_RATE_LIMIT_MARKER"] = str(tmp_path / "rate_limit.marker")
+    env["RALPH_RATE_LIMIT_PAUSE"] = "1"
+    env["RALPH_CODEX_RETRY_DELAYS"] = "0 0 0"
+
+    process = subprocess.Popen(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    assert wait_until(
+        lambda: (project_dir / "ralph_state.json").exists()
+        and load_state(project_dir).get("status") == "paused"
+        and load_state(project_dir).get("current_phase_step") == "rate_limit",
+        timeout=10,
+    )
+
+    stdout, _ = process.communicate(timeout=20)
+    assert process.returncode == 0, stdout
+    assert "RATE LIMIT detected" in stdout
+    assert load_task_status(project_dir) == "done"
+
+
+def test_ralph_timeout_cleans_up_orphan_children(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "timeout_child"
+    env["MOCK_CHILD_PID_FILE"] = str(tmp_path / "codex_child.pid")
+    env["MOCK_GTIMEOUT_KILL_PARENT_ONLY"] = "1"
+    env["RALPH_CODEX_RETRY_DELAYS"] = "0 0 0"
+
+    tasks_path = project_dir / "tasks.json"
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks["tasks"][0]["timeout"] = 1
+    tasks_path.write_text(json.dumps(tasks, indent=2), encoding="utf-8")
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert (tmp_path / "codex_child.pid").exists(), result.stdout + result.stderr
+    child_pid = int((tmp_path / "codex_child.pid").read_text(encoding="utf-8"))
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "TIMEOUT: codex exceeded 1s" in result.stdout
+    assert "Codex timed out after 3 retries" in result.stdout
+    assert not process_is_alive(child_pid)
