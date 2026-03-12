@@ -172,9 +172,10 @@ os.replace(tmp_path, 'ralph_state.json')
 CONTROL_ACTION="continue"
 CONTROL_TARGET=""
 check_control() {
-    if [ -f ralph_control.json ]; then
-        local control_data
-        control_data=$(python3 -c "
+    while true; do
+        if [ -f ralph_control.json ]; then
+            local control_data
+            control_data=$(python3 -c "
 import json
 try:
     d = json.load(open('ralph_control.json'))
@@ -184,18 +185,44 @@ except:
     print('continue')
     print('')
 " 2>/dev/null || printf "continue\n\n")
-        CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
-        CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
-        if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
-            return 1
+            CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
+            CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+            if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
+                return 1
+            fi
+            if [ "$CONTROL_ACTION" = "skip" ]; then
+                return 2
+            fi
+            if [ "$CONTROL_ACTION" = "pause" ]; then
+                log "⏸ Paused by user, waiting for resume..."
+                write_state "paused" "" "" "Paused by user"
+                while [ "$CONTROL_ACTION" = "pause" ]; do
+                    sleep 5
+                    control_data=$(python3 -c "
+import json
+try:
+    d = json.load(open('ralph_control.json'))
+    print(d.get('action', 'continue'))
+    print(d.get('comment', ''))
+except:
+    print('continue')
+    print('')
+" 2>/dev/null || printf "continue\n\n")
+                    CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
+                    CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+                done
+                if [ "$CONTROL_ACTION" = "continue" ]; then
+                    write_state "running" "${TASK_ID:-}" "" "Resumed by user"
+                    CONTROL_TARGET=""
+                    return 0
+                fi
+                continue
+            fi
         fi
-        if [ "$CONTROL_ACTION" = "skip" ]; then
-            return 2
-        fi
-    fi
-    CONTROL_ACTION="continue"
-    CONTROL_TARGET=""
-    return 0
+        CONTROL_ACTION="continue"
+        CONTROL_TARGET=""
+        return 0
+    done
 }
 
 clear_control_action() {

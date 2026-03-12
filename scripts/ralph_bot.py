@@ -345,6 +345,18 @@ async def cmd_redo(task_id: str, notes: str) -> None:
         await safe_send(f"❌ Error: {exc.stderr.decode()}")
 
 
+async def cmd_pause() -> None:
+    """Pause Ralph until /resume is sent."""
+    write_control("pause", "")
+    await safe_send("⏸ Ralph paused (will wait before next step)")
+
+
+async def cmd_resume() -> None:
+    """Resume Ralph after pause."""
+    write_control("continue", "")
+    await safe_send("▶️ Ralph resumed")
+
+
 async def cmd_add(args: str) -> None:
     """Add a new pending task to tasks.json."""
     parts = args.split(maxsplit=1)
@@ -636,6 +648,8 @@ async def cmd_help() -> None:
         "/plan — phase summary and next pending tasks\n"
         "/add <phase> <title> — add a pending task\n"
         "/rm <task_id> — remove a task\n"
+        "/pause — pause before next step\n"
+        "/resume — resume after pause\n"
         "/start TASK_ID — run one task\n"
         "/phase NUM — run phase\n"
         "/auto — run all\n"
@@ -687,6 +701,10 @@ async def handle_update(update: dict) -> None:
         await cmd_add(args)
     elif cmd == "/rm":
         await cmd_rm(args)
+    elif cmd == "/pause":
+        await cmd_pause()
+    elif cmd == "/resume":
+        await cmd_resume()
     elif cmd == "/start" and args:
         await cmd_start_task(args)
     elif cmd == "/phase" and args:
