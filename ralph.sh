@@ -1316,6 +1316,7 @@ Expected response structure:
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
+        REVIEW_JSON='{}'
 
         # Skip lead review for trivial tasks
         SKIP_LEAD=$(echo "$TASK_JSON" | python3 -c "
@@ -1333,6 +1334,7 @@ else:
             DECISION="approve"
             QUALITY="auto"
             REVIEW='{"decision":"approve","quality_score":"auto","progress_note":"Auto-approved trivial task"}'
+            REVIEW_JSON="$REVIEW"
             # Jump to decision handling — set vars that approve block needs
             LEAD_TOKENS=0
             LEAD_DURATION=0
@@ -1381,7 +1383,12 @@ Output ONLY a JSON object with your decision."
             LEAD_DURATION=$(( $(date +%s) - LEAD_START ))
             log "⏱️ Tech Lead took ${LEAD_DURATION}s"
             REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
+            REVIEW_JSON=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$LEAD_OUTPUT" 2>/dev/null || true)
+            if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
+                REVIEW_JSON=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || echo '{}')
+            fi
             log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
+            log "🔍 DEBUG: Parsed review JSON: $(echo "$REVIEW_JSON" | head -c 200)"
         fi
 
         CONTROL_STATUS=0
@@ -1399,27 +1406,21 @@ Output ONLY a JSON object with your decision."
             break
         fi
 
-        DECISION=$(echo "$REVIEW" | python3 -c "
-import sys, json, re
-text = sys.stdin.read().strip()
+        DECISION=$(echo "$REVIEW_JSON" | python3 -c "
+import sys, json
+text = sys.stdin.read().strip() or '{}'
 try:
     d = json.loads(text)
     print(d.get('decision', 'alert'))
-    sys.exit(0)
 except Exception:
-    pass
-m = re.search(r'\"decision\"\s*:\s*\"(\w+)\"', text)
-if m:
-    print(m.group(1))
-else:
     print('alert')
 " 2>/dev/null)
         DECISION="${DECISION:-alert}"
         DECISION=$(echo "$DECISION" | head -1)
         DECISION=$(echo "$DECISION" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        QUALITY=$(echo "$REVIEW" | python3 -c "
+        QUALITY=$(echo "$REVIEW_JSON" | python3 -c "
 import sys, json
-text = sys.stdin.read().strip()
+text = sys.stdin.read().strip() or '{}'
 try:
     d = json.loads(text)
     print(d.get('quality_score', '?'))
@@ -1441,15 +1442,14 @@ print('?')
                 TASK_DONE=true
                 write_state "running" "$TASK_ID" "approved" "Task approved"
                 notify "✅ $TASK_ID done — $TASK_TITLE"
-                PROGRESS_NOTE=$(echo "$REVIEW" | python3 -c "
-import sys,json,re
-text=sys.stdin.read()
-for m in re.findall(r'\{[^{}]*\}',text,re.DOTALL):
-    try:
-        d=json.loads(m); n=d.get('progress_note','')
-        if n: print(n); sys.exit(0)
-    except: pass
-print('Task completed')
+                PROGRESS_NOTE=$(echo "$REVIEW_JSON" | python3 -c "
+import sys, json
+text = sys.stdin.read().strip() or '{}'
+try:
+    d = json.loads(text)
+    print(d.get('progress_note', 'Task completed'))
+except Exception:
+    print('Task completed')
 " 2>/dev/null || echo "done")
 
                 python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" done
@@ -1495,15 +1495,14 @@ print('Task completed')
                 ;;
 
             fix)
-                FIX_INSTRUCTIONS=$(echo "$REVIEW" | python3 -c "
-import sys,json,re
-text=sys.stdin.read()
-for m in re.findall(r'\{[^{}]*\}',text,re.DOTALL):
-    try:
-        d=json.loads(m); f=d.get('fix_instructions','')
-        if f: print(f); sys.exit(0)
-    except: pass
-print('Fix failing tests and unmet criteria')
+                FIX_INSTRUCTIONS=$(echo "$REVIEW_JSON" | python3 -c "
+import sys, json
+text = sys.stdin.read().strip() or '{}'
+try:
+    d = json.loads(text)
+    print(d.get('fix_instructions', 'Fix failing tests and unmet criteria'))
+except Exception:
+    print('Fix failing tests and unmet criteria')
 " 2>/dev/null || echo "Fix the issues")
 
                 FIX_RETRY=$((FIX_RETRY+1))
@@ -1531,15 +1530,14 @@ print('')
                 ;;
 
             alert)
-                REASON=$(echo "$REVIEW" | python3 -c "
-import sys,json,re
-text=sys.stdin.read()
-for m in re.findall(r'\{[^{}]*\}',text,re.DOTALL):
-    try:
-        d=json.loads(m); r=d.get('alert_reason','')
-        if r: print(r); sys.exit(0)
-    except: pass
-print('Unknown issue')
+                REASON=$(echo "$REVIEW_JSON" | python3 -c "
+import sys, json
+text = sys.stdin.read().strip() or '{}'
+try:
+    d = json.loads(text)
+    print(d.get('alert_reason', 'Unknown issue'))
+except Exception:
+    print('Unknown issue')
 " 2>/dev/null || echo "Unknown")
 
                 log_metrics "failed"
