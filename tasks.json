@@ -33,12 +33,15 @@
       "timeout",
       "complexity",
       "required_context",
+      "role",
+      "risk",
       "agent_suitable",
       "tags",
       "skip_lead"
     ],
     "notes": [
       "complexity and required_context are part of the standard Ralph task schema",
+      "risk is a standard Ralph task field for gating high-impact changes",
       "agents should treat required_context as guaranteed high-signal file input"
     ]
   },
@@ -391,7 +394,8 @@
       "dependencies": [
         "R1-07"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-12T14:34:57Z"
     },
     {
       "id": "R1-09",
@@ -1055,6 +1059,7 @@
       "dependencies": [
         "R3-10"
       ],
+      "risk": "high",
       "status": "pending"
     },
     {
@@ -1078,7 +1083,8 @@
       "dependencies": [
         "R3-10"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-12T14:28:09Z"
     },
     {
       "id": "R3-13",

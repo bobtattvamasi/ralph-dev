@@ -23,6 +23,7 @@ TASKS_FILE = PROJECT_DIR / "tasks.json"
 PROGRESS_FILE = PROJECT_DIR / "progress.md"
 LOG_DIR = PROJECT_DIR / "logs"
 DAILY_COST_LIMIT_USD = 500.0
+BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
 
 TOKEN = ""
 CHAT_ID = ""
@@ -105,6 +106,25 @@ def load_tasks_data() -> dict:
 def save_tasks_data(data: dict) -> None:
     """Persist tasks.json with stable formatting."""
     TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def read_latest_article() -> str:
+    """Read the most recent generated article section from BLOG_DRAFTS.md."""
+    if not BLOG_DRAFTS_FILE.exists():
+        return ""
+
+    text = BLOG_DRAFTS_FILE.read_text(encoding="utf-8", errors="replace").strip()
+    if not text:
+        return ""
+
+    sections = re.split(r"(?m)^## \d{4}-\d{2}-\d{2} .*UTC\s*$", text)
+    headers = re.findall(r"(?m)^## \d{4}-\d{2}-\d{2} .*UTC\s*$", text)
+    if headers and len(sections) >= 2:
+        latest_body = sections[-1].strip()
+        latest_header = headers[-1].strip()
+        return f"{latest_header}\n\n{latest_body}".strip()
+
+    return text[-4000:]
 
 
 async def send_message(text: str, reply_markup: dict | None = None) -> None:
@@ -632,6 +652,42 @@ async def cmd_plan() -> None:
     await safe_send("\n".join(lines))
 
 
+async def cmd_article() -> None:
+    """Generate an article pack and send the latest draft."""
+    script_path = RALPH_DIR / "scripts" / "write_article.sh"
+    if not script_path.exists():
+        await safe_send("❌ scripts/write_article.sh not found")
+        return
+
+    try:
+        result = subprocess.run(
+            [str(script_path)],
+            cwd=str(PROJECT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+        await safe_send(f"❌ Article generation failed:\n<pre>{message[:3500]}</pre>")
+        return
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Article generation failed: {exc}")
+        return
+
+    latest_article = read_latest_article()
+    if not latest_article:
+        await safe_send("✅ Статья готова в BLOG_DRAFTS.md")
+        return
+
+    if len(latest_article) > 4000:
+        await safe_send("✅ Статья готова в BLOG_DRAFTS.md")
+        return
+
+    await safe_send(latest_article)
+
+
 async def cmd_progress(n: int = 20) -> None:
     """Show tail of progress.md."""
     if not PROGRESS_FILE.exists():
@@ -686,6 +742,7 @@ async def cmd_help() -> None:
         "/status — current state\n"
         "/tasks [phase] — task list\n"
         "/plan — phase summary and next pending tasks\n"
+        "/article — generate latest blog/article draft\n"
         "/add <phase> <title> — add a pending task\n"
         "/rm <task_id> — remove a task\n"
         "/pause — pause before next step\n"
@@ -738,6 +795,8 @@ async def handle_update(update: dict) -> None:
         await safe_send(get_tasks_summary(args or None))
     elif cmd == "/plan":
         await cmd_plan()
+    elif cmd == "/article":
+        await cmd_article()
     elif cmd == "/add" and args:
         await cmd_add(args)
     elif cmd == "/rm":

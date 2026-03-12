@@ -39,6 +39,8 @@ render_template_if_missing "$RALPH_DIR/templates/AGENTS.md.template" "$PROJECT_D
 render_template_if_missing "$RALPH_DIR/templates/ARCHITECTURE.md.template" "$PROJECT_DIR/ARCHITECTURE.md"
 render_template_if_missing "$RALPH_DIR/templates/MEMORY_SYSTEM.md.template" "$PROJECT_DIR/MEMORY_SYSTEM.md"
 copy_if_missing "$RALPH_DIR/templates/AGENTS_CODER.md" "$PROJECT_DIR/AGENTS_CODER.md"
+copy_if_missing "$RALPH_DIR/templates/AGENTS_DESIGNER.md" "$PROJECT_DIR/AGENTS_DESIGNER.md"
+copy_if_missing "$RALPH_DIR/templates/AGENTS_JOURNALIST.md" "$PROJECT_DIR/AGENTS_JOURNALIST.md"
 copy_if_missing "$RALPH_DIR/templates/AGENTS_LEAD.md" "$PROJECT_DIR/AGENTS_LEAD.md"
 copy_if_missing "$RALPH_DIR/templates/progress.md.template" "$PROJECT_DIR/progress.md"
 

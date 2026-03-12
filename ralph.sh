@@ -195,20 +195,28 @@ os.replace(tmp_path, 'ralph_state.json')
 
 CONTROL_ACTION="continue"
 CONTROL_TARGET=""
-check_control() {
-    while true; do
-        if [ -f ralph_control.json ]; then
-            local control_data
-            control_data=$(python3 -c "
+read_control_file() {
+    if [ -f ralph_control.json ]; then
+        python3 -c "
 import json
 try:
     d = json.load(open('ralph_control.json'))
     print(d.get('action', 'continue'))
     print(d.get('comment', ''))
-except:
+except Exception:
     print('continue')
     print('')
-" 2>/dev/null || printf "continue\n\n")
+" 2>/dev/null || printf "continue\n\n"
+    else
+        printf "continue\n\n"
+    fi
+}
+
+check_control() {
+    while true; do
+        if [ -f ralph_control.json ]; then
+            local control_data
+            control_data=$(read_control_file)
             CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
             CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
             if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
@@ -222,16 +230,7 @@ except:
                 write_state "paused" "" "" "Paused by user"
                 while [ "$CONTROL_ACTION" = "pause" ]; do
                     sleep 5
-                    control_data=$(python3 -c "
-import json
-try:
-    d = json.load(open('ralph_control.json'))
-    print(d.get('action', 'continue'))
-    print(d.get('comment', ''))
-except:
-    print('continue')
-    print('')
-" 2>/dev/null || printf "continue\n\n")
+                    control_data=$(read_control_file)
                     CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
                     CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
                 done
@@ -246,6 +245,45 @@ except:
         CONTROL_ACTION="continue"
         CONTROL_TARGET=""
         return 0
+    done
+}
+
+wait_for_high_risk_approval() {
+    local paused_once=0
+
+    while true; do
+        local control_data
+        if [ ! -f ralph_control.json ]; then
+            CONTROL_ACTION="pause"
+            CONTROL_TARGET=""
+        else
+            control_data=$(read_control_file)
+            CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
+            CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+        fi
+
+        if [ "$CONTROL_ACTION" = "continue" ]; then
+            clear_control_action
+            write_state "running" "$TASK_ID" "risk_gate_approved" "High-risk task approved by human"
+            return 0
+        fi
+
+        if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
+            return 1
+        fi
+
+        if [ "$CONTROL_ACTION" = "skip" ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
+            return 2
+        fi
+
+        if [ $paused_once -eq 0 ]; then
+            log "⚠️ High-risk task $TASK_ID approved by Tech Lead. Paused for human review. Send /resume to commit."
+            notify "⚠️ High-risk task $TASK_ID approved by Tech Lead. Paused for human review. Send /resume to commit."
+            write_state "waiting_human" "$TASK_ID" "risk_gate" "Waiting for human to approve high-risk changes"
+            paused_once=1
+        fi
+
+        sleep 5
     done
 }
 
@@ -265,6 +303,18 @@ if p.exists():
 " 2>/dev/null || true
 }
 
+set_control_action() {
+    local action="$1"
+    local comment="${2:-}"
+    python3 -c "
+import json
+from pathlib import Path
+p = Path('ralph_control.json')
+payload = {'action': '$action', 'comment': '''$comment'''}
+p.write_text(json.dumps(payload, indent=2), encoding='utf-8')
+" 2>/dev/null || true
+}
+
 skip_current_task() {
     local reason="Skipped by user via Telegram"
     log "⏭ Skip signal received for $TASK_ID"
@@ -272,6 +322,20 @@ skip_current_task() {
     write_state "running" "$TASK_ID" "skipped" "$reason"
     notify "⏭ $TASK_ID skipped by user"
     clear_control_action
+}
+
+resolve_agent_prompt_file() {
+    local role="${1:-coder}"
+    local fallback_file="$2"
+    local role_upper
+    role_upper=$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')
+    local role_file="AGENTS_${role_upper}.md"
+
+    if [ -f "$role_file" ]; then
+        printf '%s\n' "$role_file"
+    else
+        printf '%s\n' "$fallback_file"
+    fi
 }
 
 get_human_comment() {
@@ -768,6 +832,23 @@ files = task.get('required_context', [])
 print(' '.join(files) if files else '')
 " 2>/dev/null || echo "")
 
+    TASK_RISK=$(echo "$TASK_JSON" | python3 -c "
+import sys, json
+task = json.load(sys.stdin)
+print(task.get('risk', 'medium'))
+" 2>/dev/null || echo "medium")
+
+    TASK_ROLE=$(echo "$TASK_JSON" | python3 -c "
+import sys, json
+task = json.load(sys.stdin)
+print(task.get('role', 'coder'))
+" 2>/dev/null || echo "coder")
+
+    CODER_ROLE_FILE=$(resolve_agent_prompt_file "$TASK_ROLE" "AGENTS_CODER.md")
+    LEAD_ROLE_FILE=$(resolve_agent_prompt_file "$TASK_ROLE" "AGENTS_LEAD.md")
+    CODER_ROLE_CONTENT=$(cat "$CODER_ROLE_FILE" 2>/dev/null || true)
+    LEAD_ROLE_CONTENT=$(cat "$LEAD_ROLE_FILE" 2>/dev/null || true)
+
     # Select model based on complexity
     CODEX_MODEL=""
     if [ "$TASK_COMPLEXITY" = "simple" ]; then
@@ -778,6 +859,8 @@ print(' '.join(files) if files else '')
     fi
 
     log "📋 Complexity: $TASK_COMPLEXITY"
+    log "⚠️ Risk: $TASK_RISK"
+    log "🧩 Role: $TASK_ROLE (coder instructions: $CODER_ROLE_FILE, lead instructions: $LEAD_ROLE_FILE)"
     TASK_START=$(date +%s)
 
     log "📋 Task: $TASK_ID — $TASK_TITLE"
@@ -849,7 +932,7 @@ $(cat "$ctx_file" 2>/dev/null | head -200)
             PROJECT_MEMORY_SYSTEM=$(cat MEMORY_SYSTEM.md 2>/dev/null || true)
         fi
 
-        CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_CODER.md first. Then read progress.md.
+        CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Then read progress.md.
 Run make test to verify current state.
 
 ## Architecture Doc
@@ -857,6 +940,9 @@ ${PROJECT_ARCHITECTURE:-No ARCHITECTURE.md provided. Use AGENTS.md and the repos
 
 ## Memory System Doc
 ${PROJECT_MEMORY_SYSTEM:-No MEMORY_SYSTEM.md provided. Use AGENTS.md and .ralph/memory/.}
+
+## Role Instructions (${CODER_ROLE_FILE})
+${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
 
 ## Project Context (from memory)
 ${MEMORY_CORE:-No core context yet. Read ARCHITECTURE.md and AGENTS.md for project info.}
@@ -979,10 +1065,13 @@ else:
             write_state "running" "$TASK_ID" "tech_lead" "Tech Lead reviewing..."
             LEAD_START=$(date +%s)
 
-            LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+            LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${LEAD_ROLE_FILE} first.
 
 ## Task
 $TASK_JSON
+
+## Role Instructions (${LEAD_ROLE_FILE})
+${LEAD_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_LEAD.md conventions.}
 
 ## Diff
 \`\`\`diff
@@ -1087,6 +1176,24 @@ print('Task completed')
                 # Update memory with task summary
                 CHANGED_FILES=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
                 python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
+
+                if [ "$TASK_RISK" = "high" ]; then
+                    set_control_action "pause" ""
+                    CONTROL_STATUS=0
+                    wait_for_high_risk_approval || CONTROL_STATUS=$?
+                    if [ $CONTROL_STATUS -eq 1 ]; then
+                        log "⏹ Stop signal received during high-risk review gate"
+                        write_state "stopped" "$TASK_ID" "risk_gate" "Stopped by user during high-risk review"
+                        notify "⏹ Ralph stopped by user during high-risk review for $TASK_ID"
+                        cleanup
+                        exit 0
+                    elif [ $CONTROL_STATUS -eq 2 ]; then
+                        skip_current_task
+                        TASK_SKIPPED=true
+                        break
+                    fi
+                fi
+
                 git add -A
                 git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
                 log_metrics "success"
