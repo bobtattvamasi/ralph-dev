@@ -426,74 +426,135 @@ build_relevant_context() {
     local task_json="$1"
     local max_files="${RALPH_CONTEXT_MAX_FILES:-6}"
     local max_chars="${RALPH_CONTEXT_MAX_CHARS:-12000}"
-    local tmp_keywords="/tmp/ralph_keywords_$$.txt"
-    local tmp_matches="/tmp/ralph_matches_$$.txt"
-    local tmp_output="/tmp/ralph_context_$$.txt"
-    : > "$tmp_keywords"
-    : > "$tmp_matches"
-    : > "$tmp_output"
-
-    printf '%s' "$task_json" | extract_task_keywords > "$tmp_keywords"
-    if [ ! -s "$tmp_keywords" ]; then
-        rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
-        return 0
-    fi
-
-    if ! command -v rg >/dev/null 2>&1; then
-        rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
-        return 0
-    fi
-
-    while IFS= read -r keyword; do
-        [ -n "$keyword" ] || continue
-        rg -l -i -m 1 --glob '!node_modules/**' --glob '!.git/**' --glob '!dist/**' \
-            --glob '!build/**' --glob '!.next/**' --glob '!coverage/**' --glob '!logs/**' \
-            --glob '!*.lock' --glob '!tasks.json' --glob '!progress.md' --glob '!AGENTS*.md' \
-            -- "$keyword" "$PROJECT_DIR" 2>/dev/null || true
-    done < "$tmp_keywords" | awk '!seen[$0]++' | head -n "$max_files" > "$tmp_matches"
-
-    if [ ! -s "$tmp_matches" ]; then
-        rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
-        return 0
-    fi
-
-    python3 - "$tmp_keywords" "$tmp_matches" "$PROJECT_DIR" "$max_chars" > "$tmp_output" <<'PY'
+    python3 - "$PROJECT_DIR" "$max_files" "$max_chars" "$task_json" <<'PY'
 from __future__ import annotations
 
+import json
 import pathlib
 import re
+import subprocess
 import sys
 
-keywords_path = pathlib.Path(sys.argv[1])
-matches_path = pathlib.Path(sys.argv[2])
-project_dir = pathlib.Path(sys.argv[3])
-max_chars = int(sys.argv[4])
-per_file_limit = max(800, max_chars // 3)
+project_dir = pathlib.Path(sys.argv[1]).resolve()
+max_files = int(sys.argv[2])
+max_chars = int(sys.argv[3])
+task_payload = sys.argv[4]
+per_file_limit = max(800, max_chars // 2)
 
-keywords = [line.strip() for line in keywords_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-matched_files = [line.strip() for line in matches_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+try:
+    task = json.loads(task_payload)
+except Exception:
+    sys.exit(0)
 
-parts: list[str] = []
-parts.append("Selected by keyword match:")
-parts.append(", ".join(keywords))
-parts.append("")
+parts = [
+    task.get("id", ""),
+    task.get("title", ""),
+    task.get("description", ""),
+    " ".join(task.get("acceptance_criteria", []) or []),
+]
+text = " ".join(parts).lower()
+tokens = re.findall(r"[a-z0-9_./-]{4,}", text)
+stopwords = {
+    "task", "tasks", "phase", "high", "medium", "low", "done", "pending",
+    "with", "from", "that", "this", "into", "only", "must", "then", "than",
+    "when", "uses", "use", "read", "file", "files", "coder",
+    "before", "after", "based", "large", "overly", "size", "guard", "includes",
+    "include", "inject", "injection", "context", "relevant", "source",
+    "project", "agent", "quality", "acceptance_criteria", "criteria",
+}
 
-for matched_file in matched_files:
-    path = pathlib.Path(matched_file)
+keywords: list[str] = []
+for token in tokens:
+    if token in stopwords:
+        continue
+    if token.startswith("r") and "-" in token:
+        continue
+    if token not in keywords:
+        keywords.append(token)
+
+keywords = keywords[:16]
+if not keywords:
+    sys.exit(0)
+
+keyword_regexes = [re.compile(re.escape(keyword), re.IGNORECASE) for keyword in keywords]
+ignore_globs = [
+    "!node_modules/**", "!.git/**", "!dist/**", "!build/**", "!.next/**",
+    "!coverage/**", "!logs/**", "!*.lock", "!tasks.json", "!progress.md", "!AGENTS*.md",
+]
+
+candidate_paths: dict[pathlib.Path, dict[str, int]] = {}
+for keyword in keywords:
+    try:
+        result = subprocess.run(
+            ["rg", "-l", "-i", "-m", "1", *sum([["--glob", g] for g in ignore_globs], []), "--", keyword, str(project_dir)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        sys.exit(0)
+
+    for raw_path in result.stdout.splitlines():
+        raw_path = raw_path.strip()
+        if not raw_path:
+            continue
+        path = pathlib.Path(raw_path).resolve()
+        if not path.is_file():
+            continue
+        entry = candidate_paths.setdefault(path, {"content_hits": 0, "path_hits": 0})
+        entry["content_hits"] += 1
+
+for path in project_dir.rglob("*"):
     if not path.is_file():
         continue
+    rel = path.relative_to(project_dir)
+    rel_text = str(rel).lower()
+    if any(part in rel.parts for part in ("node_modules", ".git", "dist", "build", ".next", "coverage", "logs")):
+        continue
+    if rel.name.endswith(".lock") or rel.name in {"tasks.json", "progress.md"} or rel.name.startswith("AGENTS"):
+        continue
+    matched = sum(1 for regex in keyword_regexes if regex.search(rel_text))
+    if matched:
+        entry = candidate_paths.setdefault(path.resolve(), {"content_hits": 0, "path_hits": 0})
+        entry["path_hits"] += matched
 
+def path_priority(rel_path: pathlib.Path) -> int:
+    rel_text = str(rel_path)
+    score = 0
+    if "/src/" in f"/{rel_text}/" or rel_text.startswith("src/"):
+        score += 5
+    if "/scripts/" in f"/{rel_text}/" or rel_text.startswith("scripts/"):
+        score += 3
+    if "/tests/" in f"/{rel_text}/" or rel_text.startswith("tests/"):
+        score -= 2
+    return score
+
+ranked_paths = sorted(
+    candidate_paths.items(),
+    key=lambda item: (
+        item[1]["content_hits"] * 10 + item[1]["path_hits"] * 4 + path_priority(item[0].relative_to(project_dir)),
+        -len(str(item[0].relative_to(project_dir))),
+    ),
+    reverse=True,
+)[:max_files]
+
+if not ranked_paths:
+    sys.exit(0)
+
+output_parts: list[str] = ["Selected by keyword match:", ", ".join(keywords), ""]
+
+for path, _score in ranked_paths:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        content = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            content = path.read_text(encoding="utf-8", errors="replace")
         except Exception:
             continue
     except Exception:
         continue
 
-    keyword_regexes = [re.compile(re.escape(keyword), re.IGNORECASE) for keyword in keywords]
+    lines = content.splitlines()
     hit_lines: list[int] = []
     for index, line in enumerate(lines, start=1):
         if any(regex.search(line) for regex in keyword_regexes):
@@ -502,45 +563,37 @@ for matched_file in matched_files:
             break
 
     ranges: list[tuple[int, int]] = []
-    context_radius = 4
     for hit_line in hit_lines[:3]:
-        start = max(1, hit_line - context_radius)
-        end = min(len(lines), hit_line + context_radius)
+        start = max(1, hit_line - 4)
+        end = min(len(lines), hit_line + 4)
         if ranges and start <= ranges[-1][1] + 1:
             ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
         else:
             ranges.append((start, end))
 
-    if not ranges:
-        end = min(len(lines), 40)
-        if end > 0:
-            ranges.append((1, end))
+    if not ranges and lines:
+        ranges.append((1, min(len(lines), 40)))
 
     snippet_lines: list[str] = []
     for start, end in ranges:
         for line_no in range(start, end + 1):
             snippet_lines.append(f"{line_no}: {lines[line_no - 1]}")
         snippet_lines.append("...")
-
     if snippet_lines and snippet_lines[-1] == "...":
         snippet_lines.pop()
 
-    relative_path = path.relative_to(project_dir) if path.is_relative_to(project_dir) else path
-    body = "\n".join(snippet_lines)
-    file_section = f"## File: {relative_path}\n```text\n{body}\n```"
+    rel = path.relative_to(project_dir)
+    file_section = f"## File: {rel}\n```text\n" + "\n".join(snippet_lines) + "\n```"
     if len(file_section) > per_file_limit:
         file_section = file_section[:per_file_limit].rstrip() + "\n... [truncated file snippet]"
-    parts.append(file_section)
-    parts.append("")
+    output_parts.append(file_section)
+    output_parts.append("")
 
-output = "\n".join(parts).rstrip()
+output = "\n".join(output_parts).rstrip()
 if len(output) > max_chars:
     output = output[:max_chars].rstrip() + "\n... [truncated]"
 sys.stdout.write(output)
 PY
-
-    cat "$tmp_output"
-    rm -f "$tmp_keywords" "$tmp_matches" "$tmp_output"
 }
 
 get_human_comment() {

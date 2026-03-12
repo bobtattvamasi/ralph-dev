@@ -868,7 +868,8 @@ async def cmd_progress(n: int = 20) -> None:
         return
     lines = PROGRESS_FILE.read_text(encoding="utf-8").strip().splitlines()
     tail = lines[-n:] if len(lines) > n else lines
-    await safe_send(f"<pre>{chr(10).join(tail)}</pre>")
+    progress_text = html.escape(chr(10).join(tail))
+    await safe_send(f"<pre>{progress_text}</pre>")
 
 
 async def cmd_tail(n: int = 20) -> None:
@@ -900,10 +901,11 @@ async def cmd_tail(n: int = 20) -> None:
             freshness = f"🔴 {age_sec // 60}m ago (stale)"
 
         header = f"📡 {name} — {freshness}\n"
-        text = header + "\n".join(tail)
-        if len(text) > 4000:
-            text = text[:4000] + "\n... (truncated)"
-        await safe_send(f"<pre>{text}</pre>")
+        tail_text = header + "\n".join(tail)
+        if len(tail_text) > 4000:
+            tail_text = tail_text[:4000] + "\n... (truncated)"
+        tail_text = html.escape(tail_text)
+        await safe_send(f"<pre>{tail_text}</pre>")
     except Exception as e:  # noqa: BLE001
         await safe_send(f"Error reading {name}: {e}")
 
@@ -1014,7 +1016,8 @@ async def handle_update(update: dict) -> None:
         await safe_send(f"📝 Comment saved for next task:\n{args}")
     elif cmd == "/log":
         n = int(args) if args.isdigit() else 15
-        await safe_send(f"<pre>{get_log_tail(n)}</pre>")
+        log_text = html.escape(get_log_tail(n))
+        await safe_send(f"<pre>{log_text}</pre>")
     elif cmd == "/progress":
         n = int(args) if args.isdigit() else 20
         await cmd_progress(n)
