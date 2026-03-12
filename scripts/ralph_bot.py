@@ -7,6 +7,7 @@ import asyncio
 import csv
 import datetime
 import html
+import importlib.util
 import json
 import os
 import re
@@ -16,6 +17,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 RALPH_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path.cwd()  # overridden in __main__
@@ -30,8 +32,79 @@ BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
 TOKEN = ""
 CHAT_ID = ""
 API = ""
-ralph_process: subprocess.Popen | None = None
-caffeinate_process: subprocess.Popen | None = None
+RUNTIME = SimpleNamespace(
+    ralph_process=None,
+    caffeinate_process=None,
+)
+
+HOT_RELOAD_EXPORTS = [
+    "read_state",
+    "write_control",
+    "get_tasks_summary",
+    "get_log_tail",
+    "load_tasks_data",
+    "save_tasks_data",
+    "send_message",
+    "safe_send",
+    "send_split_message",
+    "set_idle_state",
+    "cmd_status",
+    "cmd_start_task",
+    "cmd_start_phase",
+    "cmd_start_auto",
+    "cmd_stop",
+    "cmd_redo",
+    "cmd_pause",
+    "cmd_resume",
+    "cmd_add",
+    "cmd_rm",
+    "cmd_diff",
+    "cmd_cost",
+    "cmd_stats",
+    "cmd_limits",
+    "cmd_plan",
+    "cmd_article",
+    "cmd_progress",
+    "cmd_tail",
+    "cmd_help",
+    "cmd_reload",
+    "handle_update",
+]
+
+
+def configure_module_runtime(module: ModuleType) -> None:
+    """Inject current runtime state into a freshly loaded hot-reload module."""
+    module.RALPH_DIR = RALPH_DIR
+    module.PROJECT_DIR = PROJECT_DIR
+    module.STATE_FILE = PROJECT_DIR / "ralph_state.json"
+    module.CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
+    module.TASKS_FILE = PROJECT_DIR / "tasks.json"
+    module.PROGRESS_FILE = PROJECT_DIR / "progress.md"
+    module.LOG_DIR = PROJECT_DIR / "logs"
+    module.BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
+    module.TOKEN = TOKEN
+    module.CHAT_ID = CHAT_ID
+    module.API = API
+    module.RUNTIME = RUNTIME
+
+
+def load_bot_module_from_source() -> ModuleType:
+    """Load the current bot file as a standalone module for hot reload."""
+    module_path = Path(__file__).resolve()
+    spec = importlib.util.spec_from_file_location("ralph_bot_hotreload", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module spec for {module_path.name}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    configure_module_runtime(module)
+    return module
+
+
+def apply_hot_reload(module: ModuleType) -> None:
+    """Swap command/helper functions to the freshly loaded module version."""
+    for name in HOT_RELOAD_EXPORTS:
+        globals()[name] = getattr(module, name)
 
 
 def read_state() -> dict:
@@ -232,41 +305,38 @@ async def cmd_status() -> None:
 
 async def cmd_start_task(task_id: str) -> None:
     """Start single task."""
-    global ralph_process
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
         return
     write_control("continue", "")
-    ralph_process = subprocess.Popen(
+    RUNTIME.ralph_process = subprocess.Popen(
         [str(RALPH_DIR / "ralph.sh"), "task", task_id],
         cwd=str(PROJECT_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    await safe_send(f"▶️ Started task {task_id}\nPID: {ralph_process.pid}")
+    await safe_send(f"▶️ Started task {task_id}\nPID: {RUNTIME.ralph_process.pid}")
 
 
 async def cmd_start_phase(phase: str) -> None:
     """Start phase execution."""
-    global ralph_process
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
         return
     write_control("continue", "")
-    ralph_process = subprocess.Popen(
+    RUNTIME.ralph_process = subprocess.Popen(
         [str(RALPH_DIR / "ralph.sh"), "phase", phase],
         cwd=str(PROJECT_DIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    await safe_send(f"▶️ Started phase {phase}\nPID: {ralph_process.pid}")
+    await safe_send(f"▶️ Started phase {phase}\nPID: {RUNTIME.ralph_process.pid}")
 
 
 async def cmd_start_auto() -> None:
     """Start auto mode."""
-    global ralph_process, caffeinate_process
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
@@ -274,16 +344,16 @@ async def cmd_start_auto() -> None:
     try:
         write_control("continue", "")
         try:
-            caffeinate_process = subprocess.Popen(["caffeinate", "-dims"])
+            RUNTIME.caffeinate_process = subprocess.Popen(["caffeinate", "-dims"])
         except FileNotFoundError:
-            caffeinate_process = None
-        ralph_process = subprocess.Popen(
+            RUNTIME.caffeinate_process = None
+        RUNTIME.ralph_process = subprocess.Popen(
             [str(RALPH_DIR / "ralph.sh"), "auto"],
             cwd=str(PROJECT_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        await safe_send(f"🚀 Auto mode started\nPID: {ralph_process.pid}")
+        await safe_send(f"🚀 Auto mode started\nPID: {RUNTIME.ralph_process.pid}")
     except Exception as exc:  # noqa: BLE001
         set_idle_state("Ralph failed to start")
         await safe_send(f"❌ Ralph crashed: {exc}")
@@ -291,8 +361,6 @@ async def cmd_start_auto() -> None:
 
 async def cmd_stop(force: bool = False) -> None:
     """Stop or kill Ralph."""
-    global ralph_process, caffeinate_process
-
     if force:
         # 1. Kill all ralph processes by PID files
         killed_pids = []
@@ -309,14 +377,14 @@ async def cmd_stop(force: bool = False) -> None:
                 p.unlink(missing_ok=True)
 
         # 2. Kill ralph_process if bot tracks it
-        if ralph_process and ralph_process.poll() is None:
-            ralph_process.kill()
-            ralph_process.wait()
+        if RUNTIME.ralph_process and RUNTIME.ralph_process.poll() is None:
+            RUNTIME.ralph_process.kill()
+            RUNTIME.ralph_process.wait()
 
         # 3. Kill caffeinate
-        if caffeinate_process:
-            caffeinate_process.terminate()
-            caffeinate_process = None
+        if RUNTIME.caffeinate_process:
+            RUNTIME.caffeinate_process.terminate()
+            RUNTIME.caffeinate_process = None
 
         # 4. CRITICAL: Update state file to idle
         set_idle_state("Stopped by user (force kill)")
@@ -325,35 +393,35 @@ async def cmd_stop(force: bool = False) -> None:
         write_control("", "")
 
         # 6. Reset globals
-        ralph_process = None
+        RUNTIME.ralph_process = None
 
         # 7. Confirm
         await safe_send(f"⏹ Ralph killed. PIDs: {killed_pids or 'none'}\nState: idle")
     else:
         # Graceful stop
         write_control("stop", "")
-        if ralph_process and ralph_process.poll() is None:
+        if RUNTIME.ralph_process and RUNTIME.ralph_process.poll() is None:
             await safe_send("⏹ Ralph will stop after current task")
             # Wait up to 30 seconds for graceful shutdown
             for _ in range(30):
                 await asyncio.sleep(1)
-                if ralph_process.poll() is not None:
+                if RUNTIME.ralph_process.poll() is not None:
                     break
             # If still running after 30s, force kill
-            if ralph_process.poll() is None:
+            if RUNTIME.ralph_process.poll() is None:
                 await safe_send("⚠️ Ralph did not stop gracefully, force killing...")
                 await cmd_stop(force=True)
                 return
             # Stopped gracefully
             set_idle_state("Stopped gracefully by user")
-            if caffeinate_process:
-                caffeinate_process.terminate()
-                caffeinate_process = None
-            ralph_process = None
+            if RUNTIME.caffeinate_process:
+                RUNTIME.caffeinate_process.terminate()
+                RUNTIME.caffeinate_process = None
+            RUNTIME.ralph_process = None
             await safe_send("⏹ Ralph stopped gracefully. State: idle")
         else:
             set_idle_state("Idle")
-            ralph_process = None
+            RUNTIME.ralph_process = None
             await safe_send("⏸ Ralph is not running")
 
 
@@ -771,6 +839,17 @@ async def cmd_tail(n: int = 20) -> None:
         await safe_send(f"Error reading {name}: {e}")
 
 
+async def cmd_reload() -> None:
+    """Hot-reload bot helpers and command handlers from source."""
+    try:
+        module = load_bot_module_from_source()
+        apply_hot_reload(module)
+        await safe_send("♻️ Bot modules reloaded")
+    except Exception as exc:  # noqa: BLE001
+        error_text = html.escape(str(exc))[:500] or exc.__class__.__name__
+        await safe_send(f"❌ Reload failed: {error_text}")
+
+
 async def cmd_help() -> None:
     """Send help text."""
     await safe_send(
@@ -797,6 +876,7 @@ async def cmd_help() -> None:
         "/stats — aggregated task metrics from metrics.csv\n"
         "/limits — today's spend vs cost limit\n"
         "/diff — last commit changes\n"
+        "/reload — hot-reload bot handlers\n"
     )
 
 
@@ -874,6 +954,8 @@ async def handle_update(update: dict) -> None:
         await cmd_limits()
     elif cmd == "/diff":
         await cmd_diff()
+    elif cmd == "/reload":
+        await cmd_reload()
     elif cmd == "/help" or (cmd == "/start" and not args):
         await cmd_help()
     else:
