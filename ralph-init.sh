@@ -25,7 +25,19 @@ copy_if_missing() {
     fi
 }
 
-copy_if_missing "$RALPH_DIR/templates/AGENTS.md.template" "$PROJECT_DIR/AGENTS.md"
+render_template_if_missing() {
+    local src="$1" dst="$2"
+    if [ -f "$dst" ]; then
+        echo "   ⏭  $dst already exists, skipping"
+    else
+        sed "s/{{PROJECT_NAME}}/$PROJECT_NAME/g; s/PROJECT_NAME/$PROJECT_NAME/g" "$src" > "$dst"
+        echo "   ✅ Created $dst"
+    fi
+}
+
+render_template_if_missing "$RALPH_DIR/templates/AGENTS.md.template" "$PROJECT_DIR/AGENTS.md"
+render_template_if_missing "$RALPH_DIR/templates/ARCHITECTURE.md.template" "$PROJECT_DIR/ARCHITECTURE.md"
+render_template_if_missing "$RALPH_DIR/templates/MEMORY_SYSTEM.md.template" "$PROJECT_DIR/MEMORY_SYSTEM.md"
 copy_if_missing "$RALPH_DIR/templates/AGENTS_CODER.md" "$PROJECT_DIR/AGENTS_CODER.md"
 copy_if_missing "$RALPH_DIR/templates/AGENTS_LEAD.md" "$PROJECT_DIR/AGENTS_LEAD.md"
 copy_if_missing "$RALPH_DIR/templates/progress.md.template" "$PROJECT_DIR/progress.md"
@@ -66,7 +78,7 @@ echo "   ✅ Updated .gitignore"
 
 echo ""
 echo "🎉 Done! Next steps:"
-echo "   1. Edit AGENTS.md — describe YOUR project"
+echo "   1. Edit AGENTS.md, ARCHITECTURE.md, and MEMORY_SYSTEM.md"
 echo "   2. Edit .env — add Telegram tokens"
 echo "   3. Add tasks to tasks.json"
 echo "   4. Run: $RALPH_DIR/ralph.sh task YOUR-TASK-01"

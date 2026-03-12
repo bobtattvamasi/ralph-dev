@@ -4,6 +4,8 @@
   "agent_instructions": {
     "read_first": [
       "AGENTS.md",
+      "ARCHITECTURE.md",
+      "MEMORY_SYSTEM.md",
       "progress.md"
     ],
     "test_command": "bash -n ralph.sh && python3 -c \"import ast; ast.parse(open('scripts/ralph_bot.py').read())\"",
@@ -15,6 +17,29 @@
       "No external Python dependencies except dotenv",
       "bash -n ralph.sh must pass after changes",
       "Commit with message format: feat(TASK_ID): title"
+    ]
+  },
+  "task_schema": {
+    "required": [
+      "id",
+      "phase",
+      "title",
+      "description",
+      "status"
+    ],
+    "standard_optional": [
+      "priority",
+      "dependencies",
+      "timeout",
+      "complexity",
+      "required_context",
+      "agent_suitable",
+      "tags",
+      "skip_lead"
+    ],
+    "notes": [
+      "complexity and required_context are part of the standard Ralph task schema",
+      "agents should treat required_context as guaranteed high-signal file input"
     ]
   },
   "phases": {
@@ -240,9 +265,9 @@
       "id": "R2-01",
       "phase": "R2",
       "category": "feature",
-      "priority": "medium",
+      "priority": "high",
       "title": "Bot: /plan command",
-      "description": "Add /plan command that shows formatted tasks.json summary grouped by phase with status indicators.",
+      "description": "Add /plan command that shows formatted tasks.json summary grouped by phase with status indicators. This is part of the MVP Telegram control surface.",
       "acceptance_criteria": [
         "/plan command exists",
         "Groups tasks by phase",
@@ -433,17 +458,19 @@
       "id": "R1-12",
       "phase": "R1.5",
       "category": "testing",
-      "priority": "medium",
-      "title": "Integration tests for ralph.sh",
-      "description": "Add tests/test_integration.py: mock codex exec, run ralph.sh on test tasks.json, verify state transitions, log output, task status updates.",
+      "priority": "high",
+      "title": "Integration tests for ralph.sh MVP flows",
+      "description": "Add tests/test_integration.py: mock codex exec, run ralph.sh on test tasks.json, verify state transitions, skip/stop control handling, log output, task status updates, and approve/fail flows.",
       "acceptance_criteria": [
         "Integration test suite for ralph.sh exists",
         "Tests cover state transitions and task status updates",
+        "Tests cover stop and skip control paths",
         "Tests run with mocked codex process"
       ],
       "test_steps": [
         "Run pytest tests/test_integration.py",
-        "Verify transition assertions for running/idle/waiting_human",
+        "Verify transition assertions for running/idle/waiting_human/stopped",
+        "Verify skip path marks current task as skipped and advances",
         "Run full make test and confirm pass"
       ],
       "dependencies": [
@@ -579,6 +606,30 @@
         "Re-run same task flow and ensure no duplicate append"
       ],
       "dependencies": [
+        "R2-01"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R2-10",
+      "phase": "R2",
+      "category": "convenience",
+      "priority": "high",
+      "title": "Bot: /stats command",
+      "description": "Add /stats command that reads logs/metrics.csv and reports execution metrics: tasks succeeded/failed, average duration, average attempts, changed files, and estimated cost.",
+      "acceptance_criteria": [
+        "/stats command exists in Telegram bot",
+        "Reads and summarizes logs/metrics.csv",
+        "Handles missing or empty metrics.csv gracefully",
+        "python3 -c ast.parse passes"
+      ],
+      "test_steps": [
+        "Seed logs/metrics.csv with sample rows",
+        "Run /stats and verify aggregated output",
+        "Run /stats with no metrics.csv and verify fallback message"
+      ],
+      "dependencies": [
+        "R1-03",
         "R2-01"
       ],
       "status": "pending"

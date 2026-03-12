@@ -114,6 +114,8 @@ SESSION_TASKS=0
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
+METRICS_FILE="$LOG_DIR/metrics.csv"
+[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est" > "$METRICS_FILE"
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 echo "$$" > "$PROJECT_DIR/ralph_main.pid"
 
@@ -138,6 +140,15 @@ estimate_cost() {
     python3 -c "print(f'{(int(${1:-0}) * 3 / 1000000):.2f}')"
 }
 
+log_metrics() {
+    local status="$1"
+    local end_time=$(date +%s)
+    local duration=$((end_time - TASK_START))
+    local files=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | wc -l | tr -d ' ')
+    local cost=$(estimate_cost "$TASK_TOKENS")
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$QUALITY,$cost" >> "$METRICS_FILE"
+}
+
 # State management
 write_state() {
     local status="$1" task="${2:-}" step="${3:-}" message="${4:-}"
@@ -158,20 +169,58 @@ os.replace(tmp_path, 'ralph_state.json')
 "
 }
 
+CONTROL_ACTION="continue"
+CONTROL_TARGET=""
 check_control() {
     if [ -f ralph_control.json ]; then
-        ACTION=$(python3 -c "
+        local control_data
+        control_data=$(python3 -c "
 import json
 try:
     d = json.load(open('ralph_control.json'))
     print(d.get('action', 'continue'))
-except: print('continue')
-" 2>/dev/null || echo "continue")
-        if [ "$ACTION" = "stop" ] || [ "$ACTION" = "stop_now" ]; then
+    print(d.get('comment', ''))
+except:
+    print('continue')
+    print('')
+" 2>/dev/null || printf "continue\n\n")
+        CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
+        CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+        if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
             return 1
         fi
+        if [ "$CONTROL_ACTION" = "skip" ]; then
+            return 2
+        fi
     fi
+    CONTROL_ACTION="continue"
+    CONTROL_TARGET=""
     return 0
+}
+
+clear_control_action() {
+    python3 -c "
+import json
+from pathlib import Path
+p = Path('ralph_control.json')
+if p.exists():
+    try:
+        d = json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        d = {}
+    d['action'] = 'continue'
+    d['comment'] = ''
+    p.write_text(json.dumps(d, indent=2), encoding='utf-8')
+" 2>/dev/null || true
+}
+
+skip_current_task() {
+    local reason="Skipped by user via Telegram"
+    log "⏭ Skip signal received for $TASK_ID"
+    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" skipped "$reason" >/dev/null 2>&1 || true
+    write_state "running" "$TASK_ID" "skipped" "$reason"
+    notify "⏭ $TASK_ID skipped by user"
+    clear_control_action
 }
 
 get_human_comment() {
@@ -344,7 +393,6 @@ run_codex() {
     local watchdog_timeout=300
 
     while [ $retry -le $MAX_CODEX_RETRIES ]; do
-        echo "$$" > "$PROJECT_DIR/ralph_codex.pid"
         : > "$output_file"
         local watchdog_flag
         watchdog_flag="/tmp/ralph_watchdog_${$}_${retry}.flag"
@@ -372,6 +420,7 @@ run_codex() {
             ) &
         fi
         local codex_pid=$!
+        echo "$codex_pid" > "$PROJECT_DIR/ralph_codex.pid"
         run_codex_watchdog "$output_file" "$codex_pid" "$watchdog_timeout" "$watchdog_flag" &
         local watchdog_pid=$!
 
@@ -536,12 +585,16 @@ esac
 
 # ─── Main loop ───
 while true; do
-    if ! check_control; then
+    CONTROL_STATUS=0
+    check_control || CONTROL_STATUS=$?
+    if [ $CONTROL_STATUS -eq 1 ]; then
         log "⏹ Stop signal received"
         write_state "stopped" "" "" "Stopped by user"
         notify "⏹ Ralph stopped by user"
         cleanup
         exit 0
+    elif [ $CONTROL_STATUS -eq 2 ]; then
+        clear_control_action
     fi
 
     TASK_JSON=$(python3 "$RALPH_DIR/scripts/next_task.py" $NEXT_ARGS 2>/dev/null || echo "null")
@@ -593,10 +646,25 @@ print(' '.join(files) if files else '')
 
     FIX_RETRY=0
     TASK_DONE=false
+    TASK_SKIPPED=false
     FIX_INSTRUCTIONS=""
     TASK_TOKENS=0
 
     while [ "$FIX_RETRY" -le "$MAX_FIX_RETRIES" ] && [ "$TASK_DONE" = false ]; do
+        CONTROL_STATUS=0
+        check_control || CONTROL_STATUS=$?
+        if [ $CONTROL_STATUS -eq 1 ]; then
+            log "⏹ Stop signal received"
+            write_state "stopped" "" "" "Stopped by user"
+            notify "⏹ Ralph stopped by user"
+            cleanup
+            exit 0
+        elif [ $CONTROL_STATUS -eq 2 ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
+            skip_current_task
+            TASK_DONE=true
+            TASK_SKIPPED=true
+            break
+        fi
 
         # ═══ CODER ═══
         CURRENT_ATTEMPT=$((FIX_RETRY + 1))
@@ -632,11 +700,26 @@ $(cat "$ctx_file" 2>/dev/null | head -200)
             done
         fi
 
-        CODER_PROMPT="Read AGENTS.md and AGENTS_CODER.md first. Then read progress.md.
+        PROJECT_ARCHITECTURE=""
+        PROJECT_MEMORY_SYSTEM=""
+        if [ -f "ARCHITECTURE.md" ]; then
+            PROJECT_ARCHITECTURE=$(cat ARCHITECTURE.md 2>/dev/null || true)
+        fi
+        if [ -f "MEMORY_SYSTEM.md" ]; then
+            PROJECT_MEMORY_SYSTEM=$(cat MEMORY_SYSTEM.md 2>/dev/null || true)
+        fi
+
+        CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_CODER.md first. Then read progress.md.
 Run make test to verify current state.
 
+## Architecture Doc
+${PROJECT_ARCHITECTURE:-No ARCHITECTURE.md provided. Use AGENTS.md and the repository structure.}
+
+## Memory System Doc
+${PROJECT_MEMORY_SYSTEM:-No MEMORY_SYSTEM.md provided. Use AGENTS.md and .ralph/memory/.}
+
 ## Project Context (from memory)
-${MEMORY_CORE:-No core context yet. Read AGENTS.md for project info.}
+${MEMORY_CORE:-No core context yet. Read ARCHITECTURE.md and AGENTS.md for project info.}
 
 ## Recent Tasks (what was done before you)
 ${MEMORY_RECENT:-No recent tasks yet. This may be the first task.}
@@ -665,11 +748,22 @@ $HUMAN_COMMENT"
         CODER_PROMPT="$CODER_PROMPT
 
 ## Rules
+- **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
 - Implement ONLY this task
 - Follow acceptance_criteria exactly
 - make test must pass
 - Do NOT modify tasks.json or progress.md
-- Commit: feat($TASK_ID): $TASK_TITLE"
+- Commit: feat($TASK_ID): $TASK_TITLE
+
+Expected response structure:
+<thinking>
+1. Need to modify app.py to add login route.
+2. Will use flask-login library.
+3. Need to update requirements.txt first.
+</thinking>
+\`\`\`python
+... code ...
+\`\`\`"
 
         PRE_HASH=$(git rev-parse HEAD)
 
@@ -679,6 +773,20 @@ $HUMAN_COMMENT"
         run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
         CODEX_EXIT=$?
         set -e
+        CONTROL_STATUS=0
+        check_control || CONTROL_STATUS=$?
+        if [ $CONTROL_STATUS -eq 1 ]; then
+            log "⏹ Stop signal received"
+            write_state "stopped" "" "" "Stopped by user"
+            notify "⏹ Ralph stopped by user"
+            cleanup
+            exit 0
+        elif [ $CONTROL_STATUS -eq 2 ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
+            skip_current_task
+            TASK_DONE=true
+            TASK_SKIPPED=true
+            break
+        fi
         CODER_TOKENS=$(extract_tokens "$CODER_OUTPUT")
         TASK_TOKENS=$((TASK_TOKENS + ${CODER_TOKENS:-0}))
         SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
@@ -731,7 +839,7 @@ else:
             write_state "running" "$TASK_ID" "tech_lead" "Tech Lead reviewing..."
             LEAD_START=$(date +%s)
 
-            LEAD_PROMPT="Read AGENTS_LEAD.md first.
+            LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
 
 ## Task
 $TASK_JSON
@@ -764,6 +872,21 @@ Output ONLY a JSON object with your decision."
             log "⏱️ Tech Lead took ${LEAD_DURATION}s"
             REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
             log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
+        fi
+
+        CONTROL_STATUS=0
+        check_control || CONTROL_STATUS=$?
+        if [ $CONTROL_STATUS -eq 1 ]; then
+            log "⏹ Stop signal received"
+            write_state "stopped" "" "" "Stopped by user"
+            notify "⏹ Ralph stopped by user"
+            cleanup
+            exit 0
+        elif [ $CONTROL_STATUS -eq 2 ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
+            skip_current_task
+            TASK_DONE=true
+            TASK_SKIPPED=true
+            break
         fi
 
         DECISION=$(echo "$REVIEW" | python3 -c "
@@ -826,6 +949,7 @@ print('Task completed')
                 python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
                 git add -A
                 git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
+                log_metrics "success"
                 log "✅ $TASK_ID done"
                 TASK_DURATION=$(( $(date +%s) - TASK_START ))
                 TOTAL="$TASK_DURATION"
@@ -890,6 +1014,7 @@ for m in re.findall(r'\{[^{}]*\}',text,re.DOTALL):
 print('Unknown issue')
 " 2>/dev/null || echo "Unknown")
 
+                log_metrics "failed"
                 log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
                 write_state "waiting_human" "$TASK_ID" "alert" "$REASON"
                 alert_human "$REASON"
@@ -908,8 +1033,14 @@ print('Unknown issue')
         rm -f "$REVIEW_FILE" "$CODER_OUTPUT" "$LEAD_OUTPUT"
     done
 
+    if [ "$TASK_SKIPPED" = true ]; then
+        [ "$MODE" = "task" ] && break
+        continue
+    fi
+
     if [ "$TASK_DONE" = false ]; then
         REASON="$TASK_ID failed after $MAX_FIX_RETRIES retries"
+        log_metrics "failed"
         log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         alert_human "$REASON"
         break

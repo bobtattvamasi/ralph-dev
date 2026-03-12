@@ -2,7 +2,7 @@
   "version": 1,
   "project": "PROJECT_NAME",
   "agent_instructions": {
-    "read_first": ["AGENTS.md", "progress.md"],
+    "read_first": ["AGENTS.md", "ARCHITECTURE.md", "MEMORY_SYSTEM.md", "progress.md"],
     "test_command": "make test",
     "rules": [
       "ONE task at a time",

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
 import os
 import signal
@@ -395,6 +396,91 @@ async def cmd_cost() -> None:
     await safe_send(msg)
 
 
+async def cmd_stats() -> None:
+    """Show aggregated execution stats from logs/metrics.csv."""
+    metrics_file = LOG_DIR / "metrics.csv"
+    if not metrics_file.exists() or metrics_file.stat().st_size == 0:
+        await safe_send("📊 No metrics available yet. Run some tasks!")
+        return
+
+    try:
+        with metrics_file.open(encoding="utf-8", errors="replace", newline="") as f:
+            rows = list(csv.DictReader(f))
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error reading metrics.csv: {exc}")
+        return
+
+    if not rows:
+        await safe_send("📊 No metrics available yet. Run some tasks!")
+        return
+
+    total_tasks = len(rows)
+    success_rows = [row for row in rows if row.get("status") == "success"]
+    failed_rows = [row for row in rows if row.get("status") == "failed"]
+
+    def parse_float(row: dict, key: str) -> float:
+        try:
+            return float(row.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    avg_duration = (
+        sum(parse_float(row, "duration_s") for row in success_rows) / len(success_rows)
+        if success_rows
+        else 0.0
+    )
+    avg_attempts = sum(parse_float(row, "attempts") for row in rows) / total_tasks
+    total_cost = sum(parse_float(row, "cost_est") for row in rows)
+
+    msg = (
+        "📊 <b>Ralph Stats</b>\n"
+        f"Всего задач: {total_tasks}\n"
+        f"Успешных vs Проваленных: {len(success_rows)} vs {len(failed_rows)}\n"
+        f"Среднее время выполнения: {avg_duration:.1f}s\n"
+        f"Среднее число попыток: {avg_attempts:.1f}\n"
+        f"Общая стоимость: ${total_cost:.2f}"
+    )
+    await safe_send(msg)
+
+
+async def cmd_plan() -> None:
+    """Show tasks grouped by phase plus next pending tasks."""
+    if not TASKS_FILE.exists():
+        await safe_send("No tasks.json found")
+        return
+
+    try:
+        data = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error reading tasks.json: {exc}")
+        return
+
+    tasks = data.get("tasks", [])
+    if not tasks:
+        await safe_send("No tasks.json found")
+        return
+
+    phase_order = data.get("phases", {})
+    ordered_phases = sorted(
+        {str(task.get("phase", "?")) for task in tasks},
+        key=lambda phase: list(phase_order).index(phase) if phase in phase_order else phase,
+    )
+
+    lines = ["📋 <b>Ralph Plan</b>"]
+    for phase in ordered_phases:
+        phase_tasks = [task for task in tasks if str(task.get("phase", "?")) == phase]
+        done_count = sum(1 for task in phase_tasks if task.get("status") == "done")
+        lines.append(f"Phase {phase}: {done_count}/{len(phase_tasks)} done")
+
+    pending_tasks = [task for task in tasks if task.get("status") == "pending"]
+    if pending_tasks:
+        lines.append("")
+        for task in pending_tasks[:5]:
+            lines.append(f"Next: {task['id']} - {task['title']}")
+
+    await safe_send("\n".join(lines))
+
+
 async def cmd_progress(n: int = 20) -> None:
     """Show tail of progress.md."""
     if not PROGRESS_FILE.exists():
@@ -448,6 +534,7 @@ async def cmd_help() -> None:
         "🤖 <b>Ralph Bot</b>\n\n"
         "/status — current state\n"
         "/tasks [phase] — task list\n"
+        "/plan — phase summary and next pending tasks\n"
         "/start TASK_ID — run one task\n"
         "/phase NUM — run phase\n"
         "/auto — run all\n"
@@ -459,6 +546,7 @@ async def cmd_help() -> None:
         "/progress [N] — last N lines from progress.md\n"
         "/tail [N] — last N lines of live codex output\n"
         "/cost — token usage & cost estimate\n"
+        "/stats — aggregated task metrics from metrics.csv\n"
         "/diff — last commit changes\n"
     )
 
@@ -492,6 +580,8 @@ async def handle_update(update: dict) -> None:
         await cmd_status()
     elif cmd == "/tasks":
         await safe_send(get_tasks_summary(args or None))
+    elif cmd == "/plan":
+        await cmd_plan()
     elif cmd == "/start" and args:
         await cmd_start_task(args)
     elif cmd == "/phase" and args:
@@ -519,6 +609,8 @@ async def handle_update(update: dict) -> None:
         await cmd_tail(n)
     elif cmd == "/cost":
         await cmd_cost()
+    elif cmd == "/stats":
+        await cmd_stats()
     elif cmd == "/diff":
         await cmd_diff()
     elif cmd == "/help" or (cmd == "/start" and not args):
@@ -591,7 +683,7 @@ async def watch_state() -> None:
 
         if status != last_status:
             if status == "waiting_human":
-                reason = state.get("alert_reason", "Unknown")
+                reason = state.get("message", "Unknown")
                 await safe_send(
                     f"🚨 <b>HUMAN NEEDED</b>\n\n{reason}",
                     reply_markup={
