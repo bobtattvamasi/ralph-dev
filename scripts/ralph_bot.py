@@ -116,15 +116,10 @@ def read_latest_article() -> str:
     text = BLOG_DRAFTS_FILE.read_text(encoding="utf-8", errors="replace").strip()
     if not text:
         return ""
-
     sections = re.split(r"(?m)^## \d{4}-\d{2}-\d{2} .*UTC\s*$", text)
-    headers = re.findall(r"(?m)^## \d{4}-\d{2}-\d{2} .*UTC\s*$", text)
-    if headers and len(sections) >= 2:
-        latest_body = sections[-1].strip()
-        latest_header = headers[-1].strip()
-        return f"{latest_header}\n\n{latest_body}".strip()
-
-    return text[-4000:]
+    if len(sections) >= 2:
+        return sections[-1].strip()
+    return text
 
 
 async def send_message(text: str, reply_markup: dict | None = None) -> None:
@@ -187,6 +182,29 @@ async def safe_send(text: str, reply_markup: dict | None = None) -> None:
         await send_message(text, reply_markup=reply_markup)
     except Exception as exc:  # noqa: BLE001
         print(f"[bot] Send error: {exc}", file=sys.stderr)
+
+
+async def send_split_message(text: str) -> None:
+    """Send a long message in chunks close to Telegram's limit."""
+    if not text:
+        return
+
+    if len(text) <= 4000:
+        await safe_send(text)
+        return
+
+    remaining = text
+    while remaining:
+        if len(remaining) <= 4000:
+            chunk = remaining
+            remaining = ""
+        else:
+            cut = remaining.rfind("\n", 0, 4000)
+            if cut < 100:
+                cut = 4000
+            chunk = remaining[:cut]
+            remaining = remaining[cut:].lstrip("\n")
+        await safe_send(chunk)
 
 
 def set_idle_state(message: str = "Idle") -> None:
@@ -681,11 +699,22 @@ async def cmd_article() -> None:
         await safe_send("✅ Статья готова в BLOG_DRAFTS.md")
         return
 
-    if len(latest_article) > 4000:
+    match = re.search(
+        r"===TELEGRAM===\s*(.*?)\s*===LINKEDIN===\s*(.*?)\s*===PROMPTS===\s*(.*)",
+        latest_article,
+        re.DOTALL,
+    )
+    if not match:
         await safe_send("✅ Статья готова в BLOG_DRAFTS.md")
         return
 
-    await safe_send(latest_article)
+    telegram_text = match.group(1).strip()
+    linkedin_text = match.group(2).strip()
+    prompts_text = match.group(3).strip()
+
+    await send_split_message("===TELEGRAM===\n" + telegram_text)
+    await send_split_message("===LINKEDIN===\n" + linkedin_text)
+    await send_split_message("===PROMPTS===\n" + prompts_text)
 
 
 async def cmd_progress(n: int = 20) -> None:
