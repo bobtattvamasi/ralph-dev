@@ -103,6 +103,11 @@ def load_bot_module_from_source() -> ModuleType:
 
 def apply_hot_reload(module: ModuleType) -> None:
     """Swap command/helper functions to the freshly loaded module version."""
+    missing = [name for name in HOT_RELOAD_EXPORTS if not hasattr(module, name)]
+    if missing:
+        missing_str = ", ".join(sorted(missing))
+        raise RuntimeError(f"Reload module missing exports: {missing_str}")
+
     for name in HOT_RELOAD_EXPORTS:
         globals()[name] = getattr(module, name)
 
