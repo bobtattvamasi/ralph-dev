@@ -50,4 +50,4 @@ ARTICLE_TEXT="$(codex exec "$PROMPT")"
     printf "%s\n" "$ARTICLE_TEXT"
 } >> "$PROJECT_DIR/BLOG_DRAFTS.md"
 
-echo "✅ Article generated in BLOG_DRAFTS.md"
+echo "$ARTICLE_TEXT"

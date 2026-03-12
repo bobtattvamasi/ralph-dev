@@ -194,6 +194,8 @@ def create_test_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     env["PYTHONUNBUFFERED"] = "1"
     env["RALPH_PROJECT_DIR"] = str(project_dir)
+    env["RALPH_TELEGRAM_TOKEN"] = ""
+    env["RALPH_TELEGRAM_CHAT_ID"] = ""
     return project_dir, env
 
 

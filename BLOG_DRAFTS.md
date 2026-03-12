@@ -1,67 +1,46 @@
 
-
 ## 
 
-## Telegram
-
+===TELEGRAM===
 > b.g_ / build log #03
 
-Поджал Ralph не в сторону “умнее модель”, а в сторону “меньше случайного хаоса в рантайме”.
+Сдвинул Ralph из "просто раннера задач" в более управляемый оркестратор: усилил runtime, добавил ролевую логику агентов и вывел генерацию материалов в отдельный контур.
 
 **Что сделал**
-- Добил runtime-слой: watchdog/retry стали настраиваемыми через env, усилил cleanup зависших `codex`-процессов, добавил работу с `PID/PGID`, ретраи после timeout и более нормальную обработку rate limit.
-- Закрыл это интеграционными тестами: success path, `skip`, `stop`, убийство зависшего Codex, повторные попытки.
-- Добавил ролевую схему агентов: Ralph теперь понимает `role` и `risk` в задачах, подхватывает отдельные инструкции для `designer` и `journalist`.
-- Поставил human approval gate перед high-risk коммитами: `pause/skip/stop` до записи в git.
-- Добавил контентный контур: `write_article.sh`, команду `/article` в Telegram-боте и сохранение драфтов в `BLOG_DRAFTS.md`.
-- По боту добил UX-слой: `/add`, `/rm`, `/pause`, `/resume`, `/limits`.
-- Переписал README: теперь проект описан как project-agnostic AI orchestrator, без старого ручного промпта.
+- Дожал стабильность рантайма: cleanup зависших Codex-процессов, cleanup process group, retry после timeout, более аккуратная обработка rate limit и watchdog.
+- Добавил и расширил интеграционные тесты для `ralph.sh`: завершение задачи, `skip`, `stop`, убийство зависшего процесса, повторные попытки.
+- Вынес управление агентами на уровень ролей: Ralph теперь понимает `role` и `risk` в задачах, подхватывает отдельные инструкции для journalist/designer.
+- Поставил human approval gate перед high-risk действиями, чтобы опасные шаги не проходили в commit-контур автоматически.
+- Добавил генерацию драфтов статей: `write_article.sh`, команда `/article`, сохранение в `BLOG_DRAFTS.md`.
+- Подкрутил Telegram-бота: команды для задач, паузы/резюма, лимитов, статьи; обновил help и маршрутизацию.
+- Переписал README как описание project-agnostic orchestrator, убрал устаревший `system_promt.md`.
 
 **Что сломалось / Технический челлендж**
-- Главная грязь была не в “агентности”, а в управлении процессами: orphan/stale `codex`, таймауты, process group cleanup, recovery после rate limit.
-- Без этого любой auto-режим быстро превращается в лотерею: бот жив, задача висит, процессы не добиты, состояние поломано.
-- Отдельно всплыл разрыв между синхронным исполнением и наблюдаемостью: live-control есть, но runtime всё ещё требует жёсткой дисциплины вокруг логов и остановки.
+- Главная проблема была не в модели, а в процессе: orphan PID, stale Codex-процессы, таймауты и recovery вели себя недостаточно жёстко для длинных прогонов.
+- Отдельно пришлось разруливать safe cleanup не только по PID, но и по process group, иначе watchdog лечил симптом, а не причину.
+- После добавления ролей и risk-gate стало критично удержать control flow простым: где пауза, где skip, где stop, где нужен человек перед commit.
 
 **Что добавил в систему**
-- Ролевой слой поверх задач: разные инструкции под разные типы работы.
-- Risk gate для high-impact изменений перед коммитом.
-- Контентный пайплайн из оркестратора в Telegram и `BLOG_DRAFTS.md`.
-- Более жёсткий execution control: retries, watchdog, cleanup, интеграционные проверки.
+- Role-based agent layer для разных типов задач.
+- High-risk approval gate в execution pipeline.
+- Контур article generation внутри Telegram-управления.
+- Более жёсткий runtime safety слой: cleanup, retries, rate-limit pause, тестовое покрытие этих сценариев.
 
 **Вывод**
-Сдвиг полезный: Ralph стал меньше “обвязкой вокруг Codex” и больше управляемым execution layer. Ценность сейчас не в том, что он может что-то написать, а в том, что он умеет это делать с контролем, остановкой и проверяемым состоянием.
+Система стала менее хрупкой и ближе к реальному автономному циклу: не только выполняет задачи, но и лучше переживает сбои, различает типы работы и не делает рискованные шаги без человека. Фокус всё ещё тот же: инфраструктура и контроль важнее "магии модели".
 
-## LinkedIn
+===LINKEDIN===
+The last round of work on Ralph reinforced a simple point: once you move beyond demos, the real bottleneck is rarely the model. It is the infrastructure around it.
 
-Most AI tooling discussions still over-focus on the model.
+I spent this cycle hardening the execution layer: better cleanup of orphaned Codex processes, stronger timeout recovery, safer retry handling, and broader integration tests for stop, skip, stale-process recovery, and rate-limit scenarios. That work matters because autonomous runs fail in operationally boring ways long before they fail in intellectually interesting ways.
 
-This week reinforced the opposite point: infrastructure beats model quality surprisingly often.
+On top of that, Ralph now supports role-based agents and explicit task risk metadata. Different instructions can be loaded for different roles, and high-risk actions now hit a human approval gate before entering the commit path. This is the kind of control flow that becomes necessary when you want an agent system to be useful in production rather than impressive in a screenshot.
 
-In Ralph, the meaningful progress was not “better prompts” or “smarter agents.” It was tightening the execution layer around them:
-- watchdog and retry behavior became configurable
-- Codex process cleanup was hardened with PID/PGID-aware termination
-- timeout and rate-limit recovery paths were made more reliable
-- integration tests were added for stop, skip, retry, and stale-process scenarios
-- role-based agent instructions were introduced
-- high-risk tasks now pause behind a human approval gate before commit
+I also added an article-generation path through the bot interface, which is a smaller feature on the surface, but useful as a test of orchestration boundaries: task classification, role routing, output persistence, and user control all in one loop.
 
-That changes the system in a deeper way than swapping one model for another.
+The pattern keeps repeating: model quality helps, but reliability, safety, process isolation, and explicit control surfaces decide whether the system is actually usable. Infrastructure is what turns model capability into something you can trust overnight.
 
-A model can generate output. It cannot guarantee safe control flow, consistent state transitions, bounded retries, or predictable operator intervention. Those are infrastructure concerns. And in any real autonomous workflow, those concerns define whether the system is usable.
-
-The pattern is becoming clearer:
-- Model quality affects local output quality
-- System design affects whether the workflow survives contact with reality
-
-If the runtime can’t clean up orphan processes, recover from rate limits, gate risky actions, and expose control to a human operator, “agentic” behavior is mostly theater.
-
-The interesting work is increasingly in orchestration:
-reliability, review gates, memory boundaries, task semantics, and operational control.
-
-Infrastructure is what turns a model into a system.
-
-## Cover Prompts
-
-Minimalist terminal UI, red approval gate, black and bone palette, orchestration dashboard, clean grid, infrastructure over model
-Cyberpunk control room with watchdog alerts, orphan process cleanup, PID graphs, cold neon cyan and amber, AI runtime supervision
-Minimal poster, single command line glowing in dark space, retries timeout rate-limit safety, sharp typography, restrained futuristic aesthetic
+===PROMPTS===
+Minimalist cyberpunk control room dashboard, autonomous AI orchestration, process cleanup and retry loops, cold terminal glow, black graphite and acid green
+Cyberpunk developer workstation, agent roles and human approval gate visualized as branching execution paths, dense technical UI, restrained neon
+Minimal poster design, infrastructure over model theme, orchestration pipeline with safety checkpoints and runtime states, monochrome with sharp red accent

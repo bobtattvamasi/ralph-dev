@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import datetime
+import html
 import json
 import os
 import re
@@ -106,20 +108,6 @@ def load_tasks_data() -> dict:
 def save_tasks_data(data: dict) -> None:
     """Persist tasks.json with stable formatting."""
     TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def read_latest_article() -> str:
-    """Read the most recent generated article section from BLOG_DRAFTS.md."""
-    if not BLOG_DRAFTS_FILE.exists():
-        return ""
-
-    text = BLOG_DRAFTS_FILE.read_text(encoding="utf-8", errors="replace").strip()
-    if not text:
-        return ""
-    sections = re.split(r"(?m)^## \d{4}-\d{2}-\d{2} .*UTC\s*$", text)
-    if len(sections) >= 2:
-        return sections[-1].strip()
-    return text
 
 
 async def send_message(text: str, reply_markup: dict | None = None) -> None:
@@ -670,42 +658,61 @@ async def cmd_plan() -> None:
     await safe_send("\n".join(lines))
 
 
-async def cmd_article() -> None:
+async def cmd_article(mode: str = "") -> None:
     """Generate an article pack and send the latest draft."""
     script_path = RALPH_DIR / "scripts" / "write_article.sh"
     if not script_path.exists():
         await safe_send("❌ scripts/write_article.sh not found")
         return
 
-    try:
-        result = subprocess.run(
-            [str(script_path)],
-            cwd=str(PROJECT_DIR),
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-        await safe_send(f"❌ Article generation failed:\n<pre>{message[:3500]}</pre>")
-        return
-    except Exception as exc:  # noqa: BLE001
-        await safe_send(f"❌ Article generation failed: {exc}")
-        return
+    latest_article = ""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    latest_article = read_latest_article()
+    if mode != "new" and BLOG_DRAFTS_FILE.exists():
+        drafts_text = BLOG_DRAFTS_FILE.read_text(encoding="utf-8", errors="replace")
+        date_headers = list(re.finditer(r"(?m)^## (\d{4}-\d{2}-\d{2}).*UTC\s*$", drafts_text))
+        if date_headers:
+            last_match = date_headers[-1]
+            last_date = last_match.group(1)
+            if last_date == today:
+                latest_article = drafts_text[last_match.end():].strip()
+                if latest_article:
+                    await safe_send("📖 Нашел готовую статью за сегодня. Отправляю...")
+
+        try:
+            if mode == "new" or not latest_article:
+                await safe_send("⏳ Журналист собирает логи и пишет статью. Это займет 1-2 минуты...")
+                process = await asyncio.create_subprocess_exec(
+                    str(script_path),
+                    cwd=str(PROJECT_DIR),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                try:
+                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+                except asyncio.TimeoutError:
+                    await safe_send("❌ Таймаут: скрипт работал дольше 5 минут")
+                    return
+                if process.returncode != 0:
+                    err_text = html.escape(stderr.decode("utf-8", errors="replace")[:3500])
+                    await safe_send(f"❌ Ошибка:\n<pre>{err_text}</pre>")
+                    return
+                latest_article = stdout.decode("utf-8", errors="replace").strip()
+        except Exception as exc:  # noqa: BLE001
+            await safe_send(f"❌ Article generation failed: {exc}")
+            return
+
     if not latest_article:
         await safe_send("✅ Статья готова в BLOG_DRAFTS.md")
         return
 
     match = re.search(
-        r"===TELEGRAM===\s*(.*?)\s*===LINKEDIN===\s*(.*?)\s*===PROMPTS===\s*(.*)",
+        r"(?:===TELEGRAM===|## Telegram)\s*(.*?)\s*(?:===LINKEDIN===|## LinkedIn)\s*(.*?)\s*(?:===PROMPTS===|## Cover Prompts|## Prompts)\s*(.*)",
         latest_article,
-        re.DOTALL,
+        re.DOTALL | re.IGNORECASE,
     )
     if not match:
-        await safe_send("✅ Статья готова в BLOG_DRAFTS.md")
+        await send_split_message("⚠️ Не удалось разобрать секции:\n\n" + latest_article)
         return
 
     telegram_text = match.group(1).strip()
@@ -771,9 +778,9 @@ async def cmd_help() -> None:
         "/status — current state\n"
         "/tasks [phase] — task list\n"
         "/plan — phase summary and next pending tasks\n"
-        "/article — generate latest blog/article draft\n"
-        "/add <phase> <title> — add a pending task\n"
-        "/rm <task_id> — remove a task\n"
+        "/article [new] — get today's article or generate a new one\n"
+        "/add [phase] [title] — add a pending task\n"
+        "/rm [task_id] — remove a task\n"
         "/pause — pause before next step\n"
         "/resume — resume after pause\n"
         "/start TASK_ID — run one task\n"
@@ -781,7 +788,7 @@ async def cmd_help() -> None:
         "/auto — run all\n"
         "/stop — stop after current task\n"
         "/stop now — kill immediately\n"
-        "/redo TASK_ID [notes] — redo task\n"
+        "/redo [task_id] [notes] — redo task\n"
         "/comment text — instruction for next task\n"
         "/log [N] — last N lines from ralph execution log\n"
         "/progress [N] — last N lines from progress.md\n"
@@ -825,7 +832,7 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/plan":
         await cmd_plan()
     elif cmd == "/article":
-        await cmd_article()
+        await cmd_article(args.strip())
     elif cmd == "/add" and args:
         await cmd_add(args)
     elif cmd == "/rm":
