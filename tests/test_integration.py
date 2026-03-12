@@ -236,3 +236,23 @@ def test_ralph_stops_when_stop_control_is_present(tmp_path: Path) -> None:
     state = load_state(project_dir)
     assert state["status"] == "stopped"
     assert load_task_status(project_dir) == "pending"
+
+
+def test_ralph_watchdog_kills_stale_codex_and_retries(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_SLEEP"] = "3"
+    env["RALPH_WATCHDOG_TIMEOUT"] = "1"
+    env["RALPH_CODEX_RETRY_DELAYS"] = "0 0 0"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode in (0, 137), result.stdout + result.stderr
+    assert result.stdout.count("Watchdog timeout - killing stale codex process") >= 2
+    assert "Codex failed after 3 retries" in result.stdout

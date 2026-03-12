@@ -103,8 +103,8 @@ trap handle_interrupt INT TERM
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
 MAX_CODEX_RETRIES=3
-CODEX_RETRY_DELAYS=(60 120 300)
-RATE_LIMIT_PAUSE=1800
+CODEX_RETRY_DELAYS=(${RALPH_CODEX_RETRY_DELAYS:-60 120 300})
+RATE_LIMIT_PAUSE="${RALPH_RATE_LIMIT_PAUSE:-1800}"
 CONSECUTIVE_FAILURES=0
 MAX_CONSECUTIVE_FAILURES=3
 DEFAULT_MODEL=""
@@ -362,19 +362,21 @@ run_codex_watchdog() {
     local target_pid="$2"
     local stale_timeout="${3:-300}"
     local fired_flag="$4"
+    local poll_interval=5
     local last_activity
     local last_mtime
     local now
 
-    # Keep a tail follower running so output stream activity is continuously observed.
-    tail -n 0 -f "$output_file" >/dev/null 2>&1 &
-    local tail_pid=$!
+    if [ "$stale_timeout" -lt "$poll_interval" ] 2>/dev/null; then
+        poll_interval="$stale_timeout"
+    fi
+    [ "$poll_interval" -lt 1 ] 2>/dev/null && poll_interval=1
 
     last_activity=$(date +%s)
     last_mtime=$(file_mtime "$output_file")
 
     while kill -0 "$target_pid" 2>/dev/null; do
-        sleep 5
+        sleep "$poll_interval"
         now=$(date +%s)
 
         local current_mtime
@@ -389,24 +391,25 @@ run_codex_watchdog() {
             log "Watchdog timeout - killing stale codex process"
             notify "🚨 Watchdog timeout - killing stale codex process. Task: ${TASK_ID:-unknown}"
 
+            local stale_pid=""
             if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
-                local stale_pid
                 stale_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
-                if [ -n "$stale_pid" ]; then
-                    kill -KILL "$stale_pid" 2>/dev/null || true
-                    pkill -P "$stale_pid" 2>/dev/null || true
-                fi
+                case "$stale_pid" in
+                    ''|*[!0-9]*) stale_pid="" ;;
+                esac
             fi
 
-            kill -KILL "$target_pid" 2>/dev/null || true
-            pkill -P "$target_pid" 2>/dev/null || true
-            echo "watchdog_fired" > "$fired_flag"
+            if [ -n "$stale_pid" ]; then
+                kill_tree "$stale_pid"
+            fi
+
+            if [ -z "$stale_pid" ] || [ "$stale_pid" != "$target_pid" ]; then
+                kill_tree "$target_pid"
+            fi
+            : > "$fired_flag"
             break
         fi
     done
-
-    kill "$tail_pid" 2>/dev/null || true
-    wait "$tail_pid" 2>/dev/null || true
 }
 
 run_codex() {
@@ -417,7 +420,7 @@ run_codex() {
     local model="${5:-}"
     local retry=0
     local exit_code=0
-    local watchdog_timeout=300
+    local watchdog_timeout="${RALPH_WATCHDOG_TIMEOUT:-300}"
 
     while [ $retry -le $MAX_CODEX_RETRIES ]; do
         : > "$output_file"
@@ -453,12 +456,20 @@ run_codex() {
 
         wait "$codex_pid"
         exit_code=$?
+        local watchdog_wait_loops=0
+        while kill -0 "$watchdog_pid" 2>/dev/null; do
+        if [ -f "$watchdog_flag" ] || [ $watchdog_wait_loops -ge 10 ]; then
+                break
+            fi
+            sleep 0.1
+            watchdog_wait_loops=$((watchdog_wait_loops + 1))
+        done
         kill "$watchdog_pid" 2>/dev/null || true
         wait "$watchdog_pid" 2>/dev/null || true
         set -e
 
         local watchdog_fired=0
-        if [ -s "$watchdog_flag" ]; then
+        if [ -f "$watchdog_flag" ]; then
             watchdog_fired=1
         fi
         rm -f "$watchdog_flag"

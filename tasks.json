@@ -366,7 +366,8 @@
       "dependencies": [
         "R1-06"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-12T14:03:49Z"
     },
     {
       "id": "R1-08",
@@ -1051,6 +1052,98 @@
       ],
       "dependencies": [
         "R3-10"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-12",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "high",
+      "title": "Dynamic Agent Roles",
+      "description": "Add support for a standard task_schema field 'role' (for example: 'coder', 'game_designer'). Based on the role, ralph.sh should load different instruction files, such as AGENTS_DESIGNER.md instead of AGENTS_CODER.md.",
+      "acceptance_criteria": [
+        "task_schema includes role as a supported field",
+        "ralph.sh selects agent instructions based on task.role",
+        "Missing role-specific instruction files fail gracefully",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "Create tasks with different role values and inspect prompt selection",
+        "Verify fallback behavior for unknown roles",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [
+        "R3-10"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R3-13",
+      "phase": "R3",
+      "category": "agent-quality",
+      "priority": "high",
+      "title": "Risk Gates",
+      "description": "Add support for a standard task_schema field 'risk' with values 'low', 'medium', 'high'. If a task is marked 'high', after the Coder finishes the orchestrator should automatically switch to waiting_human and require explicit human approval before commit.",
+      "acceptance_criteria": [
+        "task_schema includes risk as a supported field",
+        "high-risk tasks pause for explicit human approval after coder output",
+        "waiting_human flow works without losing diff or task context",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "Create a high-risk task and verify waiting_human after coder step",
+        "Verify medium and low risk tasks keep current flow",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [
+        "R3-10"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R4-07",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "medium",
+      "title": "Async Asset Pipeline",
+      "description": "Create a standard workflow where an agent can generate assets_manifest.json with image or asset requests, a human can later place the assets into the repo, and Ralph can wait for those assets and automatically wire them into the codebase.",
+      "acceptance_criteria": [
+        "A standard assets_manifest.json format is defined",
+        "Ralph can detect missing assets and pause cleanly",
+        "Ralph can resume when assets are added and place them into expected paths",
+        "Workflow is documented for asset-heavy projects"
+      ],
+      "test_steps": [
+        "Generate a sample assets_manifest.json and validate the format",
+        "Simulate missing assets and verify pause/resume behavior",
+        "Verify asset placement logic in a test project"
+      ],
+      "dependencies": [
+        "R3-12"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "R4-08",
+      "phase": "R4",
+      "category": "packaging",
+      "priority": "high",
+      "title": "Project Bootstrapper",
+      "description": "Create a 'ralph.sh bootstrap' command that accepts a large user prompt, routes it through an Architect agent, and generates tasks.json, ARCHITECTURE.md, and other repo docs needed to prepare a project for autonomous work.",
+      "acceptance_criteria": [
+        "ralph.sh bootstrap command exists",
+        "Bootstrap flow generates tasks.json and core docs from a user prompt",
+        "Generated output is project-agnostic and editable by humans",
+        "bash -n ralph.sh passes"
+      ],
+      "test_steps": [
+        "Run ralph.sh bootstrap on a blank test repo",
+        "Verify tasks.json, ARCHITECTURE.md, and AGENTS docs are generated",
+        "bash -n ralph.sh"
+      ],
+      "dependencies": [
+        "R4-01"
       ],
       "status": "pending"
     }
