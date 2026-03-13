@@ -1182,7 +1182,7 @@ self_heal_environment() {
     else
         log '❌ Self-heal failed. Tests still broken.'
         notify '🚨 Self-heal failed. Tests still broken. Manual fix needed.'
-        alert_human 'Self-heal failed: tests still broken after ENV-FIX attempt'
+        write_state "blocked" "" "self_heal_failed" "Self-heal failed: tests still broken after ENV-FIX attempt"
         return 1
     fi
 }
@@ -1825,6 +1825,7 @@ except Exception:
     if [ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]; then
         log "🔴 CIRCUIT BREAKER: $CONSECUTIVE_FAILURES consecutive failures!"
         notify "🔴 CIRCUIT BREAKER: $CONSECUTIVE_FAILURES consecutive failures. Ralph stopped."
+        alert_human "$CONSECUTIVE_FAILURES consecutive failures triggered the circuit breaker"
         write_state "circuit_breaker" "" "" "$CONSECUTIVE_FAILURES consecutive failures"
         break
     fi
