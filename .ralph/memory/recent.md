@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-05: Vector DB for semantic task retrieval
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T11:39:14Z
+
 ### R4-04: Template system for new agents
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T11:05:48Z
-
-### R4-01: ralph.toml config file
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T11:00:45Z
