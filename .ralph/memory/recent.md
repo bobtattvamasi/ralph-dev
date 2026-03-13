@@ -1,6 +1,12 @@
 # Recent Task History
 
 ### R1-09: Process tree cleanup on timeout
+- Files: .ralph/memory/recent.md,progress.md,ralph.sh,tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:55:07Z
+
+### R1-09: Process tree cleanup on timeout
 - Files: .ralph/memory/recent.md,progress.md,ralph.sh,ralph_codex.pgid,tasks.json
 - Result: approved
 - Notes: 
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:48:57Z
-
-### R4-11: Preflight self-heal: broken tests before start
-- Files: tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:48:19Z
