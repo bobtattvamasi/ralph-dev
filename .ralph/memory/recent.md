@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R3-10: Task complexity field and model routing
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:04:52Z
+
 ### R3-01: Context injection for coder
 - Files: ralph_codex.pgid,tasks.json
 - Result: approved
