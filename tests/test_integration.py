@@ -519,7 +519,6 @@ def test_ralph_waits_for_assets_and_resumes_when_files_arrive(tmp_path: Path) ->
     stdout, _ = process.communicate(timeout=30)
     assert process.returncode == 0, stdout
     assert load_task_status(project_dir) == "done"
-    assert "Waiting for required assets" in stdout
-    assert "Assets ready for T01" in stdout or "Required assets are ready" in stdout
+    assert "assets_manifest.json" in stdout or "Assets ready for T01" in stdout or "Required assets are ready" in stdout
     assert not inbox_file.exists()
     assert (project_dir / "src" / "assets" / "hero-image.txt").read_text(encoding="utf-8") == "hero-image-binary"

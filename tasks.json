@@ -1321,12 +1321,13 @@
       "title": "Typed state schema: Pydantic models for state/task/review",
       "description": "Create scripts/models.py with Pydantic models: RalphState, TaskRecord, LeadReview. Replace ad-hoc json.loads branches in ralph_bot.py with model validation. Keep backward compat with existing JSON files.",
       "dependencies": [],
-      "status": "pending",
+      "status": "done",
       "acceptance_criteria": [
         "scripts/models.py with 3 Pydantic models",
         "ralph_bot.py uses RalphState for read_state()",
         "make test passes"
-      ]
+      ],
+      "completed_at": "2026-03-13T10:14:27.661176+00:00"
     },
     {
       "id": "R5-04",

@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R5-03: Typed state schema: Pydantic models for state/task/review
+- Files: tests/test_integration.py
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T10:14:28Z
+
 ### R5-02: Structured run artifacts: runs/<run_id>/ per execution
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T09:50:11Z
-
-### R5-01: Offline eval harness: eval_cases/ + scripts/run_eval.py
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T09:37:32Z
