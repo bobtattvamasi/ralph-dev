@@ -1169,7 +1169,8 @@
       "dependencies": [
         "R4-01"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-13T11:05:47.959103+00:00"
     },
     {
       "id": "R4-09",
