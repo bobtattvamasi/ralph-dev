@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-10: Invalid JSON decision: fallback to fix instead of alert
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:40:45Z
+
 ### R4-09: Alert-to-defer: task failures skip instead of stop
 - Files: tasks.json
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:01:50Z
-
-### R2-08: Bot: /reload
-- Files: none
-- Result: approved
-- Notes: Fix failing tests and unmet criteria
-- Time: 2026-03-12T17:31:01Z

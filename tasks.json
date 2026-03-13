@@ -1185,7 +1185,7 @@
       "phase": "R4",
       "title": "Invalid JSON decision: fallback to fix instead of alert",
       "description": "В ralph.sh после extract_json.py добавить validate_lead_review_json(): если поле decision отсутствует или не входит в {approve, fix, alert} - автоматически подставлять decision=fix, fix_instructions=Invalid JSON structure from Tech Lead. Это устраняет human stop при галлюцинации модели.",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "complexity": "simple",
       "risk": "low",
@@ -1197,7 +1197,8 @@
         "Если decision=null или decision=gibberish - то же самое",
         "Новая итерация Кодера запускается с инструкцией починить JSON формат ответа",
         "bash -n ralph.sh проходит"
-      ]
+      ],
+      "completed_at": "2026-03-13T07:40:45.197744+00:00"
     },
     {
       "id": "R4-11",
