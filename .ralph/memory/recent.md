@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R2-05: Bot: /edit TASK_ID new title
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T10:35:13Z
+
 ### R5-05: run_id in logs and state: structured observability
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T09:59:46Z
-
-### R4-13: next_task: distinguish done vs dependency-deadlocked
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T09:54:48Z
