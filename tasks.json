@@ -1205,7 +1205,7 @@
       "phase": "R4",
       "title": "Preflight self-heal: broken tests before start",
       "description": "В ralph.sh заменить alert_human(Tests broken before start) на self_heal_environment(): создать синтетическую задачу ENV-FIX с описанием Make tests green, запустить через обычный coder->lead flow, максимум 1 попытка (SELF_HEAL_ATTEMPTS). Если починил - продолжить основную очередь. Если не починил - только тогда alert_human с пометкой self-heal failed.",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "complexity": "moderate",
       "risk": "medium",
@@ -1218,7 +1218,8 @@
         "Только 1 попытка self-heal, потом alert если не помогло",
         "bash -n ralph.sh проходит"
       ],
-      "revision_notes": "Redo via Telegram"
+      "revision_notes": "Redo via Telegram",
+      "completed_at": "2026-03-13T07:48:19.776288+00:00"
     },
     {
       "id": "R4-12",

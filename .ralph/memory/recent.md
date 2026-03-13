@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-11: Preflight self-heal: broken tests before start
+- Files: tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:48:19Z
+
 ### R4-10: Invalid JSON decision: fallback to fix instead of alert
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:04:52Z
-
-### R3-01: Context injection for coder
-- Files: ralph_codex.pgid,tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:01:50Z
