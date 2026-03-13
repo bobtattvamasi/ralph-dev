@@ -1256,7 +1256,7 @@
       "phase": "R4",
       "title": "next_task: distinguish done vs dependency-deadlocked",
       "description": "В scripts/next_task.py изменить return None на return с причиной: all_done если все задачи в done/skipped, deadlocked если остались pending но их dependencies в blocked. В ralph.sh при получении null от next_task проверять причину: если deadlocked - логировать blocked_by_dependencies и слать уведомление в Telegram с конкретными задачами, не маскировать под успех.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "complexity": "simple",
       "risk": "low",
@@ -1265,7 +1265,8 @@
         "Telegram уведомление: Pipeline blocked by: R3-01 (needs manual resolution)",
         "Когда все задачи done - пишет: All tasks completed",
         "python3 -m pytest tests/ проходит"
-      ]
+      ],
+      "completed_at": "2026-03-13T09:54:47.904764+00:00"
     },
     {
       "id": "R4-14",
