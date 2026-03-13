@@ -69,6 +69,10 @@
     "R4": {
       "name": "Packaging",
       "description": "CLI tool, config, multi-project, vector DB, parallel execution"
+    },
+    "R5": {
+      "name": "Production Readiness",
+      "description": "Eval harness, structured artifacts, typed state, prompt versioning, observability"
     }
   },
   "tasks": [
@@ -1280,6 +1284,81 @@
         "python3 -m pytest tests/test_autonomy.py — все тесты зеленые",
         "тесты не делают реальных HTTP запросов и не запускают codex",
         "покрытие всех 5 сценариев из R4-09..R4-13"
+      ]
+    },
+    {
+      "id": "R5-01",
+      "phase": "R5",
+      "priority": "high",
+      "complexity": "complex",
+      "title": "Offline eval harness: eval_cases/ + scripts/run_eval.py",
+      "description": "Create eval_cases/ with 8 frozen fixtures (valid approve, invalid JSON, done->approve, rate-limit, timeout, blocked, high-risk, fix-retry). Create scripts/run_eval.py that feeds fixtures into extract_json.py + validate_lead_review_json logic and emits scorecard: schema_valid, decision_match, recovery_ok.",
+      "status": "pending",
+      "acceptance_criteria": [
+        "eval_cases/ contains 8 fixture JSON files",
+        "scripts/run_eval.py runs all cases and prints scorecard",
+        "make eval target added to Makefile",
+        "all 8 cases pass"
+      ]
+    },
+    {
+      "id": "R5-02",
+      "phase": "R5",
+      "priority": "medium",
+      "complexity": "moderate",
+      "title": "Structured run artifacts: runs/<run_id>/ per execution",
+      "description": "Each ralph.sh run gets a unique run_id (timestamp+task). Save to runs/<run_id>/: prompt.txt, coder_output.txt, lead_output.txt, review.json, diff.patch, test_output.txt, final_state.json.",
+      "dependencies": [],
+      "status": "pending",
+      "acceptance_criteria": [
+        "runs/ dir created per task execution",
+        "all 7 artifact files saved",
+        "runs/ added to .gitignore"
+      ]
+    },
+    {
+      "id": "R5-03",
+      "phase": "R5",
+      "priority": "medium",
+      "complexity": "complex",
+      "title": "Typed state schema: Pydantic models for state/task/review",
+      "description": "Create scripts/models.py with Pydantic models: RalphState, TaskRecord, LeadReview. Replace ad-hoc json.loads branches in ralph_bot.py with model validation. Keep backward compat with existing JSON files.",
+      "dependencies": [],
+      "status": "pending",
+      "acceptance_criteria": [
+        "scripts/models.py with 3 Pydantic models",
+        "ralph_bot.py uses RalphState for read_state()",
+        "make test passes"
+      ]
+    },
+    {
+      "id": "R5-04",
+      "phase": "R5",
+      "priority": "low",
+      "complexity": "simple",
+      "title": "Prompt versioning: version header in AGENTS_*.md",
+      "description": "Add <!-- prompt_version: X.Y.Z --> header to AGENTS_CODER.md and AGENTS_LEAD.md. Add PROMPT_CHANGELOG.md with version history. Ralph logs prompt_version at task start.",
+      "dependencies": [],
+      "status": "pending",
+      "acceptance_criteria": [
+        "Both AGENTS_*.md have version header",
+        "PROMPT_CHANGELOG.md exists",
+        "ralph.sh logs prompt_version in task start log line"
+      ]
+    },
+    {
+      "id": "R5-05",
+      "phase": "R5",
+      "priority": "medium",
+      "complexity": "moderate",
+      "title": "run_id in logs and state: structured observability",
+      "description": "Generate run_id = YYYYMMDD-HHMMSS-<task_id> at task start. Inject into every log line for this task. Store in ralph_state.json as current_run_id. Makes failures grep-able by run.",
+      "dependencies": [],
+      "status": "pending",
+      "acceptance_criteria": [
+        "Every log line during task includes [run_id]",
+        "ralph_state.json contains current_run_id",
+        "make test passes"
       ]
     }
   ]
