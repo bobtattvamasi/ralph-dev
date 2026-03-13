@@ -32,6 +32,8 @@ BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
 TOKEN = ""
 CHAT_ID = ""
 API = ""
+ralph_process = None
+caffeinate_process = None
 RUNTIME = SimpleNamespace(
     ralph_process=None,
     caffeinate_process=None,
@@ -85,6 +87,8 @@ def configure_module_runtime(module: ModuleType) -> None:
     module.TOKEN = TOKEN
     module.CHAT_ID = CHAT_ID
     module.API = API
+    module.ralph_process = RUNTIME.ralph_process
+    module.caffeinate_process = RUNTIME.caffeinate_process
     module.RUNTIME = RUNTIME
 
 
@@ -423,6 +427,7 @@ async def cmd_status() -> None:
 
 async def cmd_start_task(task_id: str) -> None:
     """Start single task."""
+    global ralph_process
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
@@ -434,11 +439,13 @@ async def cmd_start_task(task_id: str) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
+    ralph_process = RUNTIME.ralph_process
     await safe_send(f"▶️ Started task {task_id}\nPID: {RUNTIME.ralph_process.pid}")
 
 
 async def cmd_start_phase(phase: str) -> None:
     """Start phase execution."""
+    global ralph_process
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
@@ -450,11 +457,13 @@ async def cmd_start_phase(phase: str) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
+    ralph_process = RUNTIME.ralph_process
     await safe_send(f"▶️ Started phase {phase}\nPID: {RUNTIME.ralph_process.pid}")
 
 
 async def cmd_start_auto() -> None:
     """Start auto mode."""
+    global ralph_process, caffeinate_process
     reset_stale_state()
     state = read_state()
     if state.get("status") == "running":
@@ -466,12 +475,14 @@ async def cmd_start_auto() -> None:
             RUNTIME.caffeinate_process = subprocess.Popen(["caffeinate", "-dims"])
         except FileNotFoundError:
             RUNTIME.caffeinate_process = None
+        caffeinate_process = RUNTIME.caffeinate_process
         RUNTIME.ralph_process = subprocess.Popen(
             [str(RALPH_DIR / "ralph.sh"), "auto"],
             cwd=str(PROJECT_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
+        ralph_process = RUNTIME.ralph_process
         await safe_send(f"🚀 Auto mode started\nPID: {RUNTIME.ralph_process.pid}")
     except Exception as exc:  # noqa: BLE001
         set_idle_state("Ralph failed to start")
@@ -480,6 +491,7 @@ async def cmd_start_auto() -> None:
 
 async def cmd_stop(force: bool = False) -> None:
     """Stop or kill Ralph."""
+    global ralph_process, caffeinate_process
     if force:
         # 1. Kill all ralph processes by PID files
         killed_pids = []
@@ -499,11 +511,13 @@ async def cmd_stop(force: bool = False) -> None:
         if RUNTIME.ralph_process and RUNTIME.ralph_process.poll() is None:
             RUNTIME.ralph_process.kill()
             RUNTIME.ralph_process.wait()
+        ralph_process = None
 
         # 3. Kill caffeinate
         if RUNTIME.caffeinate_process:
             RUNTIME.caffeinate_process.terminate()
             RUNTIME.caffeinate_process = None
+        caffeinate_process = None
 
         # 4. CRITICAL: Update state file to idle
         set_idle_state("Stopped by user (force kill)")
@@ -513,6 +527,7 @@ async def cmd_stop(force: bool = False) -> None:
 
         # 6. Reset globals
         RUNTIME.ralph_process = None
+        ralph_process = None
 
         # 7. Confirm
         await safe_send(f"⏹ Ralph killed. PIDs: {killed_pids or 'none'}\nState: idle")
@@ -536,11 +551,14 @@ async def cmd_stop(force: bool = False) -> None:
             if RUNTIME.caffeinate_process:
                 RUNTIME.caffeinate_process.terminate()
                 RUNTIME.caffeinate_process = None
+            caffeinate_process = None
             RUNTIME.ralph_process = None
+            ralph_process = None
             await safe_send("⏹ Ralph stopped gracefully. State: idle")
         else:
             set_idle_state("Idle")
             RUNTIME.ralph_process = None
+            ralph_process = None
             await safe_send("⏸ Ralph is not running")
 
 
@@ -1148,6 +1166,11 @@ async def watch_state() -> None:
     while True:
         await asyncio.sleep(3)
 
+        if ralph_process is None and RUNTIME.ralph_process is not None:
+            ralph_process = RUNTIME.ralph_process
+        if caffeinate_process is None and RUNTIME.caffeinate_process is not None:
+            caffeinate_process = RUNTIME.caffeinate_process
+
         if ralph_process and ralph_process.poll() is not None:
             code = ralph_process.returncode
             if code != 0 and code != last_exit_code:
@@ -1157,7 +1180,9 @@ async def watch_state() -> None:
             if caffeinate_process:
                 caffeinate_process.terminate()
                 caffeinate_process = None
+                RUNTIME.caffeinate_process = None
             ralph_process = None
+            RUNTIME.ralph_process = None
 
         state = read_state()
         status = state.get("status")
