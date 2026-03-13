@@ -343,6 +343,16 @@ skip_current_task() {
     clear_control_action
 }
 
+defer_blocked_task() {
+    local reason="${1:-Blocked without reason}"
+    log "⚠️ Task $TASK_ID blocked: $reason — skipping, continuing queue"
+    notify "⚠️ $TASK_ID blocked (auto-skipped): $reason"
+    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$reason" >/dev/null 2>&1 || true
+    write_state "running" "$TASK_ID" "blocked" "$reason"
+    TASK_BLOCKED=true
+    TASK_DONE=true
+}
+
 resolve_agent_prompt_file() {
     local role="${1:-coder}"
     local fallback_file="$2"
@@ -1344,6 +1354,7 @@ print(task.get('role', 'coder'))
     TASK_DONE=false
     TASK_SKIPPED=false
     TASK_BLOCKED=false
+    TASK_ALERTED=false
     FIX_INSTRUCTIONS=""
     TASK_TOKENS=0
 
@@ -1752,29 +1763,24 @@ except Exception:
                 log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
                 if [ "${TASK_RISK:-medium}" = "high" ]; then
                     alert_human "$REASON"
+                    TASK_ALERTED=true
+                    TASK_DONE=true
                 else
-                    log "⚠️ Task $TASK_ID blocked: $REASON — skipping, continuing queue"
-                    notify "⚠️ $TASK_ID blocked (auto-skipped): $REASON"
-                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
-                    TASK_BLOCKED=true
+                    defer_blocked_task "$REASON"
                 fi
-                break
+                rm -f "$REVIEW_FILE" "$CODER_OUTPUT" "$LEAD_OUTPUT"
+                continue
                 ;;
 
             *)
                 log "⚠️ Unknown decision: '$DECISION' (length: ${#DECISION})"
                 log "⚠️ Raw review output: $(head -5 /tmp/ralph_review_$$.txt 2>/dev/null)"
-                REASON="Unknown tech lead decision: '$DECISION'"
-                log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                if [ "${TASK_RISK:-medium}" = "high" ]; then
-                    alert_human "$REASON"
-                else
-                    log "⚠️ Task $TASK_ID blocked: $REASON — skipping, continuing queue"
-                    notify "⚠️ $TASK_ID blocked (auto-skipped): $REASON"
-                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
-                    TASK_BLOCKED=true
-                fi
-                break
+                FIX_INSTRUCTIONS="Tech Lead returned unknown decision '$DECISION'. Retry: implement the task correctly and ensure tests pass."
+                FIX_RETRY=$((FIX_RETRY+1))
+                notify "🔧 $TASK_ID invalid lead decision, retrying fix ($FIX_RETRY/$MAX_FIX_RETRIES)"
+                log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: $FIX_INSTRUCTIONS"
+                rm -f "$REVIEW_FILE" "$CODER_OUTPUT" "$LEAD_OUTPUT"
+                continue
                 ;;
         esac
         rm -f "$REVIEW_FILE" "$CODER_OUTPUT" "$LEAD_OUTPUT"
@@ -1790,6 +1796,10 @@ except Exception:
         continue
     fi
 
+    if [ "$TASK_ALERTED" = true ]; then
+        break
+    fi
+
     if [ "$TASK_DONE" = false ]; then
         REASON="$TASK_ID failed after $MAX_FIX_RETRIES retries"
         log_metrics "failed"
@@ -1798,9 +1808,7 @@ except Exception:
             alert_human "$REASON"
             break
         else
-            log "⚠️ Task $TASK_ID blocked: $REASON — skipping, continuing queue"
-            notify "⚠️ $TASK_ID blocked (auto-skipped): $REASON"
-            python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
+            defer_blocked_task "$REASON"
             [ "$MODE" = "task" ] && break
             continue
         fi
