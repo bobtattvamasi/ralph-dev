@@ -1158,6 +1158,114 @@
         "R4-01"
       ],
       "status": "pending"
+    },
+    {
+      "id": "R4-09",
+      "phase": "R4",
+      "title": "Alert-to-defer: task failures skip instead of stop",
+      "description": "В ralph.sh заменить alert_human() + break на defer_blocked_task() + continue в трёх точках: ветка alert) от Tech Lead (~строка 1541), ветка unknown decision (~1555), и if TASK_DONE=false после max retries (~1571). alert_human() оставить ТОЛЬКО для risk=high и circuit breaker. После замены задача помечается blocked, скрипт берет следующую pending задачу.",
+      "status": "pending",
+      "priority": "critical",
+      "complexity": "moderate",
+      "risk": "medium",
+      "acceptance_criteria": [
+        "Когда Tech Lead возвращает alert для low/medium risk задачи - Ральф помечает её blocked и берёт следующую",
+        "Когда decision невалидный - делает ещё одну попытку fix, не зовёт человека",
+        "Когда исчерпаны retries - задача blocked, автопилот продолжает",
+        "alert_human вызывается только при risk=high",
+        "bash -n ralph.sh проходит"
+      ]
+    },
+    {
+      "id": "R4-10",
+      "phase": "R4",
+      "title": "Invalid JSON decision: fallback to fix instead of alert",
+      "description": "В ralph.sh после extract_json.py добавить validate_lead_review_json(): если поле decision отсутствует или не входит в {approve, fix, alert} - автоматически подставлять decision=fix, fix_instructions=Invalid JSON structure from Tech Lead. Это устраняет human stop при галлюцинации модели.",
+      "status": "pending",
+      "priority": "critical",
+      "complexity": "simple",
+      "risk": "low",
+      "dependencies": [
+        "R4-09"
+      ],
+      "acceptance_criteria": [
+        "Если REVIEW_JSON={} - decision становится fix, не alert",
+        "Если decision=null или decision=gibberish - то же самое",
+        "Новая итерация Кодера запускается с инструкцией починить JSON формат ответа",
+        "bash -n ralph.sh проходит"
+      ]
+    },
+    {
+      "id": "R4-11",
+      "phase": "R4",
+      "title": "Preflight self-heal: broken tests before start",
+      "description": "В ralph.sh заменить alert_human(Tests broken before start) на self_heal_environment(): создать синтетическую задачу ENV-FIX с описанием Make tests green, запустить через обычный coder->lead flow, максимум 1 попытка (SELF_HEAL_ATTEMPTS). Если починил - продолжить основную очередь. Если не починил - только тогда alert_human с пометкой self-heal failed.",
+      "status": "pending",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "dependencies": [
+        "R4-09"
+      ],
+      "acceptance_criteria": [
+        "При сломанных тестах Ральф пробует починить их сам перед стартом очереди",
+        "Уведомление в Telegram: Tests broken, attempting self-heal",
+        "Только 1 попытка self-heal, потом alert если не помогло",
+        "bash -n ralph.sh проходит"
+      ]
+    },
+    {
+      "id": "R4-12",
+      "phase": "R4",
+      "title": "State reconciliation: auto-reset stale waiting_human",
+      "description": "В ralph.sh добавить reconcile_state() которая вызывается при старте auto режима: читает ralph_state.json, если status=waiting_human/running и last_update старше 5 минут И нет живого ralph-процесса - автоматически сбросить в idle. В ralph_bot.py добавить auto_reconcile_idle_if_stale() в начало каждой итерации watch_state().",
+      "status": "pending",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "acceptance_criteria": [
+        "После краша и рестарта /auto не застревает в старом waiting_human",
+        "Stale state старше 5 минут сбрасывается автоматически",
+        "В логе появляется: Auto-reconciled stale state",
+        "bash -n ralph.sh и ast.parse проходят"
+      ]
+    },
+    {
+      "id": "R4-13",
+      "phase": "R4",
+      "title": "next_task: distinguish done vs dependency-deadlocked",
+      "description": "В scripts/next_task.py изменить return None на return с причиной: all_done если все задачи в done/skipped, deadlocked если остались pending но их dependencies в blocked. В ralph.sh при получении null от next_task проверять причину: если deadlocked - логировать blocked_by_dependencies и слать уведомление в Telegram с конкретными задачами, не маскировать под успех.",
+      "status": "pending",
+      "priority": "medium",
+      "complexity": "simple",
+      "risk": "low",
+      "acceptance_criteria": [
+        "Когда R3-02 заблокирована из-за blocked R3-01 - Ральф пишет в лог: Queue deadlocked, blocked tasks: R3-01",
+        "Telegram уведомление: Pipeline blocked by: R3-01 (needs manual resolution)",
+        "Когда все задачи done - пишет: All tasks completed",
+        "python3 -m pytest tests/ проходит"
+      ]
+    },
+    {
+      "id": "R4-14",
+      "phase": "R4",
+      "title": "Tests: autonomy hardening coverage",
+      "description": "Написать автотесты в tests/test_autonomy.py которые покрывают все 5 точек отказа из R4-09..R4-13. Использовать pytest + unittest.mock. Тесты НЕ должны запускать реальный codex или писать в реальный ralph_state.json.\n\nТесты:\n1. test_alert_to_defer: замокать run_task_loop, передать review с decision=alert и risk=medium, проверить что задача стала blocked а не waiting_human\n2. test_invalid_json_fallback: передать REVIEW_JSON={} в validate_lead_review_json (или аналог), проверить что decision=fix а не alert\n3. test_stale_state_reconciliation: записать ralph_state.json со статусом waiting_human и last_update=10 минут назад, вызвать reconcile_state(), проверить что статус стал idle\n4. test_next_task_deadlock_detection: создать tasks.json где pending задача зависит от blocked задачи, вызвать next_task, проверить что возвращается причина deadlocked а не просто None\n5. test_next_task_all_done: все задачи в done, проверить что возвращается all_done",
+      "status": "pending",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "low",
+      "dependencies": [
+        "R4-09",
+        "R4-12",
+        "R4-13"
+      ],
+      "acceptance_criteria": [
+        "tests/test_autonomy.py существует",
+        "python3 -m pytest tests/test_autonomy.py — все тесты зеленые",
+        "тесты не делают реальных HTTP запросов и не запускают codex",
+        "покрытие всех 5 сценариев из R4-09..R4-13"
+      ]
     }
   ]
 }
