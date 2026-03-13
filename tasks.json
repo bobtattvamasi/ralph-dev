@@ -1273,7 +1273,7 @@
       "phase": "R4",
       "title": "Tests: autonomy hardening coverage",
       "description": "Написать автотесты в tests/test_autonomy.py которые покрывают все 5 точек отказа из R4-09..R4-13. Использовать pytest + unittest.mock. Тесты НЕ должны запускать реальный codex или писать в реальный ralph_state.json.\n\nТесты:\n1. test_alert_to_defer: замокать run_task_loop, передать review с decision=alert и risk=medium, проверить что задача стала blocked а не waiting_human\n2. test_invalid_json_fallback: передать REVIEW_JSON={} в validate_lead_review_json (или аналог), проверить что decision=fix а не alert\n3. test_stale_state_reconciliation: записать ralph_state.json со статусом waiting_human и last_update=10 минут назад, вызвать reconcile_state(), проверить что статус стал idle\n4. test_next_task_deadlock_detection: создать tasks.json где pending задача зависит от blocked задачи, вызвать next_task, проверить что возвращается причина deadlocked а не просто None\n5. test_next_task_all_done: все задачи в done, проверить что возвращается all_done",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "complexity": "moderate",
       "risk": "low",
@@ -1287,7 +1287,8 @@
         "python3 -m pytest tests/test_autonomy.py — все тесты зеленые",
         "тесты не делают реальных HTTP запросов и не запускают codex",
         "покрытие всех 5 сценариев из R4-09..R4-13"
-      ]
+      ],
+      "completed_at": "2026-03-13T09:59:46.340423+00:00"
     },
     {
       "id": "R5-01",

@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-14: Tests: autonomy hardening coverage
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T09:59:46Z
+
 ### R4-13: next_task: distinguish done vs dependency-deadlocked
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T09:33:26Z
-
-### R3-05: Coder memory across tasks
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T09:29:30Z
