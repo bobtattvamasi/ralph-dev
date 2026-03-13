@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-01: ralph.toml config file
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T11:00:45Z
+
 ### R3-07: Model selection per task
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T10:40:25Z
-
-### R2-05: Bot: /edit TASK_ID new title
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T10:35:13Z
