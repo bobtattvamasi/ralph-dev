@@ -27,3 +27,4 @@
 - Key decisions: memory system, circuit breaker, model routing, exponential backoff
 - Priority: reliability first, then agent quality, then bot UX
 - **R2-08** (2026-03-12 17:31 UTC): Task completed
+- **R3-01** (2026-03-13 07:01 UTC): 

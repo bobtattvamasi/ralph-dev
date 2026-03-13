@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R3-01: Context injection for coder
+- Files: ralph_codex.pgid,tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:01:50Z
+
 ### R2-08: Bot: /reload
 - Files: none
 - Result: approved
