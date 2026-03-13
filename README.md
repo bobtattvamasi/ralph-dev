@@ -129,6 +129,34 @@ Ralph executes:
 6. apply decision
 7. update task state, progress, memory, logs, and metrics
 
+## Async Asset Workflow
+For asset-heavy tasks, the coder can create `assets_manifest.json` in the project root. Ralph validates it, waits for missing required assets, and resumes automatically when the files appear.
+
+Standard manifest:
+```json
+{
+  "version": 1,
+  "generated_by": "coder",
+  "assets": [
+    {
+      "id": "hero-image",
+      "kind": "image",
+      "request": "Create a 16:9 hero image for the landing page",
+      "source_path": ".ralph/assets/inbox/hero-image.png",
+      "target_path": "src/assets/hero-image.png",
+      "optional": false,
+      "notes": "PNG with transparent background"
+    }
+  ]
+}
+```
+
+Workflow:
+- Agent writes `assets_manifest.json` with repo-relative `source_path` and `target_path`.
+- Human drops the requested files into the declared `source_path` locations, typically under `.ralph/assets/inbox/`.
+- Ralph pauses in `waiting_human` with step `asset_wait` while required assets are missing.
+- Once the files appear, Ralph moves inbox assets into their `target_path`, updates manifest state to `ready`, and continues the task automatically.
+
 ## Reliability Model
 Implemented safeguards:
 - recursive process cleanup

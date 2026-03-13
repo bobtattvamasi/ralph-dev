@@ -361,6 +361,102 @@ defer_blocked_task() {
     TASK_DONE=true
 }
 
+wait_for_required_assets() {
+    local poll_interval="${RALPH_ASSET_POLL_INTERVAL:-5}"
+    local announced_wait=0
+    local sync_output=""
+    local sync_status=0
+    local waiting_count=0
+    local copied_count=0
+    local moved_count=0
+
+    if [ ! -f "assets_manifest.json" ]; then
+        return 0
+    fi
+
+    while true; do
+        set +e
+        sync_output=$(python3 "$RALPH_DIR/scripts/manage_assets.py" sync 2>/dev/null)
+        sync_status=$?
+        set -e
+
+        if [ -z "$sync_output" ]; then
+            sync_output='{}'
+        fi
+
+        if [ $sync_status -eq 1 ]; then
+            local manifest_error
+            manifest_error=$(printf '%s' "$sync_output" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {}
+print(data.get('error', 'Invalid assets_manifest.json'))
+" 2>/dev/null || echo "Invalid assets_manifest.json")
+            log "❌ assets_manifest.json invalid: $manifest_error"
+            notify "❌ $TASK_ID invalid assets_manifest.json: $manifest_error"
+            return 1
+        fi
+
+        waiting_count=$(printf '%s' "$sync_output" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {}
+print(data.get('summary', {}).get('waiting', 0))
+" 2>/dev/null || echo "0")
+        copied_count=$(printf '%s' "$sync_output" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {}
+summary = data.get('summary', {})
+print(summary.get('copied', 0))
+" 2>/dev/null || echo "0")
+        moved_count=$(printf '%s' "$sync_output" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {}
+summary = data.get('summary', {})
+print(summary.get('moved', 0))
+" 2>/dev/null || echo "0")
+
+        if [ $sync_status -eq 0 ]; then
+            if [ $copied_count -gt 0 ] || [ $moved_count -gt 0 ]; then
+                log "🖼️ Asset sync applied: copied=$copied_count moved=$moved_count"
+            fi
+            if [ $announced_wait -eq 1 ]; then
+                log "✅ Required assets are ready. Resuming task $TASK_ID."
+                notify "✅ Assets ready for $TASK_ID. Resuming."
+                write_state "running" "$TASK_ID" "assets_ready" "Required assets available"
+            fi
+            return 0
+        fi
+
+        if [ $announced_wait -eq 0 ]; then
+            log "⏸ Waiting for required assets: $waiting_count pending from assets_manifest.json"
+            notify "⏸ $TASK_ID waiting for $waiting_count required assets from assets_manifest.json"
+            write_state "waiting_human" "$TASK_ID" "asset_wait" "Waiting for required assets from assets_manifest.json"
+            announced_wait=1
+        fi
+
+        CONTROL_STATUS=0
+        check_control || CONTROL_STATUS=$?
+        if [ $CONTROL_STATUS -eq 1 ]; then
+            return 10
+        elif [ $CONTROL_STATUS -eq 2 ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
+            return 11
+        fi
+
+        sleep "$poll_interval"
+    done
+}
+
 resolve_agent_prompt_file() {
     local role="${1:-coder}"
     local fallback_file="$2"
@@ -1534,6 +1630,26 @@ Expected response structure:
             git add -A
             git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
         fi
+
+        ASSET_STATUS=0
+        wait_for_required_assets || ASSET_STATUS=$?
+        if [ $ASSET_STATUS -eq 10 ]; then
+            log "⏹ Stop signal received"
+            write_state "stopped" "" "" "Stopped by user"
+            notify "⏹ Ralph stopped by user"
+            cleanup
+            exit 0
+        elif [ $ASSET_STATUS -eq 11 ]; then
+            skip_current_task
+            TASK_DONE=true
+            TASK_SKIPPED=true
+            break
+        elif [ $ASSET_STATUS -ne 0 ]; then
+            log_metrics "failed"
+            defer_blocked_task "Invalid assets_manifest.json"
+            break
+        fi
+
         CODER_DURATION=$(( $(date +%s) - CODER_START ))
         log "⏱️ Coder took ${CODER_DURATION}s"
 

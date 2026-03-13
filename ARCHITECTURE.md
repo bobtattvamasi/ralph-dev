@@ -15,10 +15,11 @@ collects outputs, applies review gates, and coordinates human escalation.
 1. Select next pending task from `tasks.json`
 2. Build coder prompt from task payload, repo docs, memory, and optional human comment
 3. Run Coder agent through `codex exec`
-4. Capture git diff and test output
-5. Run Tech Lead review through `codex exec`
-6. Resolve decision: `approve`, `fix`, `alert`, or `reorder`
-7. Persist state, progress, memory, logs, and metrics
+4. If `assets_manifest.json` exists, validate it, wait for missing required assets, and sync them into target paths
+5. Capture git diff and test output
+6. Run Tech Lead review through `codex exec`
+7. Resolve decision: `approve`, `fix`, `alert`, or `reorder`
+8. Persist state, progress, memory, logs, and metrics
 
 ## Orchestrator
 `ralph.sh` is the main runtime controller.
@@ -59,6 +60,8 @@ Current control surface:
 - stop gracefully or force kill
 - inspect tasks, logs, progress, cost, and diff
 - leave a comment for the next agent attempt
+
+Asset-heavy projects can also use `assets_manifest.json` as an async handoff between the agent and a human who later supplies binary assets.
 
 ## Reliability Model
 Implemented safeguards include:

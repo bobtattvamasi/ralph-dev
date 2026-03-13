@@ -83,6 +83,21 @@ if review_file:
 else:
     if prompt_capture_file:
         Path(prompt_capture_file).write_text(prompt, encoding="utf-8")
+    if mode == "asset_manifest_wait":
+        manifest = {
+            "version": 1,
+            "generated_by": "coder",
+            "assets": [
+                {
+                    "id": "hero-image",
+                    "kind": "image",
+                    "request": "Create a hero image for the landing page",
+                    "source_path": ".ralph/assets/inbox/hero-image.txt",
+                    "target_path": "src/assets/hero-image.txt",
+                }
+            ],
+        }
+        Path("assets_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     if mode == "always_fail":
         print("fatal codex failure")
         sys.exit(1)
@@ -486,3 +501,37 @@ def test_ralph_timeout_cleans_up_orphan_children(tmp_path: Path) -> None:
     assert "TIMEOUT: codex exceeded 1s" in result.stdout
     assert "Codex timed out after 3 retries" in result.stdout
     assert not process_is_alive(child_pid)
+
+
+def test_ralph_waits_for_assets_and_resumes_when_files_arrive(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "asset_manifest_wait"
+    env["RALPH_ASSET_POLL_INTERVAL"] = "1"
+
+    process = subprocess.Popen(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    assert wait_until(
+        lambda: (project_dir / "ralph_state.json").exists()
+        and load_state(project_dir).get("status") == "waiting_human"
+        and load_state(project_dir).get("current_phase_step") == "asset_wait",
+        timeout=10,
+    )
+
+    inbox_file = project_dir / ".ralph" / "assets" / "inbox" / "hero-image.txt"
+    inbox_file.parent.mkdir(parents=True, exist_ok=True)
+    inbox_file.write_text("hero-image-binary", encoding="utf-8")
+
+    stdout, _ = process.communicate(timeout=20)
+    assert process.returncode == 0, stdout
+    assert load_task_status(project_dir) == "done"
+    assert "Waiting for required assets" in stdout
+    assert "Assets ready for T01" in stdout or "Required assets are ready" in stdout
+    assert not inbox_file.exists()
+    assert (project_dir / "src" / "assets" / "hero-image.txt").read_text(encoding="utf-8") == "hero-image-binary"
