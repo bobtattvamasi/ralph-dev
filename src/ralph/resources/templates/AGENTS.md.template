@@ -1,0 +1,20 @@
+# AGENTS.md — Index for AI Agents
+
+## Project
+- Name: `{{PROJECT_NAME}}`
+- Replace this file with repo-specific rules and links if needed
+
+## Read First
+- `ARCHITECTURE.md` — system architecture and execution flow
+- `MEMORY_SYSTEM.md` — memory model and context rules
+- `AGENTS_CODER.md` — coder-specific execution rules
+- `AGENTS_LEAD.md` — reviewer decision contract
+- `progress.md` — recent work log
+- `tasks.json` — task source of truth
+
+## Core Rules
+1. Work one task at a time unless the task explicitly says otherwise.
+2. Respect the existing architecture and directory structure.
+3. Run the project test command before and after meaningful changes.
+4. Do not edit task tracking files unless the workflow explicitly requires it.
+5. Keep changes scoped to the assigned task.

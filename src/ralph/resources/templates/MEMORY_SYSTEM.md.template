@@ -1,0 +1,16 @@
+# {{PROJECT_NAME}} Memory System
+
+## Purpose
+Document what long-lived context the agents should preserve across tasks.
+
+## Memory Layers
+- `core.md` — stable project context and conventions
+- `recent.md` — last approved task summaries
+- `patterns.md` — recurring issues and successful fixes
+- `decisions.md` — durable architectural decisions
+
+## Usage
+- Keep `core.md` concise and stable
+- Let automation append to `recent.md`
+- Record repeated failures in `patterns.md`
+- Record important tradeoffs in `decisions.md`

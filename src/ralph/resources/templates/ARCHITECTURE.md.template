@@ -1,0 +1,26 @@
+# {{PROJECT_NAME}} Architecture
+
+## AI Execution Layer
+This repository is operated through Ralph as an AI execution layer.
+Ralph coordinates task selection, prompt assembly, code execution, review,
+state updates, and human escalation.
+
+## Main Components
+- `ralph.sh` — orchestrator loop
+- `scripts/ralph_bot.py` — Telegram control plane
+- `tasks.json` — structured backlog and execution metadata
+- `progress.md` — human-readable history of completed work
+- `.ralph/memory/` — persistent project memory
+
+## Expected Flow
+1. Pick next pending task
+2. Build context for the coding agent
+3. Run the coding agent
+4. Run tests and collect diff
+5. Run review agent or human checkpoint
+6. Persist status, progress, and memory
+
+## Project-Specific Notes
+- Replace this template with your repo architecture
+- Document key modules, constraints, and runtime assumptions
+- List important directories and integration boundaries
