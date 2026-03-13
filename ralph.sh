@@ -143,7 +143,7 @@ METRICS_FILE="$LOG_DIR/metrics.csv"
 [ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est" > "$METRICS_FILE"
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 # Prevent duplicate ralph instances
-if [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+if [ "$MODE" != "status" ] && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
     _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
     if [ -n "$_existing_pid" ] && kill -0 "$_existing_pid" 2>/dev/null; then
         echo "⚠️  Ralph already running (PID $_existing_pid). Aborting duplicate launch."

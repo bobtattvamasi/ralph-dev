@@ -1175,6 +1175,41 @@ async def watch_state() -> None:
             code = ralph_process.returncode
             if code != 0 and code != last_exit_code:
                 await safe_send(f"⚠️ Ralph exited with code {code}")
+            try:
+                raw_state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
+            except Exception:
+                raw_state = {}
+
+            current_task = str(raw_state.get("current_task") or "").strip()
+            if raw_state.get("status") == "running" and current_task:
+                try:
+                    subprocess.run(
+                        ["python3", "scripts/update_task.py", current_task, "pending"],
+                        cwd=str(PROJECT_DIR),
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                except Exception:
+                    pass
+
+                for rollback_cmd in (
+                    ["git", "-C", str(PROJECT_DIR), "reset", "HEAD", "--", "."],
+                    ["git", "-C", str(PROJECT_DIR), "checkout", "--", "."],
+                ):
+                    try:
+                        subprocess.run(
+                            rollback_cmd,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                        )
+                    except Exception:
+                        pass
+
+                await safe_send(
+                    f"🔄 Ralph crashed during {current_task}. Task reset to pending, changes rolled back."
+                )
             last_exit_code = code
             set_idle_state(f"Ralph exited with code {code}")
             if caffeinate_process:

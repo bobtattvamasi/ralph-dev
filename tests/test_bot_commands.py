@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -145,3 +146,54 @@ async def test_handle_update_routes_timeout(bot_env: dict[str, object]) -> None:
     assert payload["action"] == "timeout"
     assert payload["comment"] == "60"
 
+
+@pytest.mark.asyncio
+async def test_watch_state_recovers_crashed_running_task(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot.STATE_FILE.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "current_task": "T01",
+                "last_update": "2026-03-13T00:00:00+00:00",
+                "message": "Coder implementing...",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    class CrashedProcess:
+        returncode = 1
+
+        def poll(self) -> int:
+            return 1
+
+    crashed_process = CrashedProcess()
+    monkeypatch.setattr(bot, "ralph_process", crashed_process)
+    monkeypatch.setattr(bot.RUNTIME, "ralph_process", crashed_process)
+    monkeypatch.setattr(bot, "caffeinate_process", None)
+    monkeypatch.setattr(bot.RUNTIME, "caffeinate_process", None)
+
+    sleep_calls = {"count": 0}
+
+    async def fake_sleep(_seconds: float) -> None:
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] > 1:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(bot.asyncio, "sleep", fake_sleep)
+
+    with patch("scripts.ralph_bot.subprocess.run") as run_mock:
+        with pytest.raises(asyncio.CancelledError):
+            await bot.watch_state()
+
+    called_commands = [call.args[0] for call in run_mock.call_args_list]
+    assert ["python3", "scripts/update_task.py", "T01", "pending"] in called_commands
+    assert ["git", "-C", str(bot.PROJECT_DIR), "reset", "HEAD", "--", "."] in called_commands
+    assert ["git", "-C", str(bot.PROJECT_DIR), "checkout", "--", "."] in called_commands
+
+    safe_send = bot_env["safe_send"]
+    messages = [call.args[0] for call in safe_send.await_args_list]
+    assert any("🔄 Ralph crashed during T01. Task reset to pending, changes rolled back." in msg for msg in messages)
