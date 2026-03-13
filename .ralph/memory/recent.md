@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R3-04: Token budget estimation
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T10:45:43Z
+
 ### R2-07: Bot: /notify settings
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T10:14:28Z
-
-### R5-02: Structured run artifacts: runs/<run_id>/ per execution
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T10:06:40Z
