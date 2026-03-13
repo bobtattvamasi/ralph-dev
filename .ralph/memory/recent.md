@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R1-09: Process tree cleanup on timeout
+- Files: .ralph/memory/recent.md,progress.md,ralph.sh,ralph_codex.pgid,tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:54:16Z
+
 ### R4-12: State reconciliation: auto-reset stale waiting_human
 - Files: .ralph/memory/recent.md,progress.md,ralph_codex.pgid,tasks.json
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:48:19Z
-
-### R4-10: Invalid JSON decision: fallback to fix instead of alert
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:40:45Z
