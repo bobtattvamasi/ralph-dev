@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R3-07: Model selection per task
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T10:56:02Z
+
 ### R3-06: Skip lead for trivial tasks
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T10:35:13Z
-
-### R5-05: run_id in logs and state: structured observability
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T10:21:59Z
