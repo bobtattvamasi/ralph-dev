@@ -998,7 +998,9 @@ try:
 except Exception:
     d = {}
 decision = d.get('decision', '')
-if decision not in ('approve', 'fix', 'alert'):
+if decision == 'done':
+    d['decision'] = 'approve'
+elif decision not in ('approve', 'fix', 'alert'):
     d['decision'] = 'fix'
     d['fix_instructions'] = d.get('fix_instructions') or 'Tech Lead returned invalid JSON. Retry: implement the task correctly and ensure tests pass.'
     d.pop('alert_reason', None)
