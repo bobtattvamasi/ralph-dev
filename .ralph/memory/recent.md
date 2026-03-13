@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R3-11: Agent-suitable classification
+- Files: tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T09:33:26Z
+
 ### R3-05: Coder memory across tasks
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T09:18:00Z
-
-### R1-11: Sanitize task titles
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T09:15:11Z
