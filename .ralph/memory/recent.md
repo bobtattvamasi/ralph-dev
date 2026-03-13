@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R3-03: Lead review with acceptance criteria
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T09:25:20Z
+
 ### R3-02: Smart file selection
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:56:56Z
-
-### R1-09: Process tree cleanup on timeout
-- Files: .ralph/memory/recent.md,progress.md,ralph.sh,tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:55:07Z

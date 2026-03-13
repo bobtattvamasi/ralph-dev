@@ -197,3 +197,35 @@ async def test_watch_state_recovers_crashed_running_task(
     safe_send = bot_env["safe_send"]
     messages = [call.args[0] for call in safe_send.await_args_list]
     assert any("🔄 Ralph crashed during T01. Task reset to pending, changes rolled back." in msg for msg in messages)
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_auto_rejects_when_state_running(bot_env: dict[str, object]) -> None:
+    bot.STATE_FILE.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "current_task": "T01",
+                "current_phase_step": "coder",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    with patch("scripts.ralph_bot.reset_stale_state") as reset_mock:
+        with patch("scripts.ralph_bot.subprocess.Popen") as popen_mock:
+            await bot.cmd_start_auto()
+
+    reset_mock.assert_called_once()
+    popen_mock.assert_not_called()
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once_with("⚠️ Ralph already running. /stop first.")
+
+
+def test_read_state_returns_idle_for_broken_json(bot_env: dict[str, object]) -> None:
+    bot.STATE_FILE.write_text("{broken json", encoding="utf-8")
+
+    state = bot.read_state()
+
+    assert state["status"] == "idle"
+    assert state["current_task"] is None

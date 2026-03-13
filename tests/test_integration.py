@@ -55,16 +55,37 @@ mode = os.environ.get("MOCK_CODEX_MODE", "success")
 marker_file = os.environ.get("MOCK_RATE_LIMIT_MARKER", "")
 child_pid_file = os.environ.get("MOCK_CHILD_PID_FILE", "")
 prompt_capture_file = os.environ.get("MOCK_CODEX_CAPTURE_PROMPT_FILE", "")
+lead_fix_marker = os.environ.get("MOCK_LEAD_FIX_MARKER", "")
 if review_file:
-    payload = {
-        "decision": "approve",
-        "quality_score": 8,
-        "progress_note": "Integration test approve",
-    }
+    if mode == "lead_fix_once":
+        marker = Path(lead_fix_marker) if lead_fix_marker else None
+        if marker is not None and not marker.exists():
+            marker.write_text("fix-issued", encoding="utf-8")
+            payload = {
+                "decision": "fix",
+                "quality_score": 4,
+                "fix_instructions": "Address the missing acceptance criteria and rerun tests.",
+                "progress_note": "Needs one more pass",
+            }
+        else:
+            payload = {
+                "decision": "approve",
+                "quality_score": 8,
+                "progress_note": "Integration test approve",
+            }
+    else:
+        payload = {
+            "decision": "approve",
+            "quality_score": 8,
+            "progress_note": "Integration test approve",
+        }
     Path(review_file).write_text(json.dumps(payload), encoding="utf-8")
 else:
     if prompt_capture_file:
         Path(prompt_capture_file).write_text(prompt, encoding="utf-8")
+    if mode == "always_fail":
+        print("fatal codex failure")
+        sys.exit(1)
     if mode == "rate_limit_once":
         marker = Path(marker_file) if marker_file else None
         if marker is not None and not marker.exists():
@@ -259,6 +280,83 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert "keyword matching prompt builder" in prompt
     assert "... [truncated" in prompt
     assert len(prompt) <= 2200 + 32
+
+
+def test_ralph_blocks_duplicate_launch_with_pid_guard(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_SLEEP"] = "4"
+
+    first = subprocess.Popen(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    assert wait_until(lambda: (project_dir / "ralph_main.pid").exists(), timeout=10)
+
+    second = subprocess.run(
+        [str(RALPH_SH), "auto"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    first.terminate()
+    try:
+        first.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        first.kill()
+        first.communicate(timeout=10)
+
+    assert second.returncode != 0
+    assert "Ralph already running" in second.stdout
+
+
+def test_ralph_uses_complexity_default_timeout_when_timeout_missing(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks_path = project_dir / "tasks.json"
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks["tasks"][0].pop("timeout", None)
+    tasks["tasks"][0]["complexity"] = "complex"
+    tasks_path.write_text(json.dumps(tasks, indent=2), encoding="utf-8")
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Timeout: coder=600s lead=300s" in result.stdout
+
+
+def test_ralph_retries_after_fix_and_then_marks_done(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "lead_fix_once"
+    env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_fix.marker")
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "done"
+    assert "🔧 Fix 1/2:" in result.stdout
+    assert result.stdout.count("🤖 CODER — Attempt") >= 2
+    assert "👔 Decision: approve" in result.stdout
 
 
 def test_ralph_marks_task_skipped_on_skip_control(tmp_path: Path) -> None:
