@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R1-10: Auto-recovery: task rollback on crash
+- Files: .ralph/memory/recent.md,progress.md,tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:56:56Z
+
 ### R1-09: Process tree cleanup on timeout
 - Files: .ralph/memory/recent.md,progress.md,ralph.sh,tasks.json
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:51:27Z
-
-### R4-11: Preflight self-heal: broken tests before start
-- Files: .ralph/memory/recent.md,progress.md,tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:48:57Z
