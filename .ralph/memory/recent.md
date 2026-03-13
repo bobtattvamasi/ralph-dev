@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-09: Alert-to-defer: task failures skip instead of stop
+- Files: tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:32:59Z
+
 ### R3-13: Risk Gates
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: Fix failing tests and unmet criteria
 - Time: 2026-03-12T17:31:01Z
-
-### TEST-01: Test task
-- Files: file1.py,file2.py
-- Result: approved
-- Notes: none
-- Time: 2026-03-03T06:22:22Z
