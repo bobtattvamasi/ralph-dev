@@ -133,7 +133,7 @@ RATE_LIMIT_PAUSE="${RALPH_RATE_LIMIT_PAUSE:-1800}"
 CONSECUTIVE_FAILURES=0
 MAX_CONSECUTIVE_FAILURES=3
 DEFAULT_MODEL=""
-MINI_MODEL="codex-mini"
+MINI_MODEL=""
 SESSION_TOKENS=0
 SESSION_TASKS=0
 LOG_DIR="$PROJECT_DIR/logs"
@@ -1337,7 +1337,7 @@ print(task.get('role', 'coder'))
     CODEX_MODEL=""
     if [ "$TASK_COMPLEXITY" = "simple" ]; then
         CODEX_MODEL="$MINI_MODEL"
-        log "🧠 Model: codex-mini (simple task)"
+        log "🧠 Model: default (simple task)"
     else
         log "🧠 Model: default (complexity: $TASK_COMPLEXITY)"
     fi
