@@ -1286,11 +1286,14 @@ while true; do
 
     TASK_ID=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
     TASK_TITLE=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
-    # Extract coder timeout from task (default 180s)
+    # Extract coder timeout from task (complexity-aware defaults)
     TASK_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
 import sys, json
 task = json.load(sys.stdin)
-print(task.get('timeout', 180))
+complexity = task.get('complexity', 'moderate')
+defaults = {'simple': 180, 'moderate': 420, 'complex': 600, 'critical': 600}
+default_timeout = defaults.get(complexity, 420)
+print(task.get('timeout', default_timeout))
 " 2>/dev/null || echo "180")
 
     # Extract lead timeout with a higher default for heavier review tasks.
