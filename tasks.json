@@ -1217,7 +1217,8 @@
         "Уведомление в Telegram: Tests broken, attempting self-heal",
         "Только 1 попытка self-heal, потом alert если не помогло",
         "bash -n ralph.sh проходит"
-      ]
+      ],
+      "revision_notes": "Redo via Telegram"
     },
     {
       "id": "R4-12",
