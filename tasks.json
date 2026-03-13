@@ -696,7 +696,8 @@
       "dependencies": [
         "R3-01"
       ],
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-13T09:21:08.471848+00:00"
     },
     {
       "id": "R3-03",
