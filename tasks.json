@@ -1164,7 +1164,7 @@
       "phase": "R4",
       "title": "Alert-to-defer: task failures skip instead of stop",
       "description": "В ralph.sh заменить alert_human() + break на defer_blocked_task() + continue в трёх точках: ветка alert) от Tech Lead (~строка 1541), ветка unknown decision (~1555), и if TASK_DONE=false после max retries (~1571). alert_human() оставить ТОЛЬКО для risk=high и circuit breaker. После замены задача помечается blocked, скрипт берет следующую pending задачу.",
-      "status": "pending",
+      "status": "blocked",
       "priority": "critical",
       "complexity": "moderate",
       "risk": "medium",
@@ -1174,7 +1174,8 @@
         "Когда исчерпаны retries - задача blocked, автопилот продолжает",
         "alert_human вызывается только при risk=high",
         "bash -n ralph.sh проходит"
-      ]
+      ],
+      "revision_notes": "R4-09 failed after 2 retries"
     },
     {
       "id": "R4-10",
