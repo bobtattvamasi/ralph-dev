@@ -1327,7 +1327,7 @@ print(task.get('role', 'coder'))
 " 2>/dev/null || echo "coder")
 
     CODER_ROLE_FILE=$(resolve_agent_prompt_file "$TASK_ROLE" "AGENTS_CODER.md")
-    LEAD_ROLE_FILE=$(resolve_agent_prompt_file "$TASK_ROLE" "AGENTS_LEAD.md")
+    LEAD_ROLE_FILE=$(resolve_agent_prompt_file "lead" "AGENTS_LEAD.md")
     CODER_ROLE_CONTENT=$(read_file_for_prompt "$CODER_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
     LEAD_ROLE_CONTENT=$(read_file_for_prompt "$LEAD_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
 

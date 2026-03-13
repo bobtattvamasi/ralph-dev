@@ -668,9 +668,9 @@
       "dependencies": [
         "R1-12"
       ],
-      "status": "pending",
+      "status": "blocked",
       "completed_at": "2026-03-12T18:44:58.001318+00:00",
-      "revision_notes": "Redo via Telegram"
+      "revision_notes": "R3-01 failed after 2 retries"
     },
     {
       "id": "R3-02",
