@@ -979,6 +979,23 @@ alert_human() {
     osascript -e "display notification \"$reason\" with title \"Ralph Alert\"" 2>/dev/null || true
 }
 
+validate_lead_review_json() {
+    REVIEW_JSON=$(echo "$REVIEW_JSON" | python3 -c "
+import json, sys
+text = sys.stdin.read().strip() or '{}'
+try:
+    d = json.loads(text)
+except Exception:
+    d = {}
+decision = d.get('decision', '')
+if decision not in ('approve', 'fix', 'alert'):
+    d['decision'] = 'fix'
+    d['fix_instructions'] = d.get('fix_instructions') or 'Tech Lead returned invalid JSON. Retry: implement the task correctly and ensure tests pass.'
+    d.pop('alert_reason', None)
+print(json.dumps(d, ensure_ascii=False))
+")
+}
+
 # ─── Status ───
 if [ "$MODE" = "status" ]; then
     echo "=== Test Status ==="
@@ -1145,6 +1162,7 @@ print(task.get('role', 'coder'))
     FIX_RETRY=0
     TASK_DONE=false
     TASK_SKIPPED=false
+    TASK_BLOCKED=false
     FIX_INSTRUCTIONS=""
     TASK_TOKENS=0
 
@@ -1395,6 +1413,7 @@ Output ONLY a JSON object with your decision."
             if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
                 REVIEW_JSON=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || echo '{}')
             fi
+            validate_lead_review_json
             log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
             log "🔍 DEBUG: Parsed review JSON: $(echo "$REVIEW_JSON" | head -c 200)"
         fi
@@ -1550,8 +1569,14 @@ except Exception:
 
                 log_metrics "failed"
                 log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                write_state "waiting_human" "$TASK_ID" "alert" "$REASON"
-                alert_human "$REASON"
+                if [ "${TASK_RISK:-medium}" = "high" ]; then
+                    alert_human "$REASON"
+                else
+                    log "⚠️ Task $TASK_ID blocked: $REASON — skipping, continuing queue"
+                    notify "⚠️ $TASK_ID blocked (auto-skipped): $REASON"
+                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
+                    TASK_BLOCKED=true
+                fi
                 break
                 ;;
 
@@ -1560,7 +1585,14 @@ except Exception:
                 log "⚠️ Raw review output: $(head -5 /tmp/ralph_review_$$.txt 2>/dev/null)"
                 REASON="Unknown tech lead decision: '$DECISION'"
                 log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                alert_human "Unknown tech lead decision: '$DECISION'"
+                if [ "${TASK_RISK:-medium}" = "high" ]; then
+                    alert_human "$REASON"
+                else
+                    log "⚠️ Task $TASK_ID blocked: $REASON — skipping, continuing queue"
+                    notify "⚠️ $TASK_ID blocked (auto-skipped): $REASON"
+                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
+                    TASK_BLOCKED=true
+                fi
                 break
                 ;;
         esac
@@ -1572,12 +1604,25 @@ except Exception:
         continue
     fi
 
+    if [ "$TASK_BLOCKED" = true ]; then
+        [ "$MODE" = "task" ] && break
+        continue
+    fi
+
     if [ "$TASK_DONE" = false ]; then
         REASON="$TASK_ID failed after $MAX_FIX_RETRIES retries"
         log_metrics "failed"
         log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        alert_human "$REASON"
-        break
+        if [ "${TASK_RISK:-medium}" = "high" ]; then
+            alert_human "$REASON"
+            break
+        else
+            log "⚠️ Task $TASK_ID blocked: $REASON — skipping, continuing queue"
+            notify "⚠️ $TASK_ID blocked (auto-skipped): $REASON"
+            python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
+            [ "$MODE" = "task" ] && break
+            continue
+        fi
     fi
 
     [ "$MODE" = "task" ] && break
