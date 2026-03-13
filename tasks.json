@@ -1352,12 +1352,13 @@
       "title": "run_id in logs and state: structured observability",
       "description": "Generate run_id = YYYYMMDD-HHMMSS-<task_id> at task start. Inject into every log line for this task. Store in ralph_state.json as current_run_id. Makes failures grep-able by run.",
       "dependencies": [],
-      "status": "pending",
+      "status": "done",
       "acceptance_criteria": [
         "Every log line during task includes [run_id]",
         "ralph_state.json contains current_run_id",
         "make test passes"
-      ]
+      ],
+      "completed_at": "2026-03-13T10:21:58.536198+00:00"
     }
   ]
 }
