@@ -256,6 +256,83 @@ def save_tasks_data(data: dict) -> None:
     TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def get_task_summary(tasks_path: Path) -> dict:
+    """Summarize task progress for /status and /progress."""
+    if not tasks_path.exists():
+        return {
+            "done_total": 0,
+            "all_total": 0,
+            "pct": 0,
+            "phases": [],
+            "blocked": [],
+            "next": [],
+        }
+
+    data = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks = data.get("tasks", [])
+    phases_meta = data.get("phases", {})
+    done_ids = {task.get("id") for task in tasks if task.get("status") == "done"}
+    done_total = sum(1 for task in tasks if task.get("status") == "done")
+    all_total = len(tasks)
+    pct = int(round((done_total / all_total) * 100)) if all_total else 0
+
+    phase_ids = [phase_id for phase_id in phases_meta.keys()]
+    for task in tasks:
+        phase_id = str(task.get("phase", "?"))
+        if phase_id not in phase_ids:
+            phase_ids.append(phase_id)
+
+    phase_rows = []
+    blocked = []
+    next_tasks = []
+    for phase_id in phase_ids:
+        phase_tasks = [task for task in tasks if str(task.get("phase", "?")) == phase_id]
+        total = len(phase_tasks)
+        done = sum(1 for task in phase_tasks if task.get("status") == "done")
+        filled = int(round((done / total) * 8)) if total else 0
+        bar = ("█" * filled) + ("░" * (8 - filled))
+
+        if total == 0:
+            icon = "⬜"
+        elif done == total:
+            icon = "✅"
+        elif any(task.get("status") in {"running", "in_progress", "pending"} for task in phase_tasks):
+            icon = "🔄"
+        else:
+            icon = "⬜"
+
+        name = str(phases_meta.get(phase_id, {}).get("name", phase_id))
+        phase_rows.append(
+            {
+                "phase_id": phase_id,
+                "bar": bar,
+                "done": done,
+                "total": total,
+                "name": name,
+                "icon": icon,
+            }
+        )
+
+        for task in phase_tasks:
+            if task.get("status") != "pending":
+                continue
+            deps = task.get("dependencies", []) or []
+            unmet = [dep for dep in deps if dep not in done_ids]
+            if unmet:
+                blocked.append(str(task.get("id")))
+            else:
+                next_tasks.append(str(task.get("id")))
+
+    return {
+        "done_total": done_total,
+        "all_total": all_total,
+        "pct": pct,
+        "phases": phase_rows,
+        "blocked": blocked,
+        "next": next_tasks[:5],
+    }
+
+
 def prepare_html_message(text: str) -> str:
     """Escape plain text while preserving the bot's small allowed HTML subset."""
     if any(tag in text for tag in ("<b>", "</b>", "<pre>", "</pre>", "<code>", "</code>")):
@@ -408,6 +485,7 @@ def set_idle_state(message: str = "Idle") -> None:
 async def cmd_status() -> None:
     """Send status overview."""
     state = read_state()
+    summary = get_task_summary(TASKS_FILE)
     status = state.get("status", "idle")
     icons = {"idle": "⏸", "running": "🏃", "waiting_human": "🚨", "stopped": "⏹"}
     icon = icons.get(status, "❓")
@@ -421,6 +499,9 @@ async def cmd_status() -> None:
         lines.append(f"🕐 Updated: {state['last_update']}")
     if state.get("message"):
         lines.append(f"💬 {state['message']}")
+    lines.append(
+        f"📊 {summary['done_total']}/{summary['all_total']} ({summary['pct']}%) complete"
+    )
 
     await safe_send("\n".join(lines))
 
@@ -944,15 +1025,37 @@ async def cmd_article(mode: str = "") -> None:
     await send_split_message("===PROMPTS===\n" + prompts_text)
 
 
-async def cmd_progress(n: int = 20) -> None:
-    """Show tail of progress.md."""
-    if not PROGRESS_FILE.exists():
-        await safe_send("No progress.md found")
+async def cmd_progress() -> None:
+    """Show phase-by-phase progress bars from tasks.json."""
+    if not TASKS_FILE.exists():
+        await safe_send("No tasks.json found")
         return
-    lines = PROGRESS_FILE.read_text(encoding="utf-8").strip().splitlines()
-    tail = lines[-n:] if len(lines) > n else lines
-    progress_text = html.escape(chr(10).join(tail))
-    await safe_send(f"<pre>{progress_text}</pre>")
+
+    try:
+        summary = get_task_summary(TASKS_FILE)
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Error reading tasks.json: {exc}")
+        return
+
+    lines = [
+        f"📊 Ralph Progress — {summary['done_total']}/{summary['all_total']} done ({summary['pct']}%)",
+        "",
+    ]
+
+    for row in summary["phases"]:
+        lines.append(
+            f"{row['phase_id']} {row['bar']}  {row['done']}/{row['total']}   {row['name']:<16} {row['icon']}"
+        )
+
+    if summary["blocked"]:
+        lines.append("")
+        lines.append("⏳ Blocked: " + ", ".join(summary["blocked"]))
+
+    if summary["next"]:
+        lines.append("")
+        lines.append("🔜 Next: " + ", ".join(summary["next"]))
+
+    await safe_send("\n".join(lines))
 
 
 async def cmd_tail(n: int = 20) -> None:
@@ -1026,7 +1129,7 @@ async def cmd_help() -> None:
         "/timeout [seconds] — set timeout override\n"
         "/comment text — instruction for next task\n"
         "/log [N] — last N lines from ralph execution log\n"
-        "/progress [N] — last N lines from progress.md\n"
+        "/progress — phase progress bars\n"
         "/tail [N] — last N lines of live codex output\n"
         "/cost — token usage & cost estimate\n"
         "/stats — aggregated task metrics from metrics.csv\n"
@@ -1102,8 +1205,7 @@ async def handle_update(update: dict) -> None:
         log_text = html.escape(get_log_tail(n))
         await safe_send(f"<pre>{log_text}</pre>")
     elif cmd == "/progress":
-        n = int(args) if args.isdigit() else 20
-        await cmd_progress(n)
+        await cmd_progress()
     elif cmd == "/tail":
         n = int(args) if args.isdigit() else 20
         await cmd_tail(n)

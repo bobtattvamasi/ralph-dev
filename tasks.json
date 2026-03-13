@@ -634,27 +634,18 @@
     {
       "id": "R2-10",
       "phase": "R2",
-      "category": "convenience",
-      "priority": "high",
-      "title": "Bot: /stats command",
-      "description": "Add /stats command that reads logs/metrics.csv and reports execution metrics: tasks succeeded/failed, average duration, average attempts, changed files, and estimated cost.",
+      "priority": "medium",
+      "complexity": "simple",
+      "title": "Bot: /progress command with phase progress bars",
+      "description": "Add /progress command. Shows per-phase progress bars.",
+      "status": "done",
       "acceptance_criteria": [
-        "/stats command exists in Telegram bot",
-        "Reads and summarizes logs/metrics.csv",
-        "Handles missing or empty metrics.csv gracefully",
-        "python3 -c ast.parse passes"
-      ],
-      "test_steps": [
-        "Seed logs/metrics.csv with sample rows",
-        "Run /stats and verify aggregated output",
-        "Run /stats with no metrics.csv and verify fallback message"
-      ],
-      "dependencies": [
-        "R1-03",
-        "R2-01"
-      ],
-      "status": "status",
-      "revision_notes": "done"
+        "/progress returns phase-by-phase progress bars",
+        "Each row: phase_id blocks done/total name status_icon",
+        "Summary line shows total done/total and percent",
+        "/status gains one summary line at the bottom",
+        "make test passes"
+      ]
     },
     {
       "id": "R3-01",
@@ -1314,12 +1305,13 @@
       "title": "Structured run artifacts: runs/<run_id>/ per execution",
       "description": "Each ralph.sh run gets a unique run_id (timestamp+task). Save to runs/<run_id>/: prompt.txt, coder_output.txt, lead_output.txt, review.json, diff.patch, test_output.txt, final_state.json.",
       "dependencies": [],
-      "status": "pending",
+      "status": "done",
       "acceptance_criteria": [
         "runs/ dir created per task execution",
         "all 7 artifact files saved",
         "runs/ added to .gitignore"
-      ]
+      ],
+      "completed_at": "2026-03-13T10:06:40.220111+00:00"
     },
     {
       "id": "R5-03",

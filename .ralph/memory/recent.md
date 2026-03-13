@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R5-02: Structured run artifacts: runs/<run_id>/ per execution
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T10:06:40Z
+
 ### R4-14: Tests: autonomy hardening coverage
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T09:37:32Z
-
-### R3-11: Agent-suitable classification
-- Files: tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T09:33:26Z

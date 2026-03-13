@@ -127,6 +127,50 @@ async def test_cmd_done_marks_task_done(bot_env: dict[str, object]) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cmd_progress_shows_phase_bars(bot_env: dict[str, object]) -> None:
+    bot.TASKS_FILE.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "project": "test-project",
+                "phases": {
+                    "R0": {"name": "Foundation"},
+                    "R1": {"name": "Reliability"},
+                    "R2": {"name": "Convenience"},
+                },
+                "tasks": [
+                    {"id": "R0-01", "phase": "R0", "title": "Init", "status": "done"},
+                    {"id": "R1-01", "phase": "R1", "title": "Retry", "status": "done"},
+                    {"id": "R1-02", "phase": "R1", "title": "Watchdog", "status": "pending"},
+                    {
+                        "id": "R2-01",
+                        "phase": "R2",
+                        "title": "Plan",
+                        "status": "pending",
+                        "dependencies": ["R1-02"],
+                    },
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    await bot.cmd_progress()
+
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once()
+    message = safe_send.await_args.args[0]
+    assert "📊 Ralph Progress" in message
+    assert "████" in message
+    assert "2/4 done (50%)" in message
+    assert "R0" in message and "Foundation" in message
+    assert "⏳ Blocked: R2-01" in message
+    assert "🔜 Next: R1-02" in message
+
+
+@pytest.mark.asyncio
 async def test_handle_update_routes_help(bot_env: dict[str, object]) -> None:
     await bot.handle_update({"message": {"text": "/help"}})
 
