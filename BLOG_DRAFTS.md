@@ -44,3 +44,53 @@ The pattern keeps repeating: model quality helps, but reliability, safety, proce
 Minimalist cyberpunk control room dashboard, autonomous AI orchestration, process cleanup and retry loops, cold terminal glow, black graphite and acid green
 Cyberpunk developer workstation, agent roles and human approval gate visualized as branching execution paths, dense technical UI, restrained neon
 Minimal poster design, infrastructure over model theme, orchestration pipeline with safety checkpoints and runtime states, monochrome with sharp red accent
+
+## 
+
+## Telegram
+
+> b.g_ / build log #03
+
+Собрал следующий слой вокруг Ralph: из набора скриптов он уехал в более жёсткую проектную систему с CLI, bootstrap-потоком и мультипроектным управлением из бота. Смысл простой: меньше ручной сборки, меньше хрупких точек, больше повторяемости.
+
+**Что сделал**
+- Упаковал Ralph в CLI: появился `ralph` entrypoint, структура `src/ralph`, ресурсные шаблоны и тест на packaging.
+- Добавил `ralph.toml` как конфигурационный слой вместо разрозненных ручных настроек.
+- Собрал Project Bootstrapper: проект можно поднимать через шаблоны, а не склеивать руками каждый раз.
+- Дотянул мультипроектность в Telegram-бот до рабочего состояния: один контур управления, несколько репозиториев.
+- Перед этим закрыл операционные хвосты: `/stop` теперь нормально сбрасывает состояние, добавлен cleanup orphan PID, graceful stop с таймаутом, git safety для codex subshell.
+
+**Что сломалось / Технический челлендж**
+- Главная проблема была не в модели, а в управлении процессами: висячие PID, незакрытые process groups, нестабильный stop/retry-контур.
+- По мере роста фич стало видно, что без нормального bootstrap и config-слоя каждый новый проект превращает оркестратор в набор исключений.
+- Мультипроектный режим в боте повышает ценность системы, но сразу поднимает требования к изоляции состояния и предсказуемости runtime.
+
+**Что добавил в систему**
+- CLI-оболочку как стабильную точку входа.
+- Конфиг-файл `ralph.toml`.
+- Bootstrapper для разворачивания новых проектов.
+- Шаблоны ролей и проектных файлов внутри package resources.
+- Мультипроектный control surface в Telegram-боте.
+
+**Вывод**
+Сдвиг не в сторону “ещё одного AI-агента”, а в сторону инфраструктуры, которую можно переносить между проектами без ручной пересборки. Чем дальше, тем яснее: ценность здесь делает не модель, а дисциплина исполнения, контроль состояния и упаковка среды.
+
+## LinkedIn
+
+Most AI agent work still over-focuses on the model layer.
+
+What actually moved this system forward was infrastructure: packaging Ralph into a real CLI, adding a config layer with `ralph.toml`, introducing a bootstrapper for new projects, and extending the bot toward multi-project control. That is the difference between a demo loop and an operational system.
+
+The technical pressure point was runtime reliability, not prompting. Process cleanup, stop semantics, retry behavior, orphan PID handling, and safe Git execution all mattered more than model cleverness. Once an agent touches real repositories and long-running tasks, control flow becomes the product.
+
+This is the pattern I keep seeing: models generate output, but infrastructure determines whether the system is reusable, safe, and scalable. Entry points, state isolation, config boundaries, role templates, watchdog behavior, and human approval gates are what let an agent survive outside a toy environment.
+
+If you want multi-agent systems to work across projects, “better prompts” is not enough. You need repeatable bootstrap, explicit runtime contracts, and failure handling that assumes the process will eventually get weird.
+
+Infrastructure is not support work here. It is the system.
+
+## Cover Prompts
+
+Minimalist terminal dashboard controlling multiple AI projects, cold white typography, black grid, precise orchestration UI  
+Cyberpunk ops room with parallel agent pipelines, glowing repo nodes, PID cleanup and control flow overlays  
+Minimal poster of AI infrastructure stack, CLI entrypoint, config file, bootstrap flow, stark layout, engineering mood

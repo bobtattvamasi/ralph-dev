@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-04: Template system for new agents
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T11:32:55Z
+
 ### R4-03: Multi-project support in bot
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T11:00:45Z
-
-### R3-07: Model selection per task
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T10:56:02Z
