@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R3-05: Coder memory across tasks
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T09:29:30Z
+
 ### R3-03: Lead review with acceptance criteria
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T09:15:11Z
-
-### R1-10: Auto-recovery: task rollback on crash
-- Files: .ralph/memory/recent.md,progress.md,tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:56:56Z
