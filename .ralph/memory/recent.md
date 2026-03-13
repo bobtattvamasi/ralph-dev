@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R4-12: State reconciliation: auto-reset stale waiting_human
+- Files: .ralph/memory/recent.md,progress.md,tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:51:27Z
+
 ### R4-11: Preflight self-heal: broken tests before start
 - Files: .ralph/memory/recent.md,progress.md,tasks.json
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:32:59Z
-
-### R3-13: Risk Gates
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:07:44Z

@@ -1226,7 +1226,7 @@
       "phase": "R4",
       "title": "State reconciliation: auto-reset stale waiting_human",
       "description": "В ralph.sh добавить reconcile_state() которая вызывается при старте auto режима: читает ralph_state.json, если status=waiting_human/running и last_update старше 5 минут И нет живого ralph-процесса - автоматически сбросить в idle. В ralph_bot.py добавить auto_reconcile_idle_if_stale() в начало каждой итерации watch_state().",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "complexity": "simple",
       "risk": "low",
@@ -1235,7 +1235,8 @@
         "Stale state старше 5 минут сбрасывается автоматически",
         "В логе появляется: Auto-reconciled stale state",
         "bash -n ralph.sh и ast.parse проходят"
-      ]
+      ],
+      "completed_at": "2026-03-13T07:51:26.991484+00:00"
     },
     {
       "id": "R4-13",
