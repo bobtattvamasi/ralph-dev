@@ -1,6 +1,12 @@
 # Recent Task History
 
 ### R4-12: State reconciliation: auto-reset stale waiting_human
+- Files: .ralph/memory/recent.md,progress.md,ralph_codex.pgid,tasks.json
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T07:52:17Z
+
+### R4-12: State reconciliation: auto-reset stale waiting_human
 - Files: .ralph/memory/recent.md,progress.md,tasks.json
 - Result: approved
 - Notes: 
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:40:45Z
-
-### R4-09: Alert-to-defer: task failures skip instead of stop
-- Files: tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:32:59Z
