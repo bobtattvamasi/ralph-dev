@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R1-11: Sanitize task titles
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T09:15:11Z
+
 ### R1-10: Auto-recovery: task rollback on crash
 - Files: .ralph/memory/recent.md,progress.md,tasks.json
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T07:52:17Z
-
-### R4-12: State reconciliation: auto-reset stale waiting_human
-- Files: .ralph/memory/recent.md,progress.md,tasks.json
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T07:51:27Z
