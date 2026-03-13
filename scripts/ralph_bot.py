@@ -116,10 +116,74 @@ def read_state() -> dict:
     """Read ralph state file."""
     if STATE_FILE.exists():
         try:
-            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            return normalize_state_for_display(json.loads(STATE_FILE.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, OSError):
             pass
     return {"status": "idle", "current_task": None, "last_update": None}
+
+
+def is_pid_alive(pid: object) -> bool:
+    """Return True if the given PID belongs to a live process."""
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def normalize_state_for_display(state: dict) -> dict:
+    """Treat stale waiting/running/paused state as idle for display only."""
+    if not isinstance(state, dict):
+        return {"status": "idle", "current_task": None, "last_update": None}
+
+    status = state.get("status", "idle")
+    if status not in ("waiting_human", "running", "paused"):
+        return state
+
+    last_update = state.get("last_update")
+    if not last_update:
+        return state
+
+    try:
+        updated_at = datetime.fromisoformat(str(last_update).replace("Z", "+00:00"))
+    except ValueError:
+        return state
+
+    if (datetime.now(timezone.utc) - updated_at).total_seconds() <= 600:
+        return state
+
+    if is_pid_alive(state.get("pid")):
+        return state
+
+    display_state = dict(state)
+    display_state["status"] = "idle"
+    display_state["message"] = "Auto-detected stale state"
+    return display_state
+
+
+def reset_stale_state() -> None:
+    """Сбрасывает зависший стейт если ralph процесс не живой."""
+    if not STATE_FILE.exists():
+        return
+    try:
+        state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        status = state.get("status", "idle")
+        if status in ("waiting_human", "running", "paused"):
+            ralph_alive = is_pid_alive(state.get("pid"))
+            if not ralph_alive:
+                state["status"] = "idle"
+                state["current_task"] = ""
+                state["step"] = ""
+                state["current_phase_step"] = ""
+                state["message"] = "Auto-reset stale state on /auto"
+                STATE_FILE.write_text(
+                    json.dumps(state, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+    except Exception:
+        pass
 
 
 def write_control(action: str, comment: str = "") -> None:
@@ -391,6 +455,7 @@ async def cmd_start_phase(phase: str) -> None:
 
 async def cmd_start_auto() -> None:
     """Start auto mode."""
+    reset_stale_state()
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
