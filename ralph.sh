@@ -996,6 +996,187 @@ print(json.dumps(d, ensure_ascii=False))
 ")
 }
 
+run_coder_agent() {
+    local project_agents=""
+    local project_architecture=""
+    local project_memory_system=""
+    local memory_core=""
+    local memory_recent=""
+    local relevant_context=""
+    local context_content=""
+    local coder_prompt=""
+    local human_comment=""
+    local coder_output=""
+    local pre_hash=""
+    local codex_exit=0
+
+    CODER_ROLE_FILE=$(resolve_agent_prompt_file "${TASK_ROLE:-coder}" "AGENTS_CODER.md")
+    CODER_ROLE_CONTENT=$(read_file_for_prompt "$CODER_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
+
+    if [ -f "AGENTS.md" ]; then
+        project_agents=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
+    fi
+    if [ -f "ARCHITECTURE.md" ]; then
+        project_architecture=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
+    fi
+    if [ -f "MEMORY_SYSTEM.md" ]; then
+        project_memory_system=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
+    fi
+    if [ -f ".ralph/memory/core.md" ]; then
+        memory_core=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
+    fi
+    if [ -f ".ralph/memory/recent.md" ]; then
+        memory_recent=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
+    fi
+
+    relevant_context=$(build_relevant_context "$TASK_JSON" || true)
+
+    if [ -n "${TASK_CONTEXT_FILES:-}" ]; then
+        local ctx_file
+        for ctx_file in $TASK_CONTEXT_FILES; do
+            if [ -f "$ctx_file" ]; then
+                context_content="${context_content}
+## File: $ctx_file
+$(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
+"
+            fi
+        done
+    fi
+
+    coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Then read progress.md.
+Run make test to verify current state.
+
+## Architecture Doc
+${project_architecture:-No ARCHITECTURE.md provided. Use AGENTS.md and the repository structure.}
+
+## AGENTS.md Context
+${project_agents:-No AGENTS.md provided.}
+
+## Memory System Doc
+${project_memory_system:-No MEMORY_SYSTEM.md provided. Use AGENTS.md and .ralph/memory/.}
+
+## Role Instructions (${CODER_ROLE_FILE})
+${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
+
+## Project Context (from memory)
+${memory_core:-No core context yet. Read ARCHITECTURE.md and AGENTS.md for project info.}
+
+## Recent Tasks (what was done before you)
+${memory_recent:-No recent tasks yet. This may be the first task.}
+
+## Required Context Files
+${context_content:-No specific files required.}
+
+## Relevant Source Snippets
+${relevant_context:-No keyword-matched source snippets found.}
+
+## Your Task
+$TASK_JSON
+
+## Rules
+- **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
+- Implement ONLY this task
+- make test must pass
+- Do NOT modify tasks.json or progress.md"
+
+    human_comment=$(get_human_comment)
+    if [ -n "$human_comment" ]; then
+        coder_prompt="$coder_prompt
+
+## Human Comment (from project owner via Telegram)
+$human_comment"
+    fi
+
+    coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
+    coder_output="/tmp/ralph_coder_$$.txt"
+    pre_hash=$(git rev-parse HEAD)
+
+    set +e
+    run_codex "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "$CODEX_MODEL"
+    codex_exit=$?
+    set -e
+
+    CODER_TOKENS=$(extract_tokens "$coder_output")
+    TASK_TOKENS=$(( ${TASK_TOKENS:-0} + ${CODER_TOKENS:-0} ))
+    SESSION_TOKENS=$(( ${SESSION_TOKENS:-0} + ${CODER_TOKENS:-0} ))
+
+    if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
+        git add -A
+        git commit -m "wip(${TASK_ID}): coder changes" 2>/dev/null || true
+    fi
+
+    PRE_HASH="$pre_hash"
+    return $codex_exit
+}
+
+self_heal_environment() {
+    log '🩹 Tests broken before start. Attempting self-heal...'
+    notify '🩹 Tests broken before start. Ralph will try to fix automatically.'
+
+    local HEAL_TASK_JSON
+    HEAL_TASK_JSON='{
+      "id": "ENV-FIX",
+      "phase": "R0",
+      "title": "Fix broken tests",
+      "description": "Before starting the task queue, make test is failing. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features.",
+      "status": "pending",
+      "priority": "critical",
+      "complexity": "moderate",
+      "timeout": 300,
+      "required_context": []
+    }'
+
+    local OLD_TASK_JSON OLD_TASK_ID OLD_TASK_TITLE OLD_TASK_TIMEOUT OLD_TASK_LEAD_TIMEOUT
+    local OLD_TASK_COMPLEXITY OLD_TASK_CONTEXT_FILES OLD_TASK_RISK OLD_TASK_ROLE
+    OLD_TASK_JSON="${TASK_JSON:-}"
+    OLD_TASK_ID="${TASK_ID:-}"
+    OLD_TASK_TITLE="${TASK_TITLE:-}"
+    OLD_TASK_TIMEOUT="${TASK_TIMEOUT:-}"
+    OLD_TASK_LEAD_TIMEOUT="${TASK_LEAD_TIMEOUT:-}"
+    OLD_TASK_COMPLEXITY="${TASK_COMPLEXITY:-}"
+    OLD_TASK_CONTEXT_FILES="${TASK_CONTEXT_FILES:-}"
+    OLD_TASK_RISK="${TASK_RISK:-}"
+    OLD_TASK_ROLE="${TASK_ROLE:-}"
+
+    TASK_JSON="$HEAL_TASK_JSON"
+    TASK_ID="ENV-FIX"
+    TASK_TITLE="Fix broken tests"
+    TASK_TIMEOUT=300
+    TASK_LEAD_TIMEOUT=120
+    TASK_COMPLEXITY="moderate"
+    TASK_CONTEXT_FILES=""
+    TASK_RISK="medium"
+    TASK_ROLE="coder"
+
+    run_coder_agent
+    local heal_exit=$?
+
+    TASK_JSON="$OLD_TASK_JSON"
+    TASK_ID="$OLD_TASK_ID"
+    TASK_TITLE="$OLD_TASK_TITLE"
+    TASK_TIMEOUT="$OLD_TASK_TIMEOUT"
+    TASK_LEAD_TIMEOUT="$OLD_TASK_LEAD_TIMEOUT"
+    TASK_COMPLEXITY="$OLD_TASK_COMPLEXITY"
+    TASK_CONTEXT_FILES="$OLD_TASK_CONTEXT_FILES"
+    TASK_RISK="$OLD_TASK_RISK"
+    TASK_ROLE="$OLD_TASK_ROLE"
+
+    if [ $heal_exit -ne 0 ]; then
+        log '❌ Self-heal failed. Coder run did not complete cleanly.'
+    fi
+
+    if make test > /tmp/ralph_heal_verify.log 2>&1; then
+        log '✅ Self-heal succeeded! Tests are green. Continuing queue.'
+        notify '✅ Self-heal succeeded! Continuing task queue.'
+        return 0
+    else
+        log '❌ Self-heal failed. Tests still broken.'
+        notify '🚨 Self-heal failed. Tests still broken. Manual fix needed.'
+        alert_human 'Self-heal failed: tests still broken after ENV-FIX attempt'
+        return 1
+    fi
+}
+
 # ─── Status ───
 if [ "$MODE" = "status" ]; then
     echo "=== Test Status ==="
@@ -1041,7 +1222,7 @@ log "🔍 Smoke test..."
 if ! make test > /tmp/ralph_test.log 2>&1; then
     log "❌ Tests failing!"
     tail -20 /tmp/ralph_test.log
-    alert_human "Tests broken before start. Fix manually."
+    self_heal_environment || exit 1
 fi
 log "✅ Tests pass"
 if [ "$RECOVERY_MODE" -eq 1 ]; then
