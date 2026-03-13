@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R5-01: Offline eval harness: eval_cases/ + scripts/run_eval.py
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-13T09:37:32Z
+
 ### R3-11: Agent-suitable classification
 - Files: tasks.json
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T09:21:08Z
-
-### R2-09: Auto-update progress.md
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T09:18:00Z

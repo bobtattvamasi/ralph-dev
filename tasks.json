@@ -1294,13 +1294,14 @@
       "complexity": "complex",
       "title": "Offline eval harness: eval_cases/ + scripts/run_eval.py",
       "description": "Create eval_cases/ with 8 frozen fixtures (valid approve, invalid JSON, done->approve, rate-limit, timeout, blocked, high-risk, fix-retry). Create scripts/run_eval.py that feeds fixtures into extract_json.py + validate_lead_review_json logic and emits scorecard: schema_valid, decision_match, recovery_ok.",
-      "status": "pending",
+      "status": "done",
       "acceptance_criteria": [
         "eval_cases/ contains 8 fixture JSON files",
         "scripts/run_eval.py runs all cases and prints scorecard",
         "make eval target added to Makefile",
         "all 8 cases pass"
-      ]
+      ],
+      "completed_at": "2026-03-13T09:37:32.086565+00:00"
     },
     {
       "id": "R5-02",
