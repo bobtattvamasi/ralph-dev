@@ -483,16 +483,24 @@ ignore_globs = [
 ]
 
 candidate_paths: dict[pathlib.Path, dict[str, int]] = {}
+rg_available = True
 for keyword in keywords:
-    try:
-        result = subprocess.run(
-            ["rg", "-l", "-i", "-m", "1", *sum([["--glob", g] for g in ignore_globs], []), "--", keyword, str(project_dir)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError:
-        sys.exit(0)
+    if rg_available:
+        try:
+            result = subprocess.run(
+                ["rg", "-l", "-i", "-m", "1", *sum([["--glob", g] for g in ignore_globs], []), "--", keyword, str(project_dir)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            rg_available = False
+            result = None
+    else:
+        result = None
+
+    if result is None:
+        continue
 
     for raw_path in result.stdout.splitlines():
         raw_path = raw_path.strip()
