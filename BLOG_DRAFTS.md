@@ -94,3 +94,56 @@ Infrastructure is not support work here. It is the system.
 Minimalist terminal dashboard controlling multiple AI projects, cold white typography, black grid, precise orchestration UI  
 Cyberpunk ops room with parallel agent pipelines, glowing repo nodes, PID cleanup and control flow overlays  
 Minimal poster of AI infrastructure stack, CLI entrypoint, config file, bootstrap flow, stark layout, engineering mood
+
+## 
+
+## Telegram
+
+> b.g_ / build log #03
+
+Коротко: закрыл кусок R4 и довёл Ralph ближе к состоянию не "бот с промптом", а управляемой системы.
+
+**Что сделал**
+
+Собрал CLI entrypoint `ralph`, чтобы запуск и упаковка были нормальными, а не через локальные обходы.  
+Добавил multi-project support в боте, чтобы один контур мог цепляться к разным репам с `tasks.json`.  
+Собрал template system для новых агентов: роли, архитектура, память, progress, tasks теперь можно поднимать из шаблонов.  
+Подключил Vector DB для semantic task retrieval, чтобы вытаскивать релевантные задачи и контекст не только по жёстким правилам.
+
+**Что сломалось / Технический челлендж**
+
+Основной челлендж был не в "ещё одном агенте", а в управлении контуром.  
+При росте количества ролей и проектов начинает плыть контроль: какой агент к чему привязан, какой контекст грузится, что считается релевантным, где граница между памятью и шумом.  
+Отдельно пришлось чинить операционку системы: `/stop` теперь реально сбрасывает состояние, добавлен cleanup orphan PID при старте, graceful stop с таймаутом 30s, git safety через `GIT_EDITOR=true` в codex subshells.
+
+**Что добавил в систему**
+
+Добавил слой шаблонов для развёртывания новых агентов.  
+Добавил CLI как нормальную точку входа.  
+Добавил multi-project режим в Telegram-бот.  
+Добавил семантический retrieval через Vector DB как базу для следующего шага: параллельного и более умного task selection.
+
+**Вывод**
+
+Сдвиг недели не в модели, а в инфраструктуре вокруг неё.  
+Когда есть CLI, шаблоны, multi-project контур, безопасная остановка и retrieval, агент перестаёт быть хрупкой сессией и становится системой, которую можно масштабировать.
+
+## LinkedIn
+
+This week reinforced a point that keeps repeating in agent systems: model quality matters, but infrastructure decides whether the system is usable.
+
+I pushed Ralph further as an operational layer, not just a prompt wrapper. The work included a proper `ralph` CLI entrypoint, multi-project support in the Telegram control surface, a template system for spinning up new agents, and a Vector DB layer for semantic task retrieval. On paper, these look like product features. In practice, they are control-flow features.
+
+The real challenge was not generating better text. It was keeping the system coherent as more roles, projects, and memory layers were introduced. Once you add multiple agents and multiple repos, reliability issues become architecture issues: what context gets loaded, how relevance is decided, how state is reset, how orphan processes are cleaned up, and how a stop command actually stops the machine.
+
+That is why the supporting work mattered just as much: fixing `/stop` so it fully resets state, adding orphan PID cleanup on startup, enforcing graceful shutdown with a 30-second timeout, and making git execution safer inside codex subshells. These are not cosmetic improvements. They are the difference between an impressive demo and a controllable system.
+
+The broader lesson is simple: in agent engineering, the model is only one component. System design, safety rails, task routing, memory boundaries, and operational recovery paths are what make the model useful under real conditions.
+
+## Cover Prompts
+
+Cyberpunk terminal dashboard, AI orchestration control plane, vector memory nodes, multi-agent task routing, dark steel and neon cyan
+
+Minimalist engineering poster, command line entrypoint, system templates, semantic retrieval, monochrome grid with one electric blue accent
+
+Cyberpunk infrastructure schematic, Telegram bot control surface, process cleanup and graceful stop flow, precise technical UI, high-contrast black and red
