@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R5-04: Prompt versioning: version header in AGENTS_*.md
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T12:20:03Z
+
 ### R9-04: Tests: покрытие fetch_channel.py
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T11:37:55Z
-
-### R8-05: templates/AGENTS_COORDINATOR.md — роль координатора для проектов
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T11:32:34Z

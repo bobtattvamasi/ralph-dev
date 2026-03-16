@@ -1365,12 +1365,13 @@
       "title": "Prompt versioning: version header in AGENTS_*.md",
       "description": "Add <!-- prompt_version: X.Y.Z --> header to AGENTS_CODER.md and AGENTS_LEAD.md. Add PROMPT_CHANGELOG.md with version history. Ralph logs prompt_version at task start.",
       "dependencies": [],
-      "status": "pending",
+      "status": "done",
       "acceptance_criteria": [
         "Both AGENTS_*.md have version header",
         "PROMPT_CHANGELOG.md exists",
         "ralph.sh logs prompt_version in task start log line"
-      ]
+      ],
+      "completed_at": "2026-03-16T12:20:03.614906+00:00"
     },
     {
       "id": "R5-05",
