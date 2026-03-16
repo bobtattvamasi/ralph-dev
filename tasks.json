@@ -1593,14 +1593,15 @@
       "phase": "R8",
       "priority": "medium",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "title": "templates/AGENTS_COORDINATOR.md — роль координатора для проектов",
       "description": "Создать templates/AGENTS_COORDINATOR.md. Роль: принимает идею проекта, задаёт 3-5 уточняющих вопросов, собирает brief. Output: structured brief в docs/PROJECT_BRIEF.md. Инструкции: задавай вопросы по одному, жди ответа, не придумывай детали.",
       "acceptance_criteria": [
         "templates/AGENTS_COORDINATOR.md существует",
         "Содержит инструкции про уточняющие вопросы",
         "Содержит формат output: PROJECT_BRIEF.md"
-      ]
+      ],
+      "completed_at": "2026-03-16T11:32:34.501498+00:00"
     },
     {
       "id": "R8-06",

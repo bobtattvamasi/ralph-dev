@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R8-05: templates/AGENTS_COORDINATOR.md — роль координатора для проектов
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T11:32:34Z
+
 ### R8-04: AGENTS_JOURNALIST.md v2: контекст канала + пример поста + правила голоса
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T10:00:59Z
-
-### R9-02: Tests: покрытие /ask и /chat команд
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T09:56:23Z
