@@ -1645,7 +1645,7 @@
       "phase": "R9",
       "category": "reliability",
       "priority": "high",
-      "complexity": "simple",
+      "complexity": "moderate",
       "risk": "low",
       "title": "Bot: защита от двойного /auto",
       "description": "В cmd_auto() проверять что ralph.sh уже не запущен перед стартом нового процесса. Если процесс живой — ответить пользователю предупреждением и НЕ запускать второй экземпляр. Использовать PID файл или проверку ps aux.",
@@ -1662,10 +1662,10 @@
         "ps aux | grep ralph.sh показывает только один процесс"
       ],
       "dependencies": [],
-      "status": "pending",
-      "completed_at": null,
+      "status": "done",
+      "completed_at": "2026-03-16T09:51:13.717203+00:00",
       "revision_notes": "",
-      "timeout": 300,
+      "timeout": 600,
       "role": "coder"
     },
     {

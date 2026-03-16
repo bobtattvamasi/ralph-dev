@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R9-01: Bot: защита от двойного /auto
+- Files: scripts/ralph_bot.py,src/ralph/resources/scripts/ralph_bot.py,tests/test_bot_commands.py
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T09:51:13Z
+
 ### R6-02: Bot: /chat команда — multi-turn диалог с Ralph
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T07:20:30Z
-
-### R7-02: Bot: /reflect — показывает proposals из proposals.json
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T07:15:46Z
