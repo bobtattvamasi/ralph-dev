@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R6-03: Chat: авто-чтение файлов по контексту вопроса
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T10:00:59Z
+
 ### R9-02: Tests: покрытие /ask и /chat команд
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T07:30:44Z
-
-### R8-01: scripts/fetch_channel.py — читает Telegram канал → channel_context.md
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T07:25:45Z

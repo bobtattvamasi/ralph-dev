@@ -1428,7 +1428,7 @@
       "phase": "R6",
       "priority": "medium",
       "complexity": "moderate",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R6-02"
       ],
@@ -1439,7 +1439,8 @@
         "покажи лог → читает последние 30 строк лога",
         "почему упало → читает лог + state + объясняет",
         "make test passes"
-      ]
+      ],
+      "completed_at": "2026-03-16T10:00:59.463235+00:00"
     },
     {
       "id": "R7-01",
