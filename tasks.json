@@ -1573,7 +1573,7 @@
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R8-02",
         "R8-03"
@@ -1585,7 +1585,8 @@
         "Содержит секцию с примером плохого поста",
         "Инструкция читать Channel Context из промта",
         "Инструкция читать blog_state.json для номера"
-      ]
+      ],
+      "completed_at": "2026-03-16T11:27:01.020467+00:00"
     },
     {
       "id": "R8-05",

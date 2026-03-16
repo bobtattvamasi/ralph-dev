@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R8-04: AGENTS_JOURNALIST.md v2: контекст канала + пример поста + правила голоса
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T11:27:01Z
+
 ### R8-03: ralph.sh: сохранять last_blog_number после journalist задачи
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T09:56:23Z
-
-### R9-01: Bot: защита от двойного /auto
-- Files: scripts/ralph_bot.py,src/ralph/resources/scripts/ralph_bot.py,tests/test_bot_commands.py
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T09:51:13Z
