@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R9-02: Tests: покрытие /ask и /chat команд
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T09:56:23Z
+
 ### R9-01: Bot: защита от двойного /auto
 - Files: scripts/ralph_bot.py,src/ralph/resources/scripts/ralph_bot.py,tests/test_bot_commands.py
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T07:25:45Z
-
-### R7-03: Bot: /approve /reject /refine для proposals
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T07:20:30Z

@@ -1694,8 +1694,8 @@
         "R6-01",
         "R6-02"
       ],
-      "status": "pending",
-      "completed_at": null,
+      "status": "done",
+      "completed_at": "2026-03-16T09:56:23.388762+00:00",
       "revision_notes": "",
       "timeout": 420,
       "role": "coder"
