@@ -85,6 +85,10 @@
     "R8": {
       "name": "Roles Library",
       "description": "Journalist v2, new role templates for projects"
+    },
+    "R9": {
+      "name": "Quality & Hardening",
+      "description": "Reliability guards, coverage for chat/reflect/channel, full-cycle integration"
     }
   },
   "tasks": [
@@ -1635,6 +1639,159 @@
         "Содержит инструкции по визуальному стилю",
         "Содержит формат art_prompts.md с конвенцией имён файлов"
       ]
+    },
+    {
+      "id": "R9-01",
+      "phase": "R9",
+      "category": "reliability",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Bot: защита от двойного /auto",
+      "description": "В cmd_auto() проверять что ralph.sh уже не запущен перед стартом нового процесса. Если процесс живой — ответить пользователю предупреждением и НЕ запускать второй экземпляр. Использовать PID файл или проверку ps aux.",
+      "acceptance_criteria": [
+        "Если /auto вызван пока ralph.sh уже работает — бот отвечает: ⚠️ Ralph уже работает (PID: XXXXX). Используй /stop сначала.",
+        "Второй процесс ralph.sh НЕ запускается",
+        "Если предыдущий процесс завершился — /auto стартует нормально",
+        "PID сохраняется в ralph_control.json или отдельный .pid файл"
+      ],
+      "test_steps": [
+        "Запустить /auto",
+        "Сразу запустить /auto снова",
+        "Убедиться что второй вызов вернул предупреждение",
+        "ps aux | grep ralph.sh показывает только один процесс"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R9-02",
+      "phase": "R9",
+      "category": "testing",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Tests: покрытие /ask и /chat команд",
+      "description": "Добавить тесты в tests/test_bot_commands.py для новых команд R6: /ask и /chat. Мокировать codex subprocess. Проверить happy path, timeout, пустой ответ, многострочный диалог.",
+      "acceptance_criteria": [
+        "test_ask_command_basic — /ask возвращает ответ от codex",
+        "test_ask_command_timeout — /ask при таймауте отвечает понятной ошибкой",
+        "test_chat_command_start — /chat начинает сессию, сохраняет историю",
+        "test_chat_command_followup — второй вопрос получает контекст первого",
+        "test_chat_command_exit — /chat exit завершает сессию",
+        "make test зелёный"
+      ],
+      "test_steps": [
+        "python3 -m pytest tests/test_bot_commands.py -k ask -v",
+        "python3 -m pytest tests/test_bot_commands.py -k chat -v",
+        "make test"
+      ],
+      "dependencies": [
+        "R6-01",
+        "R6-02"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R9-03",
+      "phase": "R9",
+      "category": "testing",
+      "priority": "medium",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Tests: покрытие ralph_reflect.py и /reflect команд",
+      "description": "Добавить тесты для R7 функционала: ralph_reflect.py анализирует metrics.csv и генерирует proposals.json. Тесты для /reflect, /approve, /reject, /refine команд бота.",
+      "acceptance_criteria": [
+        "test_reflect_generates_proposals — ralph_reflect.py создаёт proposals.json из metrics.csv",
+        "test_reflect_empty_metrics — корректно обрабатывает пустой metrics.csv",
+        "test_bot_reflect_command — /reflect показывает proposals",
+        "test_bot_approve_proposal — /approve N меняет статус proposal",
+        "test_bot_reject_proposal — /reject N меняет статус proposal",
+        "make test зелёный"
+      ],
+      "test_steps": [
+        "python3 -m pytest tests/ -k reflect -v",
+        "python3 -m pytest tests/ -k proposal -v",
+        "make test"
+      ],
+      "dependencies": [
+        "R7-01",
+        "R7-02",
+        "R7-03"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R9-04",
+      "phase": "R9",
+      "category": "testing",
+      "priority": "medium",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Tests: покрытие fetch_channel.py",
+      "description": "Добавить тесты для scripts/fetch_channel.py. Мокировать Telegram API. Проверить парсинг постов, запись в channel_context.md, обработку ошибок сети.",
+      "acceptance_criteria": [
+        "test_fetch_channel_writes_context — fetch_channel.py создаёт channel_context.md",
+        "test_fetch_channel_parses_posts — корректно парсит текст и дату постов",
+        "test_fetch_channel_network_error — при ошибке сети не падает, логирует",
+        "test_fetch_channel_empty_channel — пустой канал не вызывает ошибку",
+        "make test зелёный"
+      ],
+      "test_steps": [
+        "python3 -m pytest tests/ -k fetch_channel -v",
+        "make test"
+      ],
+      "dependencies": [
+        "R8-01"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R9-05",
+      "phase": "R9",
+      "category": "testing",
+      "priority": "high",
+      "complexity": "complex",
+      "risk": "medium",
+      "title": "Tests: integration test полного цикла coder→lead→commit",
+      "description": "Написать интеграционный тест который проверяет полный цикл ralph.sh: берёт задачу из tasks.json, запускает мок-кодер, мок-lead review возвращает approve, задача помечается done, коммит создаётся. Без реального codex — всё через моки subprocess.",
+      "acceptance_criteria": [
+        "test_full_cycle_approve — задача проходит coder→lead→done за один цикл",
+        "test_full_cycle_fix_then_approve — lead говорит fix, coder исправляет, затем approve",
+        "test_full_cycle_alert — lead говорит alert, ralph останавливается и уведомляет",
+        "test_full_cycle_timeout — coder не отвечает за timeout, задача помечается failed",
+        "make test зелёный"
+      ],
+      "test_steps": [
+        "python3 -m pytest tests/test_integration.py -v",
+        "make test"
+      ],
+      "dependencies": [
+        "R9-01",
+        "R9-02",
+        "R9-03"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 600,
+      "role": "coder"
     }
   ]
 }
