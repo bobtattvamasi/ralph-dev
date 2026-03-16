@@ -1555,7 +1555,7 @@
       "phase": "R8",
       "priority": "medium",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R8-01"
       ],
@@ -1565,7 +1565,8 @@
         ".ralph/memory/blog_state.json создаётся после journalist задачи",
         "Содержит last_number и last_date",
         "fetch_channel.py обновляет blog_state.json если находит номер в постах"
-      ]
+      ],
+      "completed_at": "2026-03-16T11:21:32.383490+00:00"
     },
     {
       "id": "R8-04",
