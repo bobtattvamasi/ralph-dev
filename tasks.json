@@ -1476,7 +1476,7 @@
       "phase": "R7",
       "priority": "high",
       "complexity": "moderate",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R7-02"
       ],
@@ -1487,7 +1487,8 @@
         "/reject ID помечает proposal как rejected в proposals.json",
         "/refine ID текст запускает доработку и обновляет proposals.json",
         "make test passes"
-      ]
+      ],
+      "completed_at": "2026-03-16T07:20:30.829323+00:00"
     },
     {
       "id": "R7-04",
