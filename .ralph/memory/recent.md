@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R8-02: ralph.sh: инжектировать channel_context для role=journalist
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T07:30:44Z
+
 ### R8-01: scripts/fetch_channel.py — читает Telegram канал → channel_context.md
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T07:11:02Z
-
-### R6-01: Bot: /ask команда — быстрый вопрос Ralph
-- Files: .ralph/memory/recent.md,BLOG_DRAFTS.md,progress.md
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T07:05:30Z

@@ -1529,7 +1529,7 @@
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R8-01"
       ],
@@ -1540,7 +1540,8 @@
         "channel_context.md инжектируется в промт как отдельная секция",
         "bash -n ralph.sh проходит",
         "Без channel_context.md — только warning в лог"
-      ]
+      ],
+      "completed_at": "2026-03-16T07:30:43.870907+00:00"
     },
     {
       "id": "R8-03",
