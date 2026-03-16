@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R8-06: templates/AGENTS_ARCHITECT.md — роль архитектора для проектов
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T11:37:55Z
+
 ### R8-05: templates/AGENTS_COORDINATOR.md — роль координатора для проектов
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T11:15:57Z
-
-### R6-03: Chat: авто-чтение файлов по контексту вопроса
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T10:00:59Z

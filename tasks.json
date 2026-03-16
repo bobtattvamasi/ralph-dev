@@ -1608,14 +1608,15 @@
       "phase": "R8",
       "priority": "medium",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "title": "templates/AGENTS_ARCHITECT.md — роль архитектора для проектов",
       "description": "Создать templates/AGENTS_ARCHITECT.md. Роль: читает PROJECT_BRIEF.md, выбирает технический стек, проектирует структуру папок, ключевые решения. Output: docs/ARCHITECTURE.md с секциями: Stack, Structure, Key Decisions, Risks.",
       "acceptance_criteria": [
         "templates/AGENTS_ARCHITECT.md существует",
         "Содержит инструкции по выбору стека",
         "Содержит формат output: ARCHITECTURE.md"
-      ]
+      ],
+      "completed_at": "2026-03-16T11:37:55.697284+00:00"
     },
     {
       "id": "R8-07",
