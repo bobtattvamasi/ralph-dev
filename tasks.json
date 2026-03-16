@@ -1405,7 +1405,7 @@
       "phase": "R6",
       "priority": "medium",
       "complexity": "moderate",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R6-01"
       ],
@@ -1416,7 +1416,8 @@
         "/chat reset очищает историю",
         "chat_history.md не растёт бесконечно (max 10 turns)",
         "make test passes"
-      ]
+      ],
+      "completed_at": "2026-03-16T07:35:17.066314+00:00"
     },
     {
       "id": "R6-03",

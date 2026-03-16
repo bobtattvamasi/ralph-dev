@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R6-02: Bot: /chat команда — multi-turn диалог с Ralph
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T07:35:17Z
+
 ### R8-02: ralph.sh: инжектировать channel_context для role=journalist
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T07:15:46Z
-
-### R7-01: scripts/ralph_reflect.py — анализ metrics.csv → proposals.json
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T07:11:02Z
