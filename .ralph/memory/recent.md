@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R8-07: templates/AGENTS_GAMEDESIGNER.md — роль геймдизайнера
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T12:25:07Z
+
 ### R5-04: Prompt versioning: version header in AGENTS_*.md
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T11:43:45Z
-
-### R8-06: templates/AGENTS_ARCHITECT.md — роль архитектора для проектов
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T11:37:55Z

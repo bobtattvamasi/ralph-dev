@@ -1624,14 +1624,15 @@
       "phase": "R8",
       "priority": "low",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "title": "templates/AGENTS_GAMEDESIGNER.md — роль геймдизайнера",
       "description": "Создать templates/AGENTS_GAMEDESIGNER.md. Роль: пишет GDD (game design document). Секции: Core Loop, Mechanics, Retention, Monetization (если нужно), Art Style Notes. Output: docs/GDD.md.",
       "acceptance_criteria": [
         "templates/AGENTS_GAMEDESIGNER.md существует",
         "Содержит структуру GDD",
         "Содержит инструкции по retention механикам"
-      ]
+      ],
+      "completed_at": "2026-03-16T12:25:07.146189+00:00"
     },
     {
       "id": "R8-08",
