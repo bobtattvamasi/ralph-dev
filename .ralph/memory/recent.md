@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R8-08: templates/AGENTS_CREATIVE.md — роль креативного директора
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T12:30:25Z
+
 ### R8-07: templates/AGENTS_GAMEDESIGNER.md — роль геймдизайнера
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T11:49:06Z
-
-### R9-03: Tests: покрытие ralph_reflect.py и /reflect команд
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T11:43:45Z

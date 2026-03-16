@@ -1639,14 +1639,15 @@
       "phase": "R8",
       "priority": "low",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "title": "templates/AGENTS_CREATIVE.md — роль креативного директора",
       "description": "Создать templates/AGENTS_CREATIVE.md. Роль: визуальный стиль, палитра, атмосфера проекта. Output: docs/VISUAL_BIBLE.md + файл assets/art_prompts.md с промтами для генерации арта (Midjourney/DALL-E формат).",
       "acceptance_criteria": [
         "templates/AGENTS_CREATIVE.md существует",
         "Содержит инструкции по визуальному стилю",
         "Содержит формат art_prompts.md с конвенцией имён файлов"
-      ]
+      ],
+      "completed_at": "2026-03-16T12:30:25.353694+00:00"
     },
     {
       "id": "R9-01",
