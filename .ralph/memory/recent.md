@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R9-04: Tests: покрытие fetch_channel.py
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T11:54:22Z
+
 ### R9-05: Tests: integration test полного цикла coder→lead→commit
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T11:32:34Z
-
-### R8-04: AGENTS_JOURNALIST.md v2: контекст канала + пример поста + правила голоса
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T11:27:01Z
