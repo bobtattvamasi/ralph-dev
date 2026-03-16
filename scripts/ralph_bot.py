@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+try:
+    from scripts.models import RalphState
+except ImportError:
+    from models import RalphState
+
 RALPH_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path.cwd()  # overridden in __main__
 STATE_FILE = PROJECT_DIR / "ralph_state.json"
@@ -120,7 +125,13 @@ def read_state() -> dict:
     """Read ralph state file."""
     if STATE_FILE.exists():
         try:
-            return normalize_state_for_display(json.loads(STATE_FILE.read_text(encoding="utf-8")))
+            raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            if raw.get("current_task") is None:
+                raw["current_task"] = ""
+            if raw.get("current_phase_step") is None:
+                raw["current_phase_step"] = ""
+            validated = RalphState.model_validate(raw).model_dump()
+            return normalize_state_for_display(validated)
         except (json.JSONDecodeError, OSError):
             pass
     return {"status": "idle", "current_task": None, "last_update": None}

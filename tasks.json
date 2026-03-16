@@ -253,11 +253,11 @@
       "test_steps": [
         "grep 'LOG_DIR\\|ralph_.*\\.log' scripts/ralph_bot.py"
       ],
-      "dependenci\u001b[1084;1:3ues": [
-        "R1-01"
-      ],
       "status": "done",
-      "completed_at": "2026-02-26"
+      "completed_at": "2026-02-26",
+      "dependencies": [
+        "R1-01"
+      ]
     },
     {
       "id": "R1-05",
