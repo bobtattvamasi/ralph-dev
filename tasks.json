@@ -1389,7 +1389,7 @@
       "phase": "R6",
       "priority": "high",
       "complexity": "moderate",
-      "status": "pending",
+      "status": "done",
       "title": "Bot: /ask команда — быстрый вопрос Ralph",
       "description": "Команда /ask <вопрос> отправляет вопрос в codex с контекстом: ralph_state.json + последние 20 строк лога + список файлов проекта. Ответ в Telegram. Без сохранения истории. Timeout 60s.",
       "acceptance_criteria": [
@@ -1397,7 +1397,8 @@
         "/ask что сейчас pending → читает tasks.json и отвечает",
         "Timeout 60s с graceful error",
         "make test passes"
-      ]
+      ],
+      "completed_at": "2026-03-16T07:05:30.701986+00:00"
     },
     {
       "id": "R6-02",
