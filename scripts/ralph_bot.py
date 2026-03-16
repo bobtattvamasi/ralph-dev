@@ -33,6 +33,7 @@ PROGRESS_FILE = PROJECT_DIR / "progress.md"
 LOG_DIR = PROJECT_DIR / "logs"
 DAILY_COST_LIMIT_USD = 500.0
 BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
+RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
 
 TOKEN = ""
 CHAT_ID = ""
@@ -89,6 +90,7 @@ def configure_module_runtime(module: ModuleType) -> None:
     module.PROGRESS_FILE = PROJECT_DIR / "progress.md"
     module.LOG_DIR = PROJECT_DIR / "logs"
     module.BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
+    module.RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
     module.TOKEN = TOKEN
     module.CHAT_ID = CHAT_ID
     module.API = API
@@ -146,6 +148,26 @@ def is_pid_alive(pid: object) -> bool:
         return True
     except (OSError, ValueError, TypeError):
         return False
+
+
+def get_live_ralph_pid() -> int | None:
+    """Return live Ralph PID from pid file and clean up stale data."""
+    try:
+        raw_pid = RALPH_MAIN_PID_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+    try:
+        pid = int(raw_pid)
+    except ValueError:
+        RALPH_MAIN_PID_FILE.unlink(missing_ok=True)
+        return None
+
+    if is_pid_alive(pid):
+        return pid
+
+    RALPH_MAIN_PID_FILE.unlink(missing_ok=True)
+    return None
 
 
 def normalize_state_for_display(state: dict) -> dict:
@@ -557,6 +579,10 @@ async def cmd_start_auto() -> None:
     """Start auto mode."""
     global ralph_process, caffeinate_process
     reset_stale_state()
+    existing_pid = get_live_ralph_pid()
+    if existing_pid is not None:
+        await safe_send(f"⚠️ Ralph уже работает (PID: {existing_pid}). Используй /stop сначала.")
+        return
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")

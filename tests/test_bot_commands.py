@@ -43,6 +43,7 @@ def bot_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object
     monkeypatch.setattr(bot, "PROGRESS_FILE", project_dir / "progress.md")
     monkeypatch.setattr(bot, "LOG_DIR", project_dir / "logs")
     monkeypatch.setattr(bot, "BLOG_DRAFTS_FILE", project_dir / "BLOG_DRAFTS.md")
+    monkeypatch.setattr(bot, "RALPH_MAIN_PID_FILE", project_dir / "ralph_main.pid")
 
     safe_send_mock = AsyncMock()
     send_message_mock = AsyncMock()
@@ -264,6 +265,46 @@ async def test_cmd_start_auto_rejects_when_state_running(bot_env: dict[str, obje
     popen_mock.assert_not_called()
     safe_send = bot_env["safe_send"]
     safe_send.assert_awaited_once_with("⚠️ Ralph already running. /stop first.")
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_auto_rejects_when_pid_file_is_alive(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot.RALPH_MAIN_PID_FILE.write_text("4242\n", encoding="utf-8")
+
+    monkeypatch.setattr(bot, "is_pid_alive", lambda pid: int(pid) == 4242)
+
+    with patch("scripts.ralph_bot.reset_stale_state") as reset_mock:
+        with patch("scripts.ralph_bot.subprocess.Popen") as popen_mock:
+            await bot.cmd_start_auto()
+
+    reset_mock.assert_called_once()
+    popen_mock.assert_not_called()
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once_with("⚠️ Ralph уже работает (PID: 4242). Используй /stop сначала.")
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_auto_ignores_stale_pid_file(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot.RALPH_MAIN_PID_FILE.write_text("4242\n", encoding="utf-8")
+
+    monkeypatch.setattr(bot, "is_pid_alive", lambda _pid: False)
+
+    process = AsyncMock()
+    process.pid = 7777
+    with patch("scripts.ralph_bot.reset_stale_state") as reset_mock:
+        with patch("scripts.ralph_bot.subprocess.Popen", return_value=process) as popen_mock:
+            await bot.cmd_start_auto()
+
+    reset_mock.assert_called_once()
+    assert popen_mock.call_count == 2
+    assert popen_mock.call_args_list[1].args[0] == [str(bot.RALPH_DIR / "ralph.sh"), "auto"]
+    assert not bot.RALPH_MAIN_PID_FILE.exists()
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once_with("🚀 Auto mode started\nPID: 7777")
 
 
 def test_read_state_returns_idle_for_broken_json(bot_env: dict[str, object]) -> None:
