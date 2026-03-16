@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R7-04: Scheduler: ralph_reflect.py запускается раз в день
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T11:15:57Z
+
 ### R6-03: Chat: авто-чтение файлов по контексту вопроса
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T07:35:17Z
-
-### R8-02: ralph.sh: инжектировать channel_context для role=journalist
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T07:30:44Z

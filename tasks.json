@@ -1501,7 +1501,7 @@
       "phase": "R7",
       "priority": "medium",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R7-01"
       ],
@@ -1512,7 +1512,8 @@
         "REFLECT_TIME=HH:MM читается из env",
         "После генерации proposals бот отправляет уведомление",
         "make test passes"
-      ]
+      ],
+      "completed_at": "2026-03-16T11:15:57.214583+00:00"
     },
     {
       "id": "R8-01",
