@@ -1457,7 +1457,7 @@
       "phase": "R7",
       "priority": "high",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         "R7-01"
       ],
@@ -1468,7 +1468,8 @@
         "Каждый proposal содержит problem + proposed_task",
         "Инструкции по командам в сообщении",
         "Graceful если proposals.json отсутствует"
-      ]
+      ],
+      "completed_at": "2026-03-16T07:15:46.234063+00:00"
     },
     {
       "id": "R7-03",

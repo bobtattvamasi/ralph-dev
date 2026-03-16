@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R7-02: Bot: /reflect — показывает proposals из proposals.json
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T07:15:46Z
+
 ### R7-01: scripts/ralph_reflect.py — анализ metrics.csv → proposals.json
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-13T11:39:14Z
-
-### R4-04: Template system for new agents
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T11:32:55Z
