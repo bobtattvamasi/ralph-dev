@@ -73,6 +73,18 @@
     "R5": {
       "name": "Production Readiness",
       "description": "Eval harness, structured artifacts, typed state, prompt versioning, observability"
+    },
+    "R6": {
+      "name": "Chat Mode",
+      "description": "Conversational interface with Ralph via Telegram"
+    },
+    "R7": {
+      "name": "Self-Evolution",
+      "description": "Daily reflection, self-improvement proposals, approval flow"
+    },
+    "R8": {
+      "name": "Roles Library",
+      "description": "Journalist v2, new role templates for projects"
     }
   },
   "tasks": [
@@ -1078,7 +1090,8 @@
         "R3-10"
       ],
       "risk": "high",
-      "status": "pending"
+      "status": "done",
+      "completed_at": "2026-03-13T11:45:42.134600+00:00"
     },
     {
       "id": "R3-12",
@@ -1373,6 +1386,251 @@
         "make test passes"
       ],
       "completed_at": "2026-03-13T10:21:58.536198+00:00"
+    },
+    {
+      "id": "R6-01",
+      "phase": "R6",
+      "priority": "high",
+      "complexity": "moderate",
+      "status": "pending",
+      "title": "Bot: /ask команда — быстрый вопрос Ralph",
+      "description": "Команда /ask <вопрос> отправляет вопрос в codex с контекстом: ralph_state.json + последние 20 строк лога + список файлов проекта. Ответ в Telegram. Без сохранения истории. Timeout 60s.",
+      "acceptance_criteria": [
+        "/ask почему упала R4-07 → читает лог и отвечает",
+        "/ask что сейчас pending → читает tasks.json и отвечает",
+        "Timeout 60s с graceful error",
+        "make test passes"
+      ]
+    },
+    {
+      "id": "R6-02",
+      "phase": "R6",
+      "priority": "medium",
+      "complexity": "moderate",
+      "status": "pending",
+      "dependencies": [
+        "R6-01"
+      ],
+      "title": "Bot: /chat команда — multi-turn диалог с Ralph",
+      "description": "Сохраняет историю в .ralph/chat_history.md (max 10 turns). Каждое сообщение включает контекст предыдущих. /chat reset очищает историю. Ralph понимает неформальный текст.",
+      "acceptance_criteria": [
+        "/chat помнит предыдущий вопрос в сессии",
+        "/chat reset очищает историю",
+        "chat_history.md не растёт бесконечно (max 10 turns)",
+        "make test passes"
+      ]
+    },
+    {
+      "id": "R6-03",
+      "phase": "R6",
+      "priority": "medium",
+      "complexity": "moderate",
+      "status": "pending",
+      "dependencies": [
+        "R6-02"
+      ],
+      "title": "Chat: авто-чтение файлов по контексту вопроса",
+      "description": "Если в вопросе упоминается задача (R4-07), файл (ralph.sh), лог, ошибка — Ralph автоматически читает нужный файл и включает в контекст ответа.",
+      "acceptance_criteria": [
+        "что в задаче R4-07 → находит и читает задачу из tasks.json",
+        "покажи лог → читает последние 30 строк лога",
+        "почему упало → читает лог + state + объясняет",
+        "make test passes"
+      ]
+    },
+    {
+      "id": "R7-01",
+      "phase": "R7",
+      "priority": "high",
+      "complexity": "moderate",
+      "status": "pending",
+      "title": "scripts/ralph_reflect.py — анализ metrics.csv → proposals.json",
+      "description": "Читает logs/metrics.csv за 7 дней. Находит паттерны: задачи с >1 retry, таймауты, fix loops, низкий quality_score. Генерирует proposals.json: [{id, problem, proposed_task_title, proposed_task_description, priority}]. Max 5 proposals.",
+      "acceptance_criteria": [
+        "scripts/ralph_reflect.py существует и запускается",
+        "proposals.json генерируется с валидным JSON",
+        "Находит минимум 1 паттерн на тестовых данных из metrics.csv",
+        "Graceful если metrics.csv пустой или отсутствует"
+      ]
+    },
+    {
+      "id": "R7-02",
+      "phase": "R7",
+      "priority": "high",
+      "complexity": "simple",
+      "status": "pending",
+      "dependencies": [
+        "R7-01"
+      ],
+      "title": "Bot: /reflect — показывает proposals из proposals.json",
+      "description": "Читает proposals.json и выводит каждый proposal с ID, описанием проблемы и инструкцией: /approve ID, /reject ID, /refine ID <комментарий>. Если proposals.json пустой — предлагает запустить reflect вручную.",
+      "acceptance_criteria": [
+        "/reflect показывает список proposals с ID",
+        "Каждый proposal содержит problem + proposed_task",
+        "Инструкции по командам в сообщении",
+        "Graceful если proposals.json отсутствует"
+      ]
+    },
+    {
+      "id": "R7-03",
+      "phase": "R7",
+      "priority": "high",
+      "complexity": "moderate",
+      "status": "pending",
+      "dependencies": [
+        "R7-02"
+      ],
+      "title": "Bot: /approve /reject /refine для proposals",
+      "description": "/approve ID → добавляет proposal как задачу в tasks.json (status=pending, phase=R7). /reject ID → помечает rejected. /refine ID текст → запускает ralph_reflect.py с комментарием для доработки proposal, обновляет proposals.json.",
+      "acceptance_criteria": [
+        "/approve ID добавляет задачу в tasks.json",
+        "/reject ID помечает proposal как rejected в proposals.json",
+        "/refine ID текст запускает доработку и обновляет proposals.json",
+        "make test passes"
+      ]
+    },
+    {
+      "id": "R7-04",
+      "phase": "R7",
+      "priority": "medium",
+      "complexity": "simple",
+      "status": "pending",
+      "dependencies": [
+        "R7-01"
+      ],
+      "title": "Scheduler: ralph_reflect.py запускается раз в день",
+      "description": "В ralph_bot.py добавить asyncio scheduler. Время настраивается через REFLECT_TIME=HH:MM в env (default 09:00). После генерации proposals отправляет уведомление: 💡 Ralph has N new proposals. /reflect to review.",
+      "acceptance_criteria": [
+        "Scheduler стартует вместе с ботом",
+        "REFLECT_TIME=HH:MM читается из env",
+        "После генерации proposals бот отправляет уведомление",
+        "make test passes"
+      ]
+    },
+    {
+      "id": "R8-01",
+      "phase": "R8",
+      "priority": "high",
+      "complexity": "simple",
+      "status": "pending",
+      "title": "scripts/fetch_channel.py — читает Telegram канал → channel_context.md",
+      "description": "Скрипт принимает TELEGRAM_TOKEN и CHANNEL_ID (из env или аргументов). Читает последние 5 постов через Telegram Bot API (getUpdates или forwardMessage). Сохраняет текст в .ralph/channel_context.md с номерами постов. Graceful fallback если канал недоступен.",
+      "acceptance_criteria": [
+        "scripts/fetch_channel.py существует",
+        ".ralph/channel_context.md создаётся с текстом последних постов",
+        "Извлекает номер build log из текста постов (build log #N)",
+        "Graceful fallback с предупреждением если канал недоступен"
+      ]
+    },
+    {
+      "id": "R8-02",
+      "phase": "R8",
+      "priority": "high",
+      "complexity": "simple",
+      "status": "pending",
+      "dependencies": [
+        "R8-01"
+      ],
+      "title": "ralph.sh: инжектировать channel_context для role=journalist",
+      "description": "Когда TASK_ROLE=journalist, ralph.sh запускает scripts/fetch_channel.py перед кодером. Содержимое .ralph/channel_context.md добавляется в промт как секция ## Channel Context. Без файла — предупреждение в лог, продолжает без контекста.",
+      "acceptance_criteria": [
+        "ralph.sh вызывает fetch_channel.py для journalist задач",
+        "channel_context.md инжектируется в промт как отдельная секция",
+        "bash -n ralph.sh проходит",
+        "Без channel_context.md — только warning в лог"
+      ]
+    },
+    {
+      "id": "R8-03",
+      "phase": "R8",
+      "priority": "medium",
+      "complexity": "simple",
+      "status": "pending",
+      "dependencies": [
+        "R8-01"
+      ],
+      "title": "ralph.sh: сохранять last_blog_number после journalist задачи",
+      "description": "После успешного завершения journalist задачи ralph.sh извлекает номер поста из output (паттерн build log #N) и сохраняет в .ralph/memory/blog_state.json: {last_number: N, last_date: ISO}. fetch_channel.py тоже обновляет этот файл.",
+      "acceptance_criteria": [
+        ".ralph/memory/blog_state.json создаётся после journalist задачи",
+        "Содержит last_number и last_date",
+        "fetch_channel.py обновляет blog_state.json если находит номер в постах"
+      ]
+    },
+    {
+      "id": "R8-04",
+      "phase": "R8",
+      "priority": "high",
+      "complexity": "simple",
+      "status": "pending",
+      "dependencies": [
+        "R8-02",
+        "R8-03"
+      ],
+      "title": "AGENTS_JOURNALIST.md v2: контекст канала + пример поста + правила голоса",
+      "description": "Переписать templates/AGENTS_JOURNALIST.md. Добавить: 1) читай ## Channel Context из промта чтобы знать стиль и последний номер 2) читай blog_state.json для номера 3) структура поста: зацепка (1 предложение) → что случилось → почему важно → вопрос или вывод 4) пример хорошего поста 5) пример плохого поста (сухой changelog) с объяснением почему плохо.",
+      "acceptance_criteria": [
+        "AGENTS_JOURNALIST.md содержит секцию с примером хорошего поста",
+        "Содержит секцию с примером плохого поста",
+        "Инструкция читать Channel Context из промта",
+        "Инструкция читать blog_state.json для номера"
+      ]
+    },
+    {
+      "id": "R8-05",
+      "phase": "R8",
+      "priority": "medium",
+      "complexity": "simple",
+      "status": "pending",
+      "title": "templates/AGENTS_COORDINATOR.md — роль координатора для проектов",
+      "description": "Создать templates/AGENTS_COORDINATOR.md. Роль: принимает идею проекта, задаёт 3-5 уточняющих вопросов, собирает brief. Output: structured brief в docs/PROJECT_BRIEF.md. Инструкции: задавай вопросы по одному, жди ответа, не придумывай детали.",
+      "acceptance_criteria": [
+        "templates/AGENTS_COORDINATOR.md существует",
+        "Содержит инструкции про уточняющие вопросы",
+        "Содержит формат output: PROJECT_BRIEF.md"
+      ]
+    },
+    {
+      "id": "R8-06",
+      "phase": "R8",
+      "priority": "medium",
+      "complexity": "simple",
+      "status": "pending",
+      "title": "templates/AGENTS_ARCHITECT.md — роль архитектора для проектов",
+      "description": "Создать templates/AGENTS_ARCHITECT.md. Роль: читает PROJECT_BRIEF.md, выбирает технический стек, проектирует структуру папок, ключевые решения. Output: docs/ARCHITECTURE.md с секциями: Stack, Structure, Key Decisions, Risks.",
+      "acceptance_criteria": [
+        "templates/AGENTS_ARCHITECT.md существует",
+        "Содержит инструкции по выбору стека",
+        "Содержит формат output: ARCHITECTURE.md"
+      ]
+    },
+    {
+      "id": "R8-07",
+      "phase": "R8",
+      "priority": "low",
+      "complexity": "simple",
+      "status": "pending",
+      "title": "templates/AGENTS_GAMEDESIGNER.md — роль геймдизайнера",
+      "description": "Создать templates/AGENTS_GAMEDESIGNER.md. Роль: пишет GDD (game design document). Секции: Core Loop, Mechanics, Retention, Monetization (если нужно), Art Style Notes. Output: docs/GDD.md.",
+      "acceptance_criteria": [
+        "templates/AGENTS_GAMEDESIGNER.md существует",
+        "Содержит структуру GDD",
+        "Содержит инструкции по retention механикам"
+      ]
+    },
+    {
+      "id": "R8-08",
+      "phase": "R8",
+      "priority": "low",
+      "complexity": "simple",
+      "status": "pending",
+      "title": "templates/AGENTS_CREATIVE.md — роль креативного директора",
+      "description": "Создать templates/AGENTS_CREATIVE.md. Роль: визуальный стиль, палитра, атмосфера проекта. Output: docs/VISUAL_BIBLE.md + файл assets/art_prompts.md с промтами для генерации арта (Midjourney/DALL-E формат).",
+      "acceptance_criteria": [
+        "templates/AGENTS_CREATIVE.md существует",
+        "Содержит инструкции по визуальному стилю",
+        "Содержит формат art_prompts.md с конвенцией имён файлов"
+      ]
     }
   ]
 }
