@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R9-05: Tests: integration test полного цикла coder→lead→commit
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T11:49:06Z
+
 ### R9-03: Tests: покрытие ralph_reflect.py и /reflect команд
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T11:27:01Z
-
-### R8-03: ralph.sh: сохранять last_blog_number после journalist задачи
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T11:21:32Z
