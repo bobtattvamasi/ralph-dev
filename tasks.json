@@ -1513,7 +1513,7 @@
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "pending",
+      "status": "done",
       "title": "scripts/fetch_channel.py — читает Telegram канал → channel_context.md",
       "description": "Скрипт принимает TELEGRAM_TOKEN и CHANNEL_ID (из env или аргументов). Читает последние 5 постов через Telegram Bot API (getUpdates или forwardMessage). Сохраняет текст в .ralph/channel_context.md с номерами постов. Graceful fallback если канал недоступен.",
       "acceptance_criteria": [
@@ -1521,7 +1521,8 @@
         ".ralph/channel_context.md создаётся с текстом последних постов",
         "Извлекает номер build log из текста постов (build log #N)",
         "Graceful fallback с предупреждением если канал недоступен"
-      ]
+      ],
+      "completed_at": "2026-03-16T07:25:45.542157+00:00"
     },
     {
       "id": "R8-02",

@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R8-01: scripts/fetch_channel.py — читает Telegram канал → channel_context.md
+- Files: none
+- Result: approved
+- Notes: 
+- Time: 2026-03-16T07:25:45Z
+
 ### R7-03: Bot: /approve /reject /refine для proposals
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T07:05:30Z
-
-### R4-06: Parallel execution for independent tasks
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-13T11:45:42Z
