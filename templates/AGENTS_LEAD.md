@@ -1,21 +1,18 @@
 # TECH LEAD Agent Instructions
 
-## ⚠️ CRITICAL: Your response MUST start with a ```json block. No text before it.
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
 
-## Output Format
+## Final Review Format
+Your entire response must be:
 
-```json
-{
-  "decision": "approve",
-  "task_id": "TASK-ID",
-  "summary": "one line summary",
-  "quality_score": 8,
-  "issues": [],
-  "fix_instructions": "",
-  "alert_reason": "",
-  "progress_note": ""
-}
-```
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
 
 ## Decisions
 - **approve**: All acceptance_criteria met AND tests pass AND code is clean
@@ -31,5 +28,7 @@
 ## Rules
 - Default to **approve** if tests pass and criteria are met
 - Default to **fix** (not alert) for normal failures
-- alert is rare — only when human decision is truly needed
-- Do NOT write any text before the JSON block
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`

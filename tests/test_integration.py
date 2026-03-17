@@ -73,6 +73,18 @@ if review_file:
                 "quality_score": 8,
                 "progress_note": "Integration test approve",
             }
+    elif mode == "lead_mismatch_fix":
+        payload = {
+            "decision": "fix",
+            "quality_score": 3,
+            "fix_instructions": "The authoritative review says fix.",
+            "progress_note": "Fail closed on mismatched lead output",
+        }
+        print(
+            "```json\\n"
+            '{"decision":"approve","task_id":"T01","summary":"Incorrect approve from stdout","quality_score":8,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":"Conflicting stdout review"}'
+            "\\n```"
+        )
     else:
         payload = {
             "decision": "approve",
@@ -372,6 +384,25 @@ def test_ralph_retries_after_fix_and_then_marks_done(tmp_path: Path) -> None:
     assert "🔧 Fix 1/2:" in result.stdout
     assert result.stdout.count("🤖 CODER — Attempt") >= 2
     assert "👔 Decision: approve" in result.stdout
+
+
+def test_ralph_fails_closed_on_lead_stdout_review_mismatch(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "lead_mismatch_fix"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "blocked"
+    assert "Parsed review source: mismatch_fail_closed" in result.stdout
+    assert "ambiguous: authoritative review file and stdout disagreed" in result.stdout
 
 
 def test_ralph_marks_task_skipped_on_skip_control(tmp_path: Path) -> None:

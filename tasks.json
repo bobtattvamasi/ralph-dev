@@ -89,6 +89,10 @@
     "R9": {
       "name": "Quality & Hardening",
       "description": "Reliability guards, coverage for chat/reflect/channel, full-cycle integration"
+    },
+    "R10": {
+      "name": "Trust Layer Repair",
+      "description": "Stop false positives, add verification and auditability, restore backlog truth"
     }
   },
   "tasks": [
@@ -1800,6 +1804,244 @@
       "completed_at": "2026-03-16T11:49:06.539612+00:00",
       "revision_notes": "",
       "timeout": 600,
+      "role": "coder"
+    },
+    {
+      "id": "R10-01",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "critical",
+      "complexity": "simple",
+      "risk": "medium",
+      "title": "Harden Tech Lead final output protocol",
+      "description": "Make Tech Lead output unambiguous: one authoritative final review block, no example JSON, fail closed on ambiguous output.",
+      "acceptance_criteria": [
+        "AGENTS_LEAD.md defines one authoritative final review block",
+        "Template/example JSON cannot be mistaken for final review",
+        "Ambiguous review output is explicitly invalid",
+        "Parser regression tests cover placeholder/template rejection"
+      ],
+      "dependencies": [],
+      "status": "done",
+      "completed_at": "2026-03-17T00:00:00+07:00",
+      "revision_notes": "Milestone 1: review contract hardened and documented.",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R10-02",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "critical",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Fix review extraction and parsing boundary",
+      "description": "Prefer authoritative review source, reject placeholder/template JSON, reject ambiguous multi-JSON output, and fail closed on parse mismatch.",
+      "acceptance_criteria": [
+        "Raw fix cannot silently become parsed approve",
+        "Placeholder values like TASK-ID and one line summary are rejected",
+        "Ambiguous multi-JSON review output fails closed",
+        "Regression tests cover mismatch, placeholder, and ambiguity cases"
+      ],
+      "dependencies": [
+        "R10-01"
+      ],
+      "status": "done",
+      "completed_at": "2026-03-17T00:00:00+07:00",
+      "revision_notes": "Milestone 1: parser boundary hardened with fail-closed behavior.",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-03",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Block bookkeeping-only task closure",
+      "description": "Detect bookkeeping-only diffs and prevent non-doc tasks from auto-closing on tasks.json/progress/memory changes alone.",
+      "acceptance_criteria": [
+        "Bookkeeping-only diff is detected",
+        "Non-doc tasks cannot auto-close on bookkeeping-only diff",
+        "Legitimate docs/template/config tasks remain possible",
+        "Regression test covers bookkeeping-only false-positive path"
+      ],
+      "dependencies": [
+        "R10-02"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-04",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Add task-aware evidence gate before closure",
+      "description": "Run a verification step after lead approval and before task closure so missing files, commands, or templates block done status.",
+      "acceptance_criteria": [
+        "Approve path runs verification before done",
+        "Verification can force fix or needs_human_review",
+        "Missing target file/command/template blocks closure",
+        "Core verification decisions are logged"
+      ],
+      "dependencies": [
+        "R10-03"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-05",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "medium",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Define and implement task verification policy",
+      "description": "Formalize minimum evidence by task class: code, command, script, template, docs-only, tests-only, config-only.",
+      "acceptance_criteria": [
+        "Verification policy is documented",
+        "Runtime distinguishes task classes",
+        "Tests-required and existence-only cases are separated",
+        "Verification failures produce actionable reasons"
+      ],
+      "dependencies": [
+        "R10-04"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-06",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "medium",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Separate runtime success from implementation success",
+      "description": "Stop treating approve-path completion as equivalent to verified task completion in metrics and state reporting.",
+      "acceptance_criteria": [
+        "Execution result and task-truth result are stored separately",
+        "Metrics no longer equate approve-path success with verified completion",
+        "Docs explain the distinction",
+        "Closure logic uses the new separation"
+      ],
+      "dependencies": [
+        "R10-04"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-07",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "medium",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Write per-task audit artifact",
+      "description": "Store a deterministic audit record for each task attempt with raw review, parsed review, changed files, verification result, and closure reason.",
+      "acceptance_criteria": [
+        "Every task attempt writes an audit artifact",
+        "Artifact contains raw review path, parsed review, changed files, and closure reason",
+        "Artifact path is deterministic and repo-local",
+        "Artifact format is documented"
+      ],
+      "dependencies": [
+        "R10-06"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-08",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "medium",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Add CLI and Telegram audit commands",
+      "description": "Expose recent-task audit and single-task audit through CLI and bot so truth can be inspected without manual log digging.",
+      "acceptance_criteria": [
+        "CLI can audit recent tasks and a specific task",
+        "Bot supports /audit_last, /audit_task, and /trust_report",
+        "Output shows evidence summary, not just status",
+        "Missing audit data is handled gracefully"
+      ],
+      "dependencies": [
+        "R10-07"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-09",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Re-audit suspicious recent done tasks",
+      "description": "Run the repaired trust checks over suspicious recent tasks and produce a compact truth report for human review.",
+      "acceptance_criteria": [
+        "Suspicious recent tasks are re-checked with the new audit flow",
+        "Report classifies tasks as verified, partial, false positive, or unclear",
+        "Results are saved in a human-readable report",
+        "No hidden feature work is mixed into the re-audit step"
+      ],
+      "dependencies": [
+        "R10-08"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
+      "role": "coder"
+    },
+    {
+      "id": "R10-10",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "medium",
+      "title": "Reopen or downgrade false positives in backlog",
+      "description": "Use re-audit results to restore backlog truth by reopening or downgrading incorrectly closed tasks with explicit reasons.",
+      "acceptance_criteria": [
+        "False positives are no longer left as done",
+        "Reopened tasks include explicit downgrade reason",
+        "Status correction follows documented status semantics",
+        "Backlog truth matches the re-audit report"
+      ],
+      "dependencies": [
+        "R10-09"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
       "role": "coder"
     }
   ]

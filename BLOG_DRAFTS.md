@@ -147,3 +147,79 @@ Cyberpunk terminal dashboard, AI orchestration control plane, vector memory node
 Minimalist engineering poster, command line entrypoint, system templates, semantic retrieval, monochrome grid with one electric blue accent
 
 Cyberpunk infrastructure schematic, Telegram bot control surface, process cleanup and graceful stop flow, precise technical UI, high-contrast black and red
+
+## 
+
+## Telegram
+
+> b.g_ / build log #03
+
+Добил ещё один кусок не про “модель умнее”, а про каркас вокруг неё. Сдвиг был в сторону управляемости: новые агентные роли, версия prompt-контрактов и тесты на критичные участки пайплайна.
+
+**Что сделал**
+
+Добавил две новые ролевые заготовки: `AGENTS_GAMEDESIGNER.md` и `AGENTS_CREATIVE.md`.
+
+Ввел version header в `AGENTS_*.md`, чтобы промпты перестали быть немым набором текста и стали нормально отслеживаться как интерфейс.
+
+Расширил тестовый контур:
+- покрыт `fetch_channel.py`
+- добавлен integration test полного цикла `coder -> lead -> commit`
+
+Обновил `progress.md`, `tasks.json` и свежую память проекта под эти шаги.
+
+**Что сломалось / Технический челлендж**
+
+Главный челлендж тут не в том, чтобы дописать ещё один prompt-файл.
+
+Проблема в другом: как только ролей становится больше, без версионирования и тестов system layer начинает расползаться. Нельзя нормально понять, какой prompt сейчас “истинный”, и где именно ломается цепочка orchestration.
+
+Отдельно важно было закрыть не юнит-уровень, а реальный рабочий маршрут `coder -> lead -> commit`, потому что именно там обычно всплывают ошибки стыковки.
+
+**Что добавил в систему**
+
+Система стала шире по ролям и жёстче по контрактам.
+
+Теперь есть:
+- отдельные шаблоны под game designer и creative director
+- versioned prompt layer для `AGENTS_*`
+- дополнительное тестовое покрытие на channel fetch и end-to-end handoff
+
+Это уже не просто набор агентов, а более формализованный runtime-контур вокруг них.
+
+**Вывод**
+
+Текущий прогресс снова подтверждает простую вещь: value не в “ещё одном агенте”, а в том, насколько предсказуемо он встраивается в систему.
+
+Роли без версий и тестов быстро превращаются в хаос.
+Инфраструктура без model-facing контрактов тоже.
+Здесь как раз был шаг в сторону более собранной orchestration-системы.
+
+## LinkedIn
+
+Most AI discussions still overweight the model and underweight the system around it.
+
+This batch of work pushed in the opposite direction: more attention to infrastructure, prompt contracts, and execution reliability.
+
+I added two new agent templates for distinct roles, introduced version headers for `AGENTS_*.md`, expanded test coverage for `fetch_channel.py`, and added an integration test for the full `coder -> lead -> commit` path.
+
+That last part matters more than it sounds.
+
+A model can be strong in isolation and still fail inside a production workflow if control flow is loose, role boundaries are fuzzy, or prompt contracts are untracked. Once you start adding more agents, prompt files stop being “just text” and become part of the system interface. If they are not versioned, you lose traceability. If the handoff chain is not tested, reliability becomes anecdotal.
+
+This is the practical line between “AI feature” and “operational system”.
+
+The model generates.
+Infrastructure constrains.
+Control flow decides what actually ships.
+Tests tell you whether the orchestration still holds after change.
+
+That is why I keep leaning toward infrastructure-first AI work: not because the model is unimportant, but because model capability without system discipline does not scale.
+
+## Cover Prompts
+
+Minimalist terminal dashboard, multi-agent workflow graph, cold white on black, infrastructure over model theme
+
+Cyberpunk control room, AI agent handoff pipeline coder lead commit, sharp neon traces, reliability engineering mood
+
+Minimal poster, versioned prompt contracts and test coverage, clean grid, monochrome with red accents

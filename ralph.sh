@@ -1102,7 +1102,13 @@ try:
 except Exception:
     d = {}
 decision = d.get('decision', '')
-if decision == 'done':
+task_id = str(d.get('task_id', '')).strip()
+summary = str(d.get('summary', '')).strip().lower()
+if task_id == 'TASK-ID' or summary == 'one line summary':
+    d['decision'] = 'fix'
+    d['fix_instructions'] = d.get('fix_instructions') or 'Tech Lead returned placeholder/template JSON instead of a final review. Return one authoritative final JSON review only.'
+    d.pop('alert_reason', None)
+elif decision == 'done':
     d['decision'] = 'approve'
 elif decision not in ('approve', 'fix', 'alert'):
     d['decision'] = 'fix'
@@ -1110,6 +1116,57 @@ elif decision not in ('approve', 'fix', 'alert'):
     d.pop('alert_reason', None)
 print(json.dumps(d, ensure_ascii=False))
 ")
+}
+
+parse_lead_review_json() {
+    local review_file_json=""
+    local lead_output_json=""
+    local review_file_decision=""
+    local lead_output_decision=""
+    REVIEW_JSON='{}'
+    REVIEW_JSON_SOURCE="none"
+
+    review_file_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || true)
+    lead_output_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$LEAD_OUTPUT" 2>/dev/null || true)
+
+    if [ -n "$review_file_json" ] && [ "$review_file_json" != "{}" ]; then
+        REVIEW_JSON="$review_file_json"
+        REVIEW_JSON_SOURCE="review_file"
+    fi
+
+    if [ -n "$lead_output_json" ] && [ "$lead_output_json" != "{}" ]; then
+        if [ "$REVIEW_JSON_SOURCE" = "review_file" ]; then
+            review_file_decision=$(echo "$review_file_json" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(str(d.get('decision', '')).strip())
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+            lead_output_decision=$(echo "$lead_output_json" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(str(d.get('decision', '')).strip())
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+            if [ -n "$review_file_decision" ] && [ -n "$lead_output_decision" ] && [ "$review_file_decision" != "$lead_output_decision" ]; then
+                REVIEW_JSON='{"decision":"fix","fix_instructions":"Tech Lead output was ambiguous: authoritative review file and stdout disagreed. Return one final JSON review only.","progress_note":"Trust layer fail-closed on review mismatch"}'
+                REVIEW_JSON_SOURCE="mismatch_fail_closed"
+                return
+            fi
+        elif [ "$REVIEW_JSON" = "{}" ]; then
+            REVIEW_JSON="$lead_output_json"
+            REVIEW_JSON_SOURCE="lead_output"
+        fi
+    fi
+
+    if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
+        REVIEW_JSON='{"decision":"fix","fix_instructions":"Tech Lead output could not be parsed safely. Return one final JSON review only.","progress_note":"Trust layer fail-closed: unparseable review"}'
+        REVIEW_JSON_SOURCE="unparsed_fail_closed"
+    fi
 }
 
 run_coder_agent() {
@@ -1716,7 +1773,14 @@ $TEST_OUTPUT
 ## Progress
 $(head -30 progress.md 2>/dev/null || echo 'none')
 
-Output ONLY a JSON object with your decision."
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix."
 
             set +e
             # run_codex handles retries/backoff for codex execution
@@ -1730,13 +1794,11 @@ Output ONLY a JSON object with your decision."
             LEAD_DURATION=$(( $(date +%s) - LEAD_START ))
             log "⏱️ Tech Lead took ${LEAD_DURATION}s"
             REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
-            REVIEW_JSON=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$LEAD_OUTPUT" 2>/dev/null || true)
-            if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
-                REVIEW_JSON=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || echo '{}')
-            fi
+            parse_lead_review_json
             validate_lead_review_json
             log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
             log "🔍 DEBUG: Parsed review JSON: $(echo "$REVIEW_JSON" | head -c 200)"
+            log "🔍 DEBUG: Parsed review source: ${REVIEW_JSON_SOURCE:-unknown}"
         fi
 
         CONTROL_STATUS=0
