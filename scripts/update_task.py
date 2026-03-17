@@ -17,6 +17,7 @@ def get_project_dir() -> Path:
 
 PROJECT_DIR = get_project_dir()
 TASKS_FILE = PROJECT_DIR / "tasks.json"
+COMPLETED_STATUSES = {"done", "verified_done"}
 
 
 def main():
@@ -29,8 +30,10 @@ def main():
     for task in data["tasks"]:
         if task["id"] == task_id:
             task["status"] = status
-            if status == "done":
+            if status in COMPLETED_STATUSES:
                 task["completed_at"] = datetime.now(timezone.utc).isoformat()
+            else:
+                task["completed_at"] = None
             if notes:
                 task["revision_notes"] = notes
             break

@@ -18,6 +18,7 @@ def get_project_dir() -> Path:
 PROJECT_DIR = get_project_dir()
 TASKS_FILE = PROJECT_DIR / "tasks.json"
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+COMPLETED_STATUSES = {"done", "verified_done"}
 
 
 def load_tasks():
@@ -25,7 +26,7 @@ def load_tasks():
 
 
 def pick_next(tasks, *, task_id=None, phase=None):
-    done = {t["id"] for t in tasks if t["status"] == "done"}
+    done = {t["id"] for t in tasks if t["status"] in COMPLETED_STATUSES}
     candidates = [
         t for t in tasks
         if t["status"] == "pending"

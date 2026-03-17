@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 
+COMPLETED_STATUSES = {"done", "verified_done"}
+
+
 def atomic_write(path: Path, content: str) -> None:
     """Write file atomically to avoid partial writes."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +76,7 @@ def main() -> int:
         return 1
 
     target["status"] = args.status
-    if args.status == "done":
+    if args.status in COMPLETED_STATUSES:
         target["completed_at"] = today
     else:
         target.pop("completed_at", None)

@@ -301,6 +301,13 @@ PY
 
 ensure_metrics_schema
 
+is_completed_task_status() {
+    case "${1:-}" in
+        done|verified_done) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # State management
 write_state() {
     local status="$1" task="${2:-}" step="${3:-}" message="${4:-}"
@@ -1549,12 +1556,12 @@ if [ "$MODE" = "status" ]; then
 import json
 d = json.load(open('tasks.json'))
 tasks = d['tasks']
-done = sum(1 for t in tasks if t['status'] == 'done')
+done = sum(1 for t in tasks if t['status'] in {'done', 'verified_done'})
 total = len(tasks)
 print(f'  Total: {done}/{total} tasks done')
 for phase in sorted(set(str(t['phase']) for t in tasks)):
     pt = [t for t in tasks if str(t['phase']) == phase]
-    pd = sum(1 for t in pt if t['status'] == 'done')
+    pd = sum(1 for t in pt if t['status'] in {'done', 'verified_done'})
     print(f'  Phase {phase}: {pd}/{len(pt)}')
 print()
 pending = [t for t in tasks if t['status'] == 'pending']
@@ -1582,6 +1589,11 @@ fi
 
 if [ "$MODE" = "trust-report" ]; then
     python3 "$RALPH_DIR/scripts/audit_artifact.py" report
+    exit $?
+fi
+
+if [ "$MODE" = "re-audit-last" ]; then
+    python3 "$RALPH_DIR/scripts/re_audit_tasks.py" --last "${TARGET:-10}" ${EXTRA:+--apply}
     exit $?
 fi
 
@@ -1627,7 +1639,7 @@ case "$MODE" in
         NEXT_ARGS=""
         ;;
     *)
-        echo "Usage: ralph.sh {task|phase|auto|redo|status|audit|audit-last|trust-report} [target]"
+        echo "Usage: ralph.sh {task|phase|auto|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
         exit 1
         ;;
 esac
@@ -2102,7 +2114,7 @@ except Exception:
     print('Task completed')
 " 2>/dev/null || echo "done")
 
-                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" done
+                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" verified_done
                     python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
                     # Update memory with task summary
                     CHANGED_FILES=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | tr '\n' ', ' | sed 's/,$//')

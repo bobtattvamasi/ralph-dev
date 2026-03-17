@@ -49,6 +49,20 @@ The audit artifact shows:
 - non-bookkeeping evidence
 - raw and parsed review
 
+## Conservative Backlog Truth Restoration
+Inspectability is now in place, so the next trust step is controlled re-audit.
+
+Current approach:
+- dry-run first via `scripts/re_audit_tasks.py`
+- apply only when evidence is strong and non-ambiguous
+- no mass reopen of historical tasks
+
+This iteration introduces minimal richer statuses for re-audit outcomes:
+- `verified_done`
+- `partial`
+- `needs_human_review`
+- `false_positive`
+
 ## Still Out Of Scope
 - audit bot commands
 - full status model rollout

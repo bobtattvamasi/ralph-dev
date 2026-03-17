@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+try:
+    from scripts.models import RalphState
+except ImportError:
+    from models import RalphState
+
 RALPH_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path.cwd()  # overridden in __main__
 STATE_FILE = PROJECT_DIR / "ralph_state.json"
@@ -26,9 +31,11 @@ CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
 TASKS_FILE = PROJECT_DIR / "tasks.json"
 PROGRESS_FILE = PROJECT_DIR / "progress.md"
 LOG_DIR = PROJECT_DIR / "logs"
+AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
 DAILY_COST_LIMIT_USD = 500.0
 BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
 RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
+COMPLETED_TASK_STATUSES = {"done", "verified_done"}
 
 TOKEN = ""
 CHAT_ID = ""
@@ -69,6 +76,9 @@ HOT_RELOAD_EXPORTS = [
     "cmd_article",
     "cmd_progress",
     "cmd_tail",
+    "cmd_audit",
+    "cmd_audit_last",
+    "cmd_trust_report",
     "cmd_help",
     "cmd_reload",
     "handle_update",
@@ -84,6 +94,7 @@ def configure_module_runtime(module: ModuleType) -> None:
     module.TASKS_FILE = PROJECT_DIR / "tasks.json"
     module.PROGRESS_FILE = PROJECT_DIR / "progress.md"
     module.LOG_DIR = PROJECT_DIR / "logs"
+    module.AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
     module.BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
     module.RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
     module.TOKEN = TOKEN
@@ -122,7 +133,13 @@ def read_state() -> dict:
     """Read ralph state file."""
     if STATE_FILE.exists():
         try:
-            return normalize_state_for_display(json.loads(STATE_FILE.read_text(encoding="utf-8")))
+            raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            if raw.get("current_task") is None:
+                raw["current_task"] = ""
+            if raw.get("current_phase_step") is None:
+                raw["current_phase_step"] = ""
+            validated = RalphState.model_validate(raw).model_dump()
+            return normalize_state_for_display(validated)
         except (json.JSONDecodeError, OSError):
             pass
     return {"status": "idle", "current_task": None, "last_update": None}
@@ -278,6 +295,42 @@ def save_tasks_data(data: dict) -> None:
     TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def get_audit_summary(task_id: str) -> str:
+    """Return a human-readable audit summary for a task."""
+    result = subprocess.run(
+        ["python3", str(RALPH_DIR / "scripts" / "audit_artifact.py"), "show", task_id],
+        cwd=str(PROJECT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout or result.stderr).strip()
+    return output or f"Audit artifact not found for {task_id}"
+
+
+def get_audit_last_summary(limit: int = 10) -> str:
+    """Return a compact summary for the most recent audit artifacts."""
+    result = subprocess.run(
+        ["python3", str(RALPH_DIR / "scripts" / "audit_artifact.py"), "list", str(limit)],
+        cwd=str(PROJECT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout or result.stderr).strip()
+    return output or "No audit artifacts found."
+
+
+def get_trust_report_summary() -> str:
+    """Return aggregate trust report across audit artifacts."""
+    result = subprocess.run(
+        ["python3", str(RALPH_DIR / "scripts" / "audit_artifact.py"), "report"],
+        cwd=str(PROJECT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout or result.stderr).strip()
+    return output or "No trust report available."
+
+
 def get_task_summary(tasks_path: Path) -> dict:
     """Summarize task progress for /status and /progress."""
     if not tasks_path.exists():
@@ -293,8 +346,8 @@ def get_task_summary(tasks_path: Path) -> dict:
     data = json.loads(tasks_path.read_text(encoding="utf-8"))
     tasks = data.get("tasks", [])
     phases_meta = data.get("phases", {})
-    done_ids = {task.get("id") for task in tasks if task.get("status") == "done"}
-    done_total = sum(1 for task in tasks if task.get("status") == "done")
+    done_ids = {task.get("id") for task in tasks if task.get("status") in COMPLETED_TASK_STATUSES}
+    done_total = sum(1 for task in tasks if task.get("status") in COMPLETED_TASK_STATUSES)
     all_total = len(tasks)
     pct = int(round((done_total / all_total) * 100)) if all_total else 0
 
@@ -310,7 +363,7 @@ def get_task_summary(tasks_path: Path) -> dict:
     for phase_id in phase_ids:
         phase_tasks = [task for task in tasks if str(task.get("phase", "?")) == phase_id]
         total = len(phase_tasks)
-        done = sum(1 for task in phase_tasks if task.get("status") == "done")
+        done = sum(1 for task in phase_tasks if task.get("status") in COMPLETED_TASK_STATUSES)
         filled = int(round((done / total) * 8)) if total else 0
         bar = ("█" * filled) + ("░" * (8 - filled))
 
@@ -973,7 +1026,7 @@ async def cmd_plan() -> None:
     lines = ["📋 <b>Ralph Plan</b>"]
     for phase in ordered_phases:
         phase_tasks = [task for task in tasks if str(task.get("phase", "?")) == phase]
-        done_count = sum(1 for task in phase_tasks if task.get("status") == "done")
+        done_count = sum(1 for task in phase_tasks if task.get("status") in COMPLETED_TASK_STATUSES)
         lines.append(f"Phase {phase}: {done_count}/{len(phase_tasks)} done")
 
     pending_tasks = [task for task in tasks if task.get("status") == "pending"]
@@ -1122,6 +1175,47 @@ async def cmd_tail(n: int = 20) -> None:
         await safe_send(f"Error reading {name}: {e}")
 
 
+async def cmd_audit(task_id: str) -> None:
+    """Show latest audit summary for a task."""
+    task_id = task_id.strip()
+    if not task_id:
+        await safe_send("Usage: /audit <task_id>")
+        return
+    try:
+        summary = get_audit_summary(task_id)
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Audit error: {exc}")
+        return
+    await send_split_message(summary)
+
+
+async def cmd_audit_last(limit_text: str) -> None:
+    """Show compact summary for the most recent audit artifacts."""
+    raw = limit_text.strip() if limit_text else ""
+    try:
+        limit = int(raw) if raw else 10
+    except ValueError:
+        limit = 10
+    if limit <= 0:
+        limit = 10
+    try:
+        summary = get_audit_last_summary(limit)
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Audit-last error: {exc}")
+        return
+    await send_split_message(summary)
+
+
+async def cmd_trust_report() -> None:
+    """Show aggregate trust report from audit artifacts."""
+    try:
+        summary = get_trust_report_summary()
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Trust report error: {exc}")
+        return
+    await send_split_message(summary)
+
+
 async def cmd_reload() -> None:
     """Hot-reload bot helpers and command handlers from source."""
     try:
@@ -1157,6 +1251,9 @@ async def cmd_help() -> None:
         "/log [N] — last N lines from ralph execution log\n"
         "/progress — phase progress bars\n"
         "/tail [N] — last N lines of live codex output\n"
+        "/audit <task_id> — latest trust audit summary\n"
+        "/audit_last [N] — latest audit summaries\n"
+        "/trust_report — trust summary across audit artifacts\n"
         "/cost — token usage & cost estimate\n"
         "/stats — aggregated task metrics from metrics.csv\n"
         "/limits — today's spend vs cost limit\n"
@@ -1235,6 +1332,12 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/tail":
         n = int(args) if args.isdigit() else 20
         await cmd_tail(n)
+    elif cmd == "/audit":
+        await cmd_audit(args)
+    elif cmd == "/audit_last":
+        await cmd_audit_last(args)
+    elif cmd == "/trust_report":
+        await cmd_trust_report()
     elif cmd == "/cost":
         await cmd_cost()
     elif cmd == "/stats":

@@ -310,7 +310,7 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert load_task_status(project_dir) == "done"
+    assert load_task_status(project_dir) == "verified_done"
     prompt = prompt_file.read_text(encoding="utf-8")
     assert "## AGENTS.md Context" in prompt
     assert "# AGENTS" in prompt
@@ -398,7 +398,7 @@ def test_ralph_retries_after_fix_and_then_marks_done(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert load_task_status(project_dir) == "done"
+    assert load_task_status(project_dir) == "verified_done"
     assert "🔧 Fix 1/2:" in result.stdout
     assert result.stdout.count("🤖 CODER — Attempt") >= 2
     assert "👔 Decision: approve" in result.stdout
@@ -469,7 +469,7 @@ def test_ralph_allows_docs_only_task_with_docs_evidence(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert load_task_status(project_dir) == "done"
+    assert load_task_status(project_dir) == "verified_done"
     assert "🧪 Verification: pass (docs-only)" in result.stdout
 
 
@@ -744,7 +744,7 @@ def test_ralph_pauses_and_retries_on_rate_limit(tmp_path: Path) -> None:
     stdout, _ = process.communicate(timeout=30)
     assert process.returncode == 0, stdout
     assert "RATE LIMIT detected" in stdout
-    assert load_task_status(project_dir) == "done"
+    assert load_task_status(project_dir) == "verified_done"
 
 
 def test_ralph_timeout_cleans_up_orphan_children(tmp_path: Path) -> None:
@@ -798,7 +798,7 @@ def test_ralph_waits_for_assets_and_resumes_when_files_arrive(tmp_path: Path) ->
 
     stdout, _ = process.communicate(timeout=30)
     assert process.returncode == 0, stdout
-    assert load_task_status(project_dir) == "done"
+    assert load_task_status(project_dir) == "verified_done"
     assert "assets_manifest.json" in stdout or "Assets ready for T01" in stdout or "Required assets are ready" in stdout
     assert not inbox_file.exists()
     assert (project_dir / "src" / "assets" / "hero-image.txt").read_text(encoding="utf-8") == "hero-image-binary"

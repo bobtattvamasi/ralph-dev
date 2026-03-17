@@ -19,7 +19,17 @@ class TaskRecord(BaseModel):
     phase: str
     title: str
     description: str = ""
-    status: Literal["pending", "running", "done", "failed", "blocked"] = "pending"
+    status: Literal[
+        "pending",
+        "running",
+        "done",
+        "verified_done",
+        "partial",
+        "needs_human_review",
+        "false_positive",
+        "failed",
+        "blocked",
+    ] = "pending"
 
     category: str = ""
     priority: Literal["high", "medium", "low"] = "medium"

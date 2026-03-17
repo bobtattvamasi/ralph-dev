@@ -53,6 +53,12 @@ def test_task_record_full():
     assert t.complexity == "moderate"
 
 
+def test_task_record_accepts_reaudit_statuses():
+    for status in ("verified_done", "partial", "needs_human_review", "false_positive"):
+        t = TaskRecord.model_validate({"id": f"X-{status}", "phase": "X", "title": "Status test", "status": status})
+        assert t.status == status
+
+
 def test_task_record_extra_fields():
     t = TaskRecord.model_validate(
         {

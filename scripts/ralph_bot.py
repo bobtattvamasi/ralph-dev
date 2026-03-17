@@ -35,6 +35,7 @@ AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
 DAILY_COST_LIMIT_USD = 500.0
 BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
 RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
+COMPLETED_TASK_STATUSES = {"done", "verified_done"}
 
 TOKEN = ""
 CHAT_ID = ""
@@ -345,8 +346,8 @@ def get_task_summary(tasks_path: Path) -> dict:
     data = json.loads(tasks_path.read_text(encoding="utf-8"))
     tasks = data.get("tasks", [])
     phases_meta = data.get("phases", {})
-    done_ids = {task.get("id") for task in tasks if task.get("status") == "done"}
-    done_total = sum(1 for task in tasks if task.get("status") == "done")
+    done_ids = {task.get("id") for task in tasks if task.get("status") in COMPLETED_TASK_STATUSES}
+    done_total = sum(1 for task in tasks if task.get("status") in COMPLETED_TASK_STATUSES)
     all_total = len(tasks)
     pct = int(round((done_total / all_total) * 100)) if all_total else 0
 
@@ -362,7 +363,7 @@ def get_task_summary(tasks_path: Path) -> dict:
     for phase_id in phase_ids:
         phase_tasks = [task for task in tasks if str(task.get("phase", "?")) == phase_id]
         total = len(phase_tasks)
-        done = sum(1 for task in phase_tasks if task.get("status") == "done")
+        done = sum(1 for task in phase_tasks if task.get("status") in COMPLETED_TASK_STATUSES)
         filled = int(round((done / total) * 8)) if total else 0
         bar = ("█" * filled) + ("░" * (8 - filled))
 
@@ -1025,7 +1026,7 @@ async def cmd_plan() -> None:
     lines = ["📋 <b>Ralph Plan</b>"]
     for phase in ordered_phases:
         phase_tasks = [task for task in tasks if str(task.get("phase", "?")) == phase]
-        done_count = sum(1 for task in phase_tasks if task.get("status") == "done")
+        done_count = sum(1 for task in phase_tasks if task.get("status") in COMPLETED_TASK_STATUSES)
         lines.append(f"Phase {phase}: {done_count}/{len(phase_tasks)} done")
 
     pending_tasks = [task for task in tasks if task.get("status") == "pending"]
