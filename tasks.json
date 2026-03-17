@@ -1870,9 +1870,9 @@
       "dependencies": [
         "R10-02"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "done",
+      "completed_at": "2026-03-17T00:00:00+07:00",
+      "revision_notes": "Milestone 2: bookkeeping-only closure now fails closed for implementation tasks.",
       "timeout": 420,
       "role": "coder"
     },
@@ -1894,9 +1894,9 @@
       "dependencies": [
         "R10-03"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "done",
+      "completed_at": "2026-03-17T00:00:00+07:00",
+      "revision_notes": "Milestone 2: approve path now runs verification before final closure.",
       "timeout": 420,
       "role": "coder"
     },
@@ -1918,9 +1918,9 @@
       "dependencies": [
         "R10-04"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "done",
+      "completed_at": "2026-03-17T00:00:00+07:00",
+      "revision_notes": "Milestone 2: minimal verification policy implemented for command/script/template/docs/tests tasks.",
       "timeout": 420,
       "role": "coder"
     },

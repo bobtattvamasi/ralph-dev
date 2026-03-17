@@ -4,10 +4,9 @@
 Ralph must not mark a task as complete unless repository evidence supports that claim.
 
 ## Current Repair Scope
-R10 starts with Milestone 1:
-- harden Tech Lead output format
-- harden review extraction/parsing
-- fail closed on ambiguous review output
+R10 now covers two implemented steps:
+- Milestone 1: safe Tech Lead review boundary
+- Milestone 2: minimal evidence gate before task closure
 
 ## Closure Principle
 Runtime success is not the same as implementation success.
@@ -18,13 +17,19 @@ Current expected flow:
 1. Tech Lead returns one final review block
 2. Ralph parses that block from an authoritative source
 3. Ambiguous or placeholder review output fails closed
-4. Only then can later trust checks run
+4. Only then can closure verification run
 
-## Out of Scope For This Iteration
-- full evidence gate
-- bookkeeping-only diff blocking
+## Current Closure Gate
+For now, Ralph verifies:
+- bookkeeping-only vs non-bookkeeping changes
+- minimal task-aware checks for commands, scripts, templates, docs-only tasks, and tests-only tasks
+
+If verification fails, Ralph does not auto-close the task as `done`.
+
+## Still Out Of Scope
 - audit bot commands
-- status model rollout
+- full status model rollout
+- mass re-audit of historical tasks
 
 ## Related Docs
 - [TASK_VERIFICATION_POLICY.md](./TASK_VERIFICATION_POLICY.md)

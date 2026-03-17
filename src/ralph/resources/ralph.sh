@@ -1169,6 +1169,76 @@ except Exception:
     fi
 }
 
+collect_preclosure_changed_files_json() {
+    python3 - "$PRE_HASH" <<'PY'
+import json
+import subprocess
+import sys
+
+pre_hash = sys.argv[1]
+commands = [
+    ["git", "diff", "--name-only", pre_hash, "HEAD"],
+    ["git", "diff", "--name-only", "--cached"],
+    ["git", "diff", "--name-only"],
+    ["git", "ls-files", "--others", "--exclude-standard"],
+]
+seen = set()
+result = []
+for cmd in commands:
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        continue
+    for line in proc.stdout.splitlines():
+        path = line.strip()
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        result.append(path)
+print(json.dumps(result, ensure_ascii=False))
+PY
+}
+
+run_task_closure_verification() {
+    PRE_CLOSURE_CHANGED_FILES_JSON=$(collect_preclosure_changed_files_json)
+    VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
+        RALPH_PROJECT_DIR="$PROJECT_DIR" \
+        RALPH_CHANGED_FILES_JSON="$PRE_CLOSURE_CHANGED_FILES_JSON" \
+        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>/dev/null || echo '{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}')
+
+    VERIFICATION_RESULT=$(echo "$VERIFICATION_JSON" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('result', 'needs_human_review'))
+except Exception:
+    print('needs_human_review')
+" 2>/dev/null || echo "needs_human_review")
+    VERIFICATION_CLASS=$(echo "$VERIFICATION_JSON" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('task_class', 'implementation'))
+except Exception:
+    print('implementation')
+" 2>/dev/null || echo "implementation")
+    VERIFICATION_REASON=$(echo "$VERIFICATION_JSON" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('reason', 'Verification failed'))
+except Exception:
+    print('Verification failed')
+" 2>/dev/null || echo "Verification failed")
+    VERIFICATION_NON_BOOKKEEPING=$(echo "$VERIFICATION_JSON" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(', '.join(d.get('changed_files_non_bookkeeping', [])))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+}
+
 run_coder_agent() {
     local project_agents=""
     local project_architecture=""
@@ -1849,10 +1919,34 @@ print('?')
 
         case "$DECISION" in
             approve)
-                TASK_DONE=true
-                write_state "running" "$TASK_ID" "approved" "Task approved"
-                notify "✅ $TASK_ID done — $TASK_TITLE"
-                PROGRESS_NOTE=$(echo "$REVIEW_JSON" | python3 -c "
+                run_task_closure_verification
+                log "🧪 Verification: ${VERIFICATION_RESULT:-unknown} (${VERIFICATION_CLASS:-implementation})"
+                log "🧪 Verification reason: ${VERIFICATION_REASON:-none}"
+                if [ -n "${VERIFICATION_NON_BOOKKEEPING:-}" ]; then
+                    log "🧪 Evidence files: ${VERIFICATION_NON_BOOKKEEPING}"
+                fi
+
+                if [ "${VERIFICATION_RESULT:-needs_human_review}" = "fail_fix" ]; then
+                    FIX_INSTRUCTIONS="$VERIFICATION_REASON"
+                    FIX_RETRY=$((FIX_RETRY+1))
+                    notify "🔧 $TASK_ID verification blocked closure ($FIX_RETRY/$MAX_FIX_RETRIES)"
+                    log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: $FIX_INSTRUCTIONS"
+                elif [ "${VERIFICATION_RESULT:-needs_human_review}" = "needs_human_review" ]; then
+                    REASON="$VERIFICATION_REASON"
+                    log_metrics "failed"
+                    log "📋 TASK_FAIL task_id=$TASK_ID status=verification reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    if [ "${TASK_RISK:-medium}" = "high" ]; then
+                        alert_human "$REASON"
+                        TASK_ALERTED=true
+                        TASK_DONE=true
+                    else
+                        defer_blocked_task "$REASON"
+                    fi
+                else
+                    TASK_DONE=true
+                    write_state "running" "$TASK_ID" "approved" "Task approved"
+                    notify "✅ $TASK_ID done — $TASK_TITLE"
+                    PROGRESS_NOTE=$(echo "$REVIEW_JSON" | python3 -c "
 import sys, json
 text = sys.stdin.read().strip() or '{}'
 try:
@@ -1862,46 +1956,46 @@ except Exception:
     print('Task completed')
 " 2>/dev/null || echo "done")
 
-                python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" done
-                python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
-                # Update memory with task summary
-                CHANGED_FILES=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
-                python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
+                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" done
+                    python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
+                    # Update memory with task summary
+                    CHANGED_FILES=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
+                    python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
 
-                if [ "$TASK_RISK" = "high" ]; then
-                    set_control_action "pause" ""
-                    CONTROL_STATUS=0
-                    wait_for_high_risk_approval || CONTROL_STATUS=$?
-                    if [ $CONTROL_STATUS -eq 1 ]; then
-                        log "⏹ Stop signal received during high-risk review gate"
-                        write_state "stopped" "$TASK_ID" "risk_gate" "Stopped by user during high-risk review"
-                        notify "⏹ Ralph stopped by user during high-risk review for $TASK_ID"
-                        cleanup
-                        exit 0
-                    elif [ $CONTROL_STATUS -eq 2 ]; then
-                        skip_current_task
-                        TASK_SKIPPED=true
-                        break
+                    if [ "$TASK_RISK" = "high" ]; then
+                        set_control_action "pause" ""
+                        CONTROL_STATUS=0
+                        wait_for_high_risk_approval || CONTROL_STATUS=$?
+                        if [ $CONTROL_STATUS -eq 1 ]; then
+                            log "⏹ Stop signal received during high-risk review gate"
+                            write_state "stopped" "$TASK_ID" "risk_gate" "Stopped by user during high-risk review"
+                            notify "⏹ Ralph stopped by user during high-risk review for $TASK_ID"
+                            cleanup
+                            exit 0
+                        elif [ $CONTROL_STATUS -eq 2 ]; then
+                            skip_current_task
+                            TASK_SKIPPED=true
+                            break
+                        fi
                     fi
+                    git add -A
+                    git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
+                    log_metrics "success"
+                    log "✅ $TASK_ID done"
+                    TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                    TOTAL="$TASK_DURATION"
+                    log "📋 TASK_DONE task_id=$TASK_ID status=approved quality=$QUALITY duration=${TOTAL}s attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    log "╔═══════════════════════════════════════════╗"
+                    log "║ ✅ TASK COMPLETE                          ║"
+                    log "║ Task:     ${TASK_ID}                       ║"
+                    log "║ Title:    ${TASK_TITLE}                    ║"
+                    log "║ Duration: ${TASK_DURATION}s                        ║"
+                    log "║ Attempts: ${CURRENT_ATTEMPT}/${MAX_ATTEMPTS}                 ║"
+                    log "║ Quality:  ${QUALITY}/10                    ║"
+                    log "╚═══════════════════════════════════════════╝"
+                    log "💰 Task $TASK_ID cost: ~$(format_tokens "$TASK_TOKENS") tokens (~\$$(estimate_cost "$TASK_TOKENS") at \$3/1M input)"
+                    SESSION_TASKS=$((SESSION_TASKS + 1))
                 fi
-
-                git add -A
-                git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
-                log_metrics "success"
-                log "✅ $TASK_ID done"
-                TASK_DURATION=$(( $(date +%s) - TASK_START ))
-                TOTAL="$TASK_DURATION"
-                log "📋 TASK_DONE task_id=$TASK_ID status=approved quality=$QUALITY duration=${TOTAL}s attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                log "╔═══════════════════════════════════════════╗"
-                log "║ ✅ TASK COMPLETE                          ║"
-                log "║ Task:     ${TASK_ID}                       ║"
-                log "║ Title:    ${TASK_TITLE}                    ║"
-                log "║ Duration: ${TASK_DURATION}s                        ║"
-                log "║ Attempts: ${CURRENT_ATTEMPT}/${MAX_ATTEMPTS}                 ║"
-                log "║ Quality:  ${QUALITY}/10                    ║"
-                log "╚═══════════════════════════════════════════╝"
-                log "💰 Task $TASK_ID cost: ~$(format_tokens "$TASK_TOKENS") tokens (~\$$(estimate_cost "$TASK_TOKENS") at \$3/1M input)"
-                SESSION_TASKS=$((SESSION_TASKS + 1))
                 ;;
 
             fix)
