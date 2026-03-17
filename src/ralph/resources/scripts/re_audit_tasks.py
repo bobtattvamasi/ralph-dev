@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,7 @@ TASKS_FILE = PROJECT_DIR / "tasks.json"
 AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
 BOT_FILE = PROJECT_DIR / "scripts" / "ralph_bot.py"
 COMPLETE_STATUSES = {"done", "verified_done"}
-APPLYABLE_VERDICTS = {"verified_done", "false_positive", "partial"}
+SAFE_AUTO_APPLY_VERDICTS = {"verified_done", "false_positive"}
 
 
 def load_tasks() -> dict[str, Any]:
@@ -60,32 +61,60 @@ def classify_command(task: dict[str, Any], command_tokens: list[str]) -> tuple[s
 
     missing_handler = []
     missing_routing = []
+    missing_help = []
+    resolved_handlers: dict[str, set[str]] = {}
+
+    def candidate_handlers(token: str) -> set[str]:
+        return {
+            f"cmd_{token}",
+            f"cmd_start_{token}",
+        }
+
+    def routed_handlers(token: str) -> set[str]:
+        pattern = re.compile(
+            rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
+            re.MULTILINE,
+        )
+        return set(pattern.findall(bot_text))
+
     for token in command_tokens:
-        if f"cmd_{token}" not in bot_text:
+        handlers = candidate_handlers(token) | routed_handlers(token)
+        resolved_handlers[token] = handlers
+        if not any(f"def {handler}(" in bot_text for handler in handlers):
             missing_handler.append(token)
-        if f'"/{token}"' not in bot_text and f"'/ {token}'" not in bot_text:
-            if f"/{token}" not in bot_text:
-                missing_routing.append(token)
+        if not re.search(rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']', bot_text):
+            missing_routing.append(token)
+        if f"/{token}" not in bot_text:
+            missing_help.append(token)
 
     tests_present = False
     for test_file in PROJECT_DIR.glob("tests/test_*.py"):
         text = read_text(test_file)
-        if any(f"/{token}" in text or f"cmd_{token}" in text for token in command_tokens):
+        if any(
+            f"/{token}" in text or any(handler in text for handler in resolved_handlers.get(token, set()))
+            for token in command_tokens
+        ):
             tests_present = True
             break
 
-    if len(missing_handler) == len(command_tokens) and len(missing_routing) == len(command_tokens):
+    if (
+        len(missing_handler) == len(command_tokens)
+        and len(missing_routing) == len(command_tokens)
+        and len(missing_help) == len(command_tokens)
+    ):
         return "false_positive", f"Command implementation missing: {', '.join('/' + token for token in command_tokens)}."
-    if missing_handler or missing_routing or not tests_present:
+    if missing_handler or missing_routing or missing_help or not tests_present:
         parts = []
         if missing_handler:
-            parts.append("missing handlers: " + ", ".join(f"cmd_{token}" for token in missing_handler))
+            parts.append("missing handlers: " + ", ".join("/" + token for token in missing_handler))
         if missing_routing:
             parts.append("missing routing: " + ", ".join(f"/{token}" for token in missing_routing))
+        if missing_help:
+            parts.append("missing command/help evidence: " + ", ".join(f"/{token}" for token in missing_help))
         if not tests_present:
             parts.append("missing command test evidence")
         return "partial", "; ".join(parts)
-    return "verified_done", "Command handler, routing, and test evidence exist."
+    return "verified_done", "Command routing, handler alias, help text, and test evidence exist."
 
 
 def classify_script(task: dict[str, Any], expected_paths: list[str]) -> tuple[str, str]:
@@ -213,8 +242,27 @@ def select_tasks(data: dict[str, Any], last: int | None, task_id: str | None) ->
     return completed[-last:]
 
 
-def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> int:
-    applied = 0
+def summarize_verdicts(results: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {
+        "total_checked": len(results),
+        "verified_done": 0,
+        "false_positive": 0,
+        "partial": 0,
+        "needs_human_review": 0,
+        "applyable": 0,
+    }
+    for item in results:
+        verdict = item["verdict"]
+        if verdict in counts:
+            counts[verdict] += 1
+        if verdict in SAFE_AUTO_APPLY_VERDICTS:
+            counts["applyable"] += 1
+    return counts
+
+
+def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    applied: list[str] = []
+    skipped: list[str] = []
     by_id = {item["task_id"]: item for item in results}
     now = datetime.now(timezone.utc).isoformat()
     for task in data.get("tasks", []):
@@ -222,7 +270,8 @@ def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> int:
         if not result:
             continue
         verdict = result["verdict"]
-        if verdict not in APPLYABLE_VERDICTS:
+        if verdict not in SAFE_AUTO_APPLY_VERDICTS:
+            skipped.append(f"{task['id']}: {verdict} is report-only in apply mode")
             continue
         task["status"] = verdict
         if verdict == "verified_done":
@@ -232,8 +281,22 @@ def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> int:
         task["revision_notes"] = (
             f"Re-audit {now}: {verdict} — {result['reason']}"
         )
-        applied += 1
-    return applied
+        applied.append(f"{task['id']}: {task.get('status')} — {result['reason']}")
+    return applied, skipped
+
+
+def format_summary_block(results: list[dict[str, Any]]) -> list[str]:
+    summary = summarize_verdicts(results)
+    return [
+        "",
+        "=== Re-audit Summary ===",
+        f"Total checked: {summary['total_checked']}",
+        f"verified_done: {summary['verified_done']}",
+        f"false_positive: {summary['false_positive']}",
+        f"partial: {summary['partial']}",
+        f"needs_human_review: {summary['needs_human_review']}",
+        f"applyable: {summary['applyable']}",
+    ]
 
 
 def format_results(results: list[dict[str, Any]], apply: bool) -> str:
@@ -246,6 +309,7 @@ def format_results(results: list[dict[str, Any]], apply: bool) -> str:
             f"{item['task_id']} | {item['current_status']} -> {item['verdict']} | "
             f"{item['task_class']} | {item['reason']}"
         )
+    lines.extend(format_summary_block(results))
     return "\n".join(lines)
 
 
@@ -261,10 +325,23 @@ def main() -> int:
     results = [classify_task(task) for task in selected]
 
     if args.apply:
-        applied = apply_verdicts(data, results)
+        applied, skipped = apply_verdicts(data, results)
         TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(format_results(results, apply=True))
-        print(f"Applied changes: {applied}")
+        print("")
+        print("=== Apply Actions ===")
+        if applied:
+            print("Applied:")
+            for item in applied:
+                print(f"- {item}")
+        else:
+            print("Applied: none")
+        if skipped:
+            print("Skipped:")
+            for item in skipped:
+                print(f"- {item}")
+        else:
+            print("Skipped: none")
     else:
         print(format_results(results, apply=False))
     return 0
