@@ -35,8 +35,11 @@ Each task run writes a compact audit artifact to `.ralph/audit/<TASK_ID>.json`.
 
 Current inspection paths:
 - `ralph.sh audit <TASK_ID>`
+- `ralph.sh audit-last [N]`
 - `ralph.sh trust-report`
 - Telegram: `/audit <TASK_ID>`
+- Telegram: `/audit_last [N]`
+- Telegram: `/trust_report`
 
 The audit artifact shows:
 - final status

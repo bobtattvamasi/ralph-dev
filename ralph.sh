@@ -1575,6 +1575,11 @@ if [ "$MODE" = "audit" ]; then
     exit $?
 fi
 
+if [ "$MODE" = "audit-last" ]; then
+    python3 "$RALPH_DIR/scripts/audit_artifact.py" list "${TARGET:-10}"
+    exit $?
+fi
+
 if [ "$MODE" = "trust-report" ]; then
     python3 "$RALPH_DIR/scripts/audit_artifact.py" report
     exit $?
@@ -1622,7 +1627,7 @@ case "$MODE" in
         NEXT_ARGS=""
         ;;
     *)
-        echo "Usage: ralph.sh {task|phase|auto|redo|status|audit|trust-report} [target]"
+        echo "Usage: ralph.sh {task|phase|auto|redo|status|audit|audit-last|trust-report} [target]"
         exit 1
         ;;
 esac

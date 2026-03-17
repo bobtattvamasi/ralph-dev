@@ -215,6 +215,39 @@ async def test_handle_update_routes_audit(bot_env: dict[str, object], monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_cmd_audit_last_returns_summary(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    split_send = AsyncMock()
+    monkeypatch.setattr(bot, "send_split_message", split_send)
+    monkeypatch.setattr(bot, "get_audit_last_summary", lambda limit=10: f"=== Last {limit} audit tasks ===")
+
+    await bot.cmd_audit_last("5")
+
+    split_send.assert_awaited_once_with("=== Last 5 audit tasks ===")
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_audit_last(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    split_send = AsyncMock()
+    monkeypatch.setattr(bot, "send_split_message", split_send)
+    monkeypatch.setattr(bot, "get_audit_last_summary", lambda limit=10: f"=== Last {limit} audit tasks ===")
+
+    await bot.handle_update({"message": {"text": "/audit_last 3"}})
+
+    split_send.assert_awaited_once_with("=== Last 3 audit tasks ===")
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_trust_report(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    split_send = AsyncMock()
+    monkeypatch.setattr(bot, "send_split_message", split_send)
+    monkeypatch.setattr(bot, "get_trust_report_summary", lambda: "=== Trust Report ===")
+
+    await bot.handle_update({"message": {"text": "/trust_report"}})
+
+    split_send.assert_awaited_once_with("=== Trust Report ===")
+
+
+@pytest.mark.asyncio
 async def test_watch_state_recovers_crashed_running_task(
     bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:

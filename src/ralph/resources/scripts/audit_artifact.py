@@ -68,24 +68,58 @@ def write_artifact() -> int:
             return 1
 
 
+def _invalid_record(path: Path, exc: Exception) -> dict:
+    task_id = path.stem
+    return {
+        "task_id": task_id,
+        "title": "",
+        "status": "invalid",
+        "verification": {
+            "result": "invalid",
+            "reason": f"Malformed audit artifact: {exc}",
+            "task_class": "unknown",
+            "evidence_files": [],
+        },
+        "changes": {"all": [], "non_bookkeeping": []},
+        "review": {"raw": "", "parsed": {}},
+        "attempts": 0,
+        "duration_sec": 0,
+        "timestamp": "",
+        "runtime_success": False,
+        "verified_success": False,
+        "invalid_artifact": True,
+    }
+
+
 def load_artifact(task_id: str) -> dict:
     path = AUDIT_DIR / f"{task_id}.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return _invalid_record(path, exc)
 
 
-def show_artifact(task_id: str) -> int:
-    path = AUDIT_DIR / f"{task_id}.json"
-    if not path.exists():
-        print(f"Audit artifact not found for {task_id}")
-        return 1
-    data = load_artifact(task_id)
+def load_all_artifacts() -> tuple[list[dict], int]:
+    ensure_dir()
+    records: list[dict] = []
+    invalid_count = 0
+    for path in sorted(AUDIT_DIR.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            record = _invalid_record(path, exc)
+            invalid_count += 1
+        records.append(record)
+    return records, invalid_count
+
+
+def format_audit_summary(data: dict, fallback_task_id: str | None = None) -> str:
     verification = data.get("verification", {})
     changes = data.get("changes", {})
     non_bookkeeping = changes.get("non_bookkeeping", []) or []
     all_changes = changes.get("all", []) or []
-
     lines = [
-        f"Audit: {data.get('task_id', task_id)} — {data.get('status', 'unknown')}",
+        f"Audit: {data.get('task_id', fallback_task_id or '?')} — {data.get('status', 'unknown')}",
         f"Runtime success: {data.get('runtime_success', False)}",
         f"Verified success: {data.get('verified_success', False)}",
         f"Verification: {verification.get('result', 'unknown')} ({verification.get('task_class', 'unknown')})",
@@ -96,20 +130,41 @@ def show_artifact(task_id: str) -> int:
         "Changed files: " + (", ".join(all_changes) if all_changes else "none"),
         "Evidence files: " + (", ".join(non_bookkeeping) if non_bookkeeping else "none"),
     ]
-    print("\n".join(lines))
+    return "\n".join(lines)
+
+
+def format_audit_last(records: list[dict], limit: int) -> str:
+    recent = sorted(records, key=lambda item: str(item.get("timestamp", "")), reverse=True)[:limit]
+    lines = [f"=== Last {len(recent)} audit tasks ==="]
+    if not recent:
+        lines.append("No audit artifacts found.")
+        return "\n".join(lines)
+    for item in recent:
+        verification = item.get("verification", {})
+        reason = str(verification.get("reason", "")).strip() or "n/a"
+        short_reason = reason if len(reason) <= 120 else reason[:117] + "..."
+        lines.append(
+            f"{item.get('task_id', '?')} | {item.get('status', 'unknown')} | "
+            f"{verification.get('result', 'unknown')} | "
+            f"runtime={item.get('runtime_success', False)} | "
+            f"verified={item.get('verified_success', False)} | "
+            f"{short_reason}"
+        )
+    return "\n".join(lines)
+
+
+def show_artifact(task_id: str) -> int:
+    path = AUDIT_DIR / f"{task_id}.json"
+    if not path.exists():
+        print(f"Audit artifact not found for {task_id}")
+        return 1
+    data = load_artifact(task_id)
+    print(format_audit_summary(data, fallback_task_id=task_id))
     return 0
 
 
 def trust_report() -> int:
-    ensure_dir()
-    files = sorted(AUDIT_DIR.glob("*.json"))
-    records: list[dict] = []
-    for path in files:
-        try:
-            records.append(json.loads(path.read_text(encoding="utf-8")))
-        except Exception:
-            continue
-
+    records, invalid_count = load_all_artifacts()
     total = len(records)
     verified_success = sum(1 for item in records if item.get("verified_success") is True)
     runtime_success_only = sum(
@@ -128,6 +183,7 @@ def trust_report() -> int:
         f"Verified success: {verified_success}",
         f"Runtime success only: {runtime_success_only}",
         f"Failed/blocked: {failed_or_blocked}",
+        f"Invalid artifacts: {invalid_count}",
         f"Verified %: {pct}%",
     ]
     if records:
@@ -143,9 +199,23 @@ def trust_report() -> int:
     return 0
 
 
+def audit_last(limit_raw: str) -> int:
+    try:
+        limit = int(limit_raw or "10")
+    except ValueError:
+        limit = 10
+    if limit <= 0:
+        limit = 10
+    records, invalid_count = load_all_artifacts()
+    print(format_audit_last(records, limit))
+    if invalid_count:
+        print(f"\nInvalid artifacts skipped into report output: {invalid_count}")
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) < 2:
-        print("Usage: audit_artifact.py {write|show|report} [task_id]")
+        print("Usage: audit_artifact.py {write|show|list|report} [task_id|limit]")
         return 1
     cmd = sys.argv[1]
     if cmd == "write":
@@ -155,9 +225,11 @@ def main() -> int:
             print("Usage: audit_artifact.py show <task_id>")
             return 1
         return show_artifact(sys.argv[2])
+    if cmd == "list":
+        return audit_last(sys.argv[2] if len(sys.argv) >= 3 else "10")
     if cmd == "report":
         return trust_report()
-    print("Usage: audit_artifact.py {write|show|report} [task_id]")
+    print("Usage: audit_artifact.py {write|show|list|report} [task_id|limit]")
     return 1
 
 

@@ -558,6 +558,100 @@ def test_ralph_trust_report_aggregates_audit_artifacts(tmp_path: Path) -> None:
     assert "Total tasks: 2" in result.stdout
     assert "Verified success: 1" in result.stdout
     assert "Runtime success only: 1" in result.stdout
+    assert "Invalid artifacts: 0" in result.stdout
+
+
+def test_ralph_audit_last_lists_recent_tasks(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    audit_dir = project_dir / ".ralph" / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    for idx, ts in enumerate(["2026-03-17T00:00:00Z", "2026-03-17T00:01:00Z", "2026-03-17T00:02:00Z"], start=1):
+        (audit_dir / f"T0{idx}.json").write_text(
+            json.dumps(
+                {
+                    "task_id": f"T0{idx}",
+                    "title": f"Task {idx}",
+                    "status": "done" if idx != 2 else "blocked",
+                    "verification": {"result": "pass" if idx != 2 else "fail_fix", "reason": f"reason {idx}", "task_class": "implementation", "evidence_files": []},
+                    "changes": {"all": ["src/file.ts"], "non_bookkeeping": ["src/file.ts"]},
+                    "review": {"raw": "{}", "parsed": {"decision": "approve"}},
+                    "attempts": idx,
+                    "duration_sec": 5 + idx,
+                    "timestamp": ts,
+                    "runtime_success": True,
+                    "verified_success": idx != 2,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    result = subprocess.run(
+        [str(RALPH_SH), "audit-last", "2"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "=== Last 2 audit tasks ===" in result.stdout
+    assert "T03 | done | pass | runtime=True | verified=True | reason 3" in result.stdout
+    assert "T02 | blocked | fail_fix | runtime=True | verified=False | reason 2" in result.stdout
+    assert "T01" not in result.stdout
+
+
+def test_ralph_reporting_survives_malformed_audit_artifact(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    audit_dir = project_dir / ".ralph" / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    (audit_dir / "T01.json").write_text(
+        json.dumps(
+            {
+                "task_id": "T01",
+                "title": "Task 1",
+                "status": "done",
+                "verification": {"result": "pass", "reason": "", "task_class": "implementation", "evidence_files": ["src/a.ts"]},
+                "changes": {"all": ["src/a.ts"], "non_bookkeeping": ["src/a.ts"]},
+                "review": {"raw": "{}", "parsed": {"decision": "approve"}},
+                "attempts": 1,
+                "duration_sec": 5,
+                "timestamp": "2026-03-17T00:00:00Z",
+                "runtime_success": True,
+                "verified_success": True,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (audit_dir / "BROKEN.json").write_text("{not-json", encoding="utf-8")
+
+    list_result = subprocess.run(
+        [str(RALPH_SH), "audit-last", "5"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    report_result = subprocess.run(
+        [str(RALPH_SH), "trust-report"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert list_result.returncode == 0, list_result.stdout + list_result.stderr
+    assert "BROKEN | invalid | invalid | runtime=False | verified=False | Malformed audit artifact:" in list_result.stdout
+    assert "Invalid artifacts skipped into report output: 1" in list_result.stdout
+
+    assert report_result.returncode == 0, report_result.stdout + report_result.stderr
+    assert "Total tasks: 2" in report_result.stdout
+    assert "Verified success: 1" in report_result.stdout
+    assert "Invalid artifacts: 1" in report_result.stdout
 
 
 def test_ralph_marks_task_skipped_on_skip_control(tmp_path: Path) -> None:

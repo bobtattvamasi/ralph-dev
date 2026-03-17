@@ -76,6 +76,8 @@ HOT_RELOAD_EXPORTS = [
     "cmd_progress",
     "cmd_tail",
     "cmd_audit",
+    "cmd_audit_last",
+    "cmd_trust_report",
     "cmd_help",
     "cmd_reload",
     "handle_update",
@@ -302,6 +304,30 @@ def get_audit_summary(task_id: str) -> str:
     )
     output = (result.stdout or result.stderr).strip()
     return output or f"Audit artifact not found for {task_id}"
+
+
+def get_audit_last_summary(limit: int = 10) -> str:
+    """Return a compact summary for the most recent audit artifacts."""
+    result = subprocess.run(
+        ["python3", str(RALPH_DIR / "scripts" / "audit_artifact.py"), "list", str(limit)],
+        cwd=str(PROJECT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout or result.stderr).strip()
+    return output or "No audit artifacts found."
+
+
+def get_trust_report_summary() -> str:
+    """Return aggregate trust report across audit artifacts."""
+    result = subprocess.run(
+        ["python3", str(RALPH_DIR / "scripts" / "audit_artifact.py"), "report"],
+        cwd=str(PROJECT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout or result.stderr).strip()
+    return output or "No trust report available."
 
 
 def get_task_summary(tasks_path: Path) -> dict:
@@ -1162,6 +1188,33 @@ async def cmd_audit(task_id: str) -> None:
     await send_split_message(summary)
 
 
+async def cmd_audit_last(limit_text: str) -> None:
+    """Show compact summary for the most recent audit artifacts."""
+    raw = limit_text.strip() if limit_text else ""
+    try:
+        limit = int(raw) if raw else 10
+    except ValueError:
+        limit = 10
+    if limit <= 0:
+        limit = 10
+    try:
+        summary = get_audit_last_summary(limit)
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Audit-last error: {exc}")
+        return
+    await send_split_message(summary)
+
+
+async def cmd_trust_report() -> None:
+    """Show aggregate trust report from audit artifacts."""
+    try:
+        summary = get_trust_report_summary()
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Trust report error: {exc}")
+        return
+    await send_split_message(summary)
+
+
 async def cmd_reload() -> None:
     """Hot-reload bot helpers and command handlers from source."""
     try:
@@ -1198,6 +1251,8 @@ async def cmd_help() -> None:
         "/progress — phase progress bars\n"
         "/tail [N] — last N lines of live codex output\n"
         "/audit <task_id> — latest trust audit summary\n"
+        "/audit_last [N] — latest audit summaries\n"
+        "/trust_report — trust summary across audit artifacts\n"
         "/cost — token usage & cost estimate\n"
         "/stats — aggregated task metrics from metrics.csv\n"
         "/limits — today's spend vs cost limit\n"
@@ -1278,6 +1333,10 @@ async def handle_update(update: dict) -> None:
         await cmd_tail(n)
     elif cmd == "/audit":
         await cmd_audit(args)
+    elif cmd == "/audit_last":
+        await cmd_audit_last(args)
+    elif cmd == "/trust_report":
+        await cmd_trust_report()
     elif cmd == "/cost":
         await cmd_cost()
     elif cmd == "/stats":
