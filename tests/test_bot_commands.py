@@ -193,6 +193,28 @@ async def test_handle_update_routes_timeout(bot_env: dict[str, object]) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cmd_audit_returns_summary(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    split_send = AsyncMock()
+    monkeypatch.setattr(bot, "send_split_message", split_send)
+    monkeypatch.setattr(bot, "get_audit_summary", lambda task_id: f"Audit: {task_id} — done")
+
+    await bot.cmd_audit("T01")
+
+    split_send.assert_awaited_once_with("Audit: T01 — done")
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_audit(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    split_send = AsyncMock()
+    monkeypatch.setattr(bot, "send_split_message", split_send)
+    monkeypatch.setattr(bot, "get_audit_summary", lambda task_id: f"Audit: {task_id} — done")
+
+    await bot.handle_update({"message": {"text": "/audit T01"}})
+
+    split_send.assert_awaited_once_with("Audit: T01 — done")
+
+
+@pytest.mark.asyncio
 async def test_watch_state_recovers_crashed_running_task(
     bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:

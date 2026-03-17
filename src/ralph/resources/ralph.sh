@@ -71,6 +71,7 @@ kill_process_group() {
 }
 
 CLEANUP_RUNNING=0
+OWNS_MAIN_PID=0
 cleanup() {
     # Prevent recursive cleanup (explicit call + trap).
     if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
@@ -88,7 +89,7 @@ cleanup() {
     if [ -f "$PROJECT_DIR/ralph_codex.pgid" ]; then
         codex_pgid=$(cat "$PROJECT_DIR/ralph_codex.pgid" 2>/dev/null || echo "")
     fi
-    if [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+    if [ "$OWNS_MAIN_PID" -eq 1 ] && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
         main_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
     fi
 
@@ -106,13 +107,15 @@ cleanup() {
 
     # 3) Kill main tree from pid-file if it points to another process.
     # If it is this shell, only children are killed to allow clean EXIT flow.
-    if [ -n "$main_pid" ] && [ "$main_pid" != "$$" ]; then
+    if [ "$OWNS_MAIN_PID" -eq 1 ] && [ -n "$main_pid" ] && [ "$main_pid" != "$$" ]; then
         kill_tree "$main_pid"
     fi
 
     rm -f "$PROJECT_DIR/ralph_codex.pid"
     rm -f "$PROJECT_DIR/ralph_codex.pgid"
-    rm -f "$PROJECT_DIR/ralph_main.pid"
+    if [ "$OWNS_MAIN_PID" -eq 1 ]; then
+        rm -f "$PROJECT_DIR/ralph_main.pid"
+    fi
 }
 handle_interrupt() {
     log "⛔ Interrupt signal received, stopping Ralph..."
@@ -140,17 +143,20 @@ LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
 METRICS_FILE="$LOG_DIR/metrics.csv"
-[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est" > "$METRICS_FILE"
+[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 # Prevent duplicate ralph instances
-if [ "$MODE" != "status" ] && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+if { [ "$MODE" = "task" ] || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
     _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
     if [ -n "$_existing_pid" ] && kill -0 "$_existing_pid" 2>/dev/null; then
         echo "⚠️  Ralph already running (PID $_existing_pid). Aborting duplicate launch."
         exit 1
     fi
 fi
-echo "$$" > "$PROJECT_DIR/ralph_main.pid"
+if [ "$MODE" = "task" ] || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
+    OWNS_MAIN_PID=1
+    echo "$$" > "$PROJECT_DIR/ralph_main.pid"
+fi
 
 log() {
     local msg="[ralph] $(date +%H:%M:%S) $*"
@@ -173,14 +179,127 @@ estimate_cost() {
     python3 -c "print(f'{(int(${1:-0}) * 3 / 1000000):.2f}')"
 }
 
+ensure_metrics_schema() {
+    python3 - "$METRICS_FILE" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(0)
+lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+if not lines:
+    raise SystemExit(0)
+old_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est"
+new_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success"
+if lines[0].strip() != old_header:
+    raise SystemExit(0)
+rewritten = [new_header]
+for line in lines[1:]:
+    if not line.strip():
+        continue
+    rewritten.append(f"{line},,")
+path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+PY
+}
+
 log_metrics() {
     local status="$1"
+    local runtime_success="${2:-false}"
+    local verified_success="${3:-false}"
     local end_time=$(date +%s)
     local duration=$((end_time - TASK_START))
     local files=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | wc -l | tr -d ' ')
     local cost=$(estimate_cost "$TASK_TOKENS")
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$QUALITY,$cost" >> "$METRICS_FILE"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$QUALITY,$cost,$runtime_success,$verified_success" >> "$METRICS_FILE"
 }
+
+write_task_audit_artifact() {
+    local audit_status="${1:-failed}"
+    local runtime_success="${2:-false}"
+    local verified_success="${3:-false}"
+    local audit_duration="${4:-0}"
+    local changed_files_json="${PRE_CLOSURE_CHANGED_FILES_JSON:-[]}"
+    local verification_json_payload="${VERIFICATION_JSON:-}"
+
+    if [ -z "$verification_json_payload" ]; then
+        verification_json_payload=$(python3 - <<'PY'
+import json
+import os
+
+reason = os.environ.get("RALPH_AUDIT_REASON", "").strip()
+print(json.dumps({
+    "result": "needs_human_review" if reason else "pass",
+    "reason": reason or "Verification data unavailable",
+    "task_class": "unknown",
+    "changed_files_non_bookkeeping": [],
+}))
+PY
+)
+    fi
+
+    local audit_payload
+    audit_payload=$(RALPH_AUDIT_TASK_JSON="$TASK_JSON" \
+        RALPH_AUDIT_TITLE="$TASK_TITLE" \
+        RALPH_AUDIT_STATUS="$audit_status" \
+        RALPH_AUDIT_VERIFICATION_JSON="$verification_json_payload" \
+        RALPH_AUDIT_CHANGED_FILES_JSON="$changed_files_json" \
+        RALPH_AUDIT_REVIEW_JSON="${REVIEW_JSON:-{}}" \
+        RALPH_AUDIT_REVIEW_RAW="$REVIEW" \
+        RALPH_AUDIT_ATTEMPTS="$CURRENT_ATTEMPT" \
+        RALPH_AUDIT_DURATION="$audit_duration" \
+        RALPH_AUDIT_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        RALPH_AUDIT_RUNTIME_SUCCESS="$runtime_success" \
+        RALPH_AUDIT_VERIFIED_SUCCESS="$verified_success" \
+        python3 - <<'PY'
+import json
+import os
+
+def safe_json_load(raw: str, default):
+    try:
+        return json.loads(raw or json.dumps(default))
+    except Exception:
+        return default
+
+task = safe_json_load(os.environ.get("RALPH_AUDIT_TASK_JSON", "{}"), {})
+verification = safe_json_load(os.environ.get("RALPH_AUDIT_VERIFICATION_JSON", "{}"), {})
+changes = safe_json_load(os.environ.get("RALPH_AUDIT_CHANGED_FILES_JSON", "[]"), [])
+parsed_review = safe_json_load(os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}"), {})
+
+payload = {
+    "task_id": task.get("id", ""),
+    "title": os.environ.get("RALPH_AUDIT_TITLE", ""),
+    "status": os.environ.get("RALPH_AUDIT_STATUS", "failed"),
+    "verification": {
+        "result": verification.get("result", "needs_human_review"),
+        "reason": verification.get("reason", ""),
+        "task_class": verification.get("task_class", "unknown"),
+        "evidence_files": verification.get("changed_files_non_bookkeeping", []),
+    },
+    "changes": {
+        "all": changes,
+        "non_bookkeeping": verification.get("changed_files_non_bookkeeping", []),
+    },
+    "review": {
+        "raw": os.environ.get("RALPH_AUDIT_REVIEW_RAW", ""),
+        "parsed": parsed_review,
+    },
+    "attempts": int(os.environ.get("RALPH_AUDIT_ATTEMPTS", "0") or 0),
+    "duration_sec": int(os.environ.get("RALPH_AUDIT_DURATION", "0") or 0),
+    "timestamp": os.environ.get("RALPH_AUDIT_TIMESTAMP", ""),
+    "runtime_success": os.environ.get("RALPH_AUDIT_RUNTIME_SUCCESS", "false").lower() == "true",
+    "verified_success": os.environ.get("RALPH_AUDIT_VERIFIED_SUCCESS", "false").lower() == "true",
+}
+print(json.dumps(payload, ensure_ascii=False))
+PY
+)
+
+    if ! printf '%s' "$audit_payload" | python3 "$RALPH_DIR/scripts/audit_artifact.py" write >/dev/null 2>&1; then
+        log "⚠️ Failed to persist audit artifact for $TASK_ID"
+    fi
+}
+
+ensure_metrics_schema
 
 # State management
 write_state() {
@@ -1447,6 +1566,20 @@ if pending:
     exit 0
 fi
 
+if [ "$MODE" = "audit" ]; then
+    if [ -z "$TARGET" ]; then
+        echo "Usage: ralph.sh audit <task_id>"
+        exit 1
+    fi
+    python3 "$RALPH_DIR/scripts/audit_artifact.py" show "$TARGET"
+    exit $?
+fi
+
+if [ "$MODE" = "trust-report" ]; then
+    python3 "$RALPH_DIR/scripts/audit_artifact.py" report
+    exit $?
+fi
+
 # ─── Redo ───
 if [ "$MODE" = "redo" ]; then
     if [ -z "$TARGET" ]; then
@@ -1489,7 +1622,7 @@ case "$MODE" in
         NEXT_ARGS=""
         ;;
     *)
-        echo "Usage: ralph.sh {task|phase|auto|redo|status} [target]"
+        echo "Usage: ralph.sh {task|phase|auto|redo|status|audit|trust-report} [target]"
         exit 1
         ;;
 esac
@@ -1591,6 +1724,7 @@ print(task.get('role', 'coder'))
     TASK_SKIPPED=false
     TASK_BLOCKED=false
     TASK_ALERTED=false
+    AUDIT_WRITTEN=false
     FIX_INSTRUCTIONS=""
     TASK_TOKENS=0
 
@@ -1772,8 +1906,12 @@ Expected response structure:
             TASK_SKIPPED=true
             break
         elif [ $ASSET_STATUS -ne 0 ]; then
-            log_metrics "failed"
-            defer_blocked_task "Invalid assets_manifest.json"
+            TASK_DURATION=$(( $(date +%s) - TASK_START ))
+            REASON="Invalid assets_manifest.json"
+            log_metrics "failed" "false" "false"
+            RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+            AUDIT_WRITTEN=true
+            defer_blocked_task "$REASON"
             break
         fi
 
@@ -1933,8 +2071,11 @@ print('?')
                     log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: $FIX_INSTRUCTIONS"
                 elif [ "${VERIFICATION_RESULT:-needs_human_review}" = "needs_human_review" ]; then
                     REASON="$VERIFICATION_REASON"
-                    log_metrics "failed"
-                    log "📋 TASK_FAIL task_id=$TASK_ID status=verification reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                    log_metrics "failed" "true" "false"
+                    log "📋 TASK_FAIL task_id=$TASK_ID status=verification runtime_success=true verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "true" "false" "$TASK_DURATION"
+                    AUDIT_WRITTEN=true
                     if [ "${TASK_RISK:-medium}" = "high" ]; then
                         alert_human "$REASON"
                         TASK_ALERTED=true
@@ -1980,11 +2121,13 @@ except Exception:
                     fi
                     git add -A
                     git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
-                    log_metrics "success"
+                    log_metrics "success" "true" "true"
                     log "✅ $TASK_ID done"
                     TASK_DURATION=$(( $(date +%s) - TASK_START ))
                     TOTAL="$TASK_DURATION"
-                    log "📋 TASK_DONE task_id=$TASK_ID status=approved quality=$QUALITY duration=${TOTAL}s attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    write_task_audit_artifact "done" "true" "true" "$TASK_DURATION"
+                    AUDIT_WRITTEN=true
+                    log "📋 TASK_DONE task_id=$TASK_ID status=approved runtime_success=true verified_success=true quality=$QUALITY duration=${TOTAL}s attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
                     log "╔═══════════════════════════════════════════╗"
                     log "║ ✅ TASK COMPLETE                          ║"
                     log "║ Task:     ${TASK_ID}                       ║"
@@ -2044,8 +2187,11 @@ except Exception:
     print('Unknown issue')
 " 2>/dev/null || echo "Unknown")
 
-                log_metrics "failed"
-                log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                log_metrics "failed" "true" "false"
+                log "📋 TASK_FAIL task_id=$TASK_ID status=alert runtime_success=true verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "true" "false" "$TASK_DURATION"
+                AUDIT_WRITTEN=true
                 if [ "${TASK_RISK:-medium}" = "high" ]; then
                     alert_human "$REASON"
                     TASK_ALERTED=true
@@ -2077,6 +2223,11 @@ except Exception:
     fi
 
     if [ "$TASK_BLOCKED" = true ]; then
+        if [ "$AUDIT_WRITTEN" = false ]; then
+            TASK_DURATION=$(( $(date +%s) - TASK_START ))
+            RALPH_AUDIT_REASON="${REASON:-Task blocked}" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+            AUDIT_WRITTEN=true
+        fi
         [ "$MODE" = "task" ] && break
         continue
     fi
@@ -2087,8 +2238,17 @@ except Exception:
 
     if [ "$TASK_DONE" = false ]; then
         REASON="$TASK_ID failed after $MAX_FIX_RETRIES retries"
-        log_metrics "failed"
-        log "📋 TASK_FAIL task_id=$TASK_ID status=alert reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        TASK_DURATION=$(( $(date +%s) - TASK_START ))
+        FINAL_RUNTIME_SUCCESS="false"
+        FINAL_AUDIT_STATUS="failed"
+        if [ -n "${VERIFICATION_JSON:-}" ] && [ "${VERIFICATION_JSON:-}" != "{}" ]; then
+            FINAL_RUNTIME_SUCCESS="true"
+            FINAL_AUDIT_STATUS="blocked"
+        fi
+        log_metrics "failed" "$FINAL_RUNTIME_SUCCESS" "false"
+        log "📋 TASK_FAIL task_id=$TASK_ID status=alert runtime_success=$FINAL_RUNTIME_SUCCESS verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "$FINAL_AUDIT_STATUS" "$FINAL_RUNTIME_SUCCESS" "false" "$TASK_DURATION"
+        AUDIT_WRITTEN=true
         if [ "${TASK_RISK:-medium}" = "high" ]; then
             alert_human "$REASON"
             break

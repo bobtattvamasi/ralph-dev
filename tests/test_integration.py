@@ -281,6 +281,10 @@ def load_state(project_dir: Path) -> dict:
     return json.loads((project_dir / "ralph_state.json").read_text(encoding="utf-8"))
 
 
+def load_audit(project_dir: Path, task_id: str = "T01") -> dict:
+    return json.loads((project_dir / ".ralph" / "audit" / f"{task_id}.json").read_text(encoding="utf-8"))
+
+
 def process_is_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -316,6 +320,11 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert "keyword matching prompt builder" in prompt
     assert "... [truncated" in prompt
     assert len(prompt) <= 2200 + 32
+    audit = load_audit(project_dir)
+    assert audit["status"] == "done"
+    assert audit["verification"]["result"] == "pass"
+    assert audit["runtime_success"] is True
+    assert audit["verified_success"] is True
 
 
 def test_ralph_blocks_duplicate_launch_with_pid_guard(tmp_path: Path) -> None:
@@ -431,6 +440,11 @@ def test_ralph_blocks_bookkeeping_only_closure(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert load_task_status(project_dir) == "blocked"
     assert "Verification failed: only bookkeeping/state/report files changed" in result.stdout
+    audit = load_audit(project_dir)
+    assert audit["status"] == "blocked"
+    assert audit["verification"]["result"] == "fail_fix"
+    assert audit["runtime_success"] is True
+    assert audit["verified_success"] is False
 
 
 def test_ralph_allows_docs_only_task_with_docs_evidence(tmp_path: Path) -> None:
@@ -457,6 +471,93 @@ def test_ralph_allows_docs_only_task_with_docs_evidence(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert load_task_status(project_dir) == "done"
     assert "🧪 Verification: pass (docs-only)" in result.stdout
+
+
+def test_ralph_audit_cli_prints_expected_fields(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+
+    run_result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    assert run_result.returncode == 0, run_result.stdout + run_result.stderr
+
+    audit_result = subprocess.run(
+        [str(RALPH_SH), "audit", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert audit_result.returncode == 0, audit_result.stdout + audit_result.stderr
+    assert "Audit: T01 — done" in audit_result.stdout
+    assert "Verification: pass" in audit_result.stdout
+    assert "Evidence files:" in audit_result.stdout
+    assert "Duration:" in audit_result.stdout
+
+
+def test_ralph_trust_report_aggregates_audit_artifacts(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    audit_dir = project_dir / ".ralph" / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    (audit_dir / "T01.json").write_text(
+        json.dumps(
+            {
+                "task_id": "T01",
+                "title": "Task 1",
+                "status": "done",
+                "verification": {"result": "pass", "reason": "", "task_class": "implementation", "evidence_files": ["src/a.ts"]},
+                "changes": {"all": ["src/a.ts"], "non_bookkeeping": ["src/a.ts"]},
+                "review": {"raw": "{}", "parsed": {"decision": "approve"}},
+                "attempts": 1,
+                "duration_sec": 5,
+                "timestamp": "2026-03-17T00:00:00Z",
+                "runtime_success": True,
+                "verified_success": True,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (audit_dir / "T02.json").write_text(
+        json.dumps(
+            {
+                "task_id": "T02",
+                "title": "Task 2",
+                "status": "blocked",
+                "verification": {"result": "fail_fix", "reason": "missing file", "task_class": "script", "evidence_files": []},
+                "changes": {"all": ["progress.md"], "non_bookkeeping": []},
+                "review": {"raw": "{}", "parsed": {"decision": "approve"}},
+                "attempts": 2,
+                "duration_sec": 9,
+                "timestamp": "2026-03-17T00:01:00Z",
+                "runtime_success": True,
+                "verified_success": False,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [str(RALPH_SH), "trust-report"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Total tasks: 2" in result.stdout
+    assert "Verified success: 1" in result.stdout
+    assert "Runtime success only: 1" in result.stdout
 
 
 def test_ralph_marks_task_skipped_on_skip_control(tmp_path: Path) -> None:

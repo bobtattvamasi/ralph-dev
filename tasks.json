@@ -1942,9 +1942,9 @@
       "dependencies": [
         "R10-04"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "done",
+      "completed_at": "2026-03-17T00:00:00+07:00",
+      "revision_notes": "Iteration 3: runtime_success and verified_success are now logged separately in metrics and task execution reporting.",
       "timeout": 420,
       "role": "coder"
     },
@@ -1966,9 +1966,9 @@
       "dependencies": [
         "R10-06"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "done",
+      "completed_at": "2026-03-17T00:00:00+07:00",
+      "revision_notes": "Iteration 3: per-task audit artifacts are written to .ralph/audit/<TASK_ID>.json after verification.",
       "timeout": 420,
       "role": "coder"
     },

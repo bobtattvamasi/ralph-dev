@@ -31,6 +31,7 @@ CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
 TASKS_FILE = PROJECT_DIR / "tasks.json"
 PROGRESS_FILE = PROJECT_DIR / "progress.md"
 LOG_DIR = PROJECT_DIR / "logs"
+AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
 DAILY_COST_LIMIT_USD = 500.0
 BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
 RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
@@ -74,6 +75,7 @@ HOT_RELOAD_EXPORTS = [
     "cmd_article",
     "cmd_progress",
     "cmd_tail",
+    "cmd_audit",
     "cmd_help",
     "cmd_reload",
     "handle_update",
@@ -89,6 +91,7 @@ def configure_module_runtime(module: ModuleType) -> None:
     module.TASKS_FILE = PROJECT_DIR / "tasks.json"
     module.PROGRESS_FILE = PROJECT_DIR / "progress.md"
     module.LOG_DIR = PROJECT_DIR / "logs"
+    module.AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
     module.BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
     module.RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
     module.TOKEN = TOKEN
@@ -287,6 +290,18 @@ def load_tasks_data() -> dict:
 def save_tasks_data(data: dict) -> None:
     """Persist tasks.json with stable formatting."""
     TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def get_audit_summary(task_id: str) -> str:
+    """Return a human-readable audit summary for a task."""
+    result = subprocess.run(
+        ["python3", str(RALPH_DIR / "scripts" / "audit_artifact.py"), "show", task_id],
+        cwd=str(PROJECT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout or result.stderr).strip()
+    return output or f"Audit artifact not found for {task_id}"
 
 
 def get_task_summary(tasks_path: Path) -> dict:
@@ -1133,6 +1148,20 @@ async def cmd_tail(n: int = 20) -> None:
         await safe_send(f"Error reading {name}: {e}")
 
 
+async def cmd_audit(task_id: str) -> None:
+    """Show latest audit summary for a task."""
+    task_id = task_id.strip()
+    if not task_id:
+        await safe_send("Usage: /audit <task_id>")
+        return
+    try:
+        summary = get_audit_summary(task_id)
+    except Exception as exc:  # noqa: BLE001
+        await safe_send(f"❌ Audit error: {exc}")
+        return
+    await send_split_message(summary)
+
+
 async def cmd_reload() -> None:
     """Hot-reload bot helpers and command handlers from source."""
     try:
@@ -1168,6 +1197,7 @@ async def cmd_help() -> None:
         "/log [N] — last N lines from ralph execution log\n"
         "/progress — phase progress bars\n"
         "/tail [N] — last N lines of live codex output\n"
+        "/audit <task_id> — latest trust audit summary\n"
         "/cost — token usage & cost estimate\n"
         "/stats — aggregated task metrics from metrics.csv\n"
         "/limits — today's spend vs cost limit\n"
@@ -1246,6 +1276,8 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/tail":
         n = int(args) if args.isdigit() else 20
         await cmd_tail(n)
+    elif cmd == "/audit":
+        await cmd_audit(args)
     elif cmd == "/cost":
         await cmd_cost()
     elif cmd == "/stats":

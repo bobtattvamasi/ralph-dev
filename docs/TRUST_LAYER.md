@@ -26,6 +26,26 @@ For now, Ralph verifies:
 
 If verification fails, Ralph does not auto-close the task as `done`.
 
+## Audit & Inspectability Layer
+Ralph now exposes two distinct outcomes:
+- `runtime_success`: the agent loop finished a task run without crashing the execution path
+- `verified_success`: the task passed closure verification and was allowed to become `done`
+
+Each task run writes a compact audit artifact to `.ralph/audit/<TASK_ID>.json`.
+
+Current inspection paths:
+- `ralph.sh audit <TASK_ID>`
+- `ralph.sh trust-report`
+- Telegram: `/audit <TASK_ID>`
+
+The audit artifact shows:
+- final status
+- verification result and reason
+- task class
+- changed files
+- non-bookkeeping evidence
+- raw and parsed review
+
 ## Still Out Of Scope
 - audit bot commands
 - full status model rollout
