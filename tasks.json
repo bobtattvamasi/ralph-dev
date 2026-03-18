@@ -2001,7 +2001,7 @@
       "dependencies": [
         "R10-07"
       ],
-      "status": "blocked",
+      "status": "pending",
       "completed_at": null,
       "revision_notes": "R10-08 failed after 2 retries",
       "timeout": 420,
