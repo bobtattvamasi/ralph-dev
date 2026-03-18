@@ -55,8 +55,9 @@ def test_reaudit_dry_run_classifies_obvious_false_positive(tmp_path: Path) -> No
     result = run_reaudit(project_dir, "--task", "R8-01")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "R8-01 | done -> false_positive | script | Expected script is missing: scripts/fetch_channel.py" in result.stdout
     assert "=== Re-audit Summary ===" in result.stdout
+    assert result.stdout.index("=== Re-audit Summary ===") < result.stdout.index("Results:")
+    assert "R8-01 | done -> false_positive | script | Expected script is missing: scripts/fetch_channel.py" in result.stdout
     assert "Total checked: 1" in result.stdout
     assert "false_positive: 1" in result.stdout
     assert "applyable: 1" in result.stdout
@@ -152,10 +153,11 @@ def test_reaudit_apply_updates_tasks_for_strong_case(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Applied:" in result.stdout
-    assert "- R8-01: false_positive — Expected script is missing: scripts/fetch_channel.py" in result.stdout
+    assert "- R8-01 -> false_positive -> Expected script is missing: scripts/fetch_channel.py" in result.stdout
     assert "Skipped: none" in result.stdout
     assert data["tasks"][0]["status"] == "false_positive"
-    assert "Re-audit" in data["tasks"][0]["revision_notes"]
+    assert "false_positive" in data["tasks"][0]["revision_notes"]
+    assert "Expected script is missing: scripts/fetch_channel.py" in data["tasks"][0]["revision_notes"]
     assert data["tasks"][0]["completed_at"] is None
 
 
@@ -270,10 +272,12 @@ def test_reaudit_apply_skips_partial_and_needs_human_review(tmp_path: Path) -> N
     assert "needs_human_review: 1" in result.stdout
     assert "applyable: 0" in result.stdout
     assert "Applied: none" in result.stdout
-    assert "- R8-09: partial is report-only in apply mode" in result.stdout
-    assert "- R5-99: needs_human_review is report-only in apply mode" in result.stdout
+    assert "- R8-09 -> partial -> report-only in apply mode" in result.stdout
+    assert "- R5-99 -> needs_human_review -> report-only in apply mode" in result.stdout
     assert data["tasks"][0]["status"] == "done"
     assert data["tasks"][1]["status"] == "done"
+    assert data["tasks"][0]["revision_notes"] == ""
+    assert data["tasks"][1]["revision_notes"] == ""
 
 
 def test_next_task_still_only_picks_pending() -> None:

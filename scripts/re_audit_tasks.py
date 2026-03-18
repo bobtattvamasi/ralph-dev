@@ -260,9 +260,9 @@ def summarize_verdicts(results: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
-def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
-    applied: list[str] = []
-    skipped: list[str] = []
+def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    applied: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
     by_id = {item["task_id"]: item for item in results}
     now = datetime.now(timezone.utc).isoformat()
     for task in data.get("tasks", []):
@@ -271,17 +271,27 @@ def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> tuple
             continue
         verdict = result["verdict"]
         if verdict not in SAFE_AUTO_APPLY_VERDICTS:
-            skipped.append(f"{task['id']}: {verdict} is report-only in apply mode")
+            skipped.append(
+                {
+                    "task_id": task["id"],
+                    "verdict": verdict,
+                    "reason": "report-only in apply mode",
+                }
+            )
             continue
         task["status"] = verdict
         if verdict == "verified_done":
             task["completed_at"] = task.get("completed_at") or now
         else:
             task["completed_at"] = None
-        task["revision_notes"] = (
-            f"Re-audit {now}: {verdict} — {result['reason']}"
+        task["revision_notes"] = f"Re-audit {now}: {verdict} — {result['reason']}"
+        applied.append(
+            {
+                "task_id": task["id"],
+                "verdict": verdict,
+                "reason": result["reason"],
+            }
         )
-        applied.append(f"{task['id']}: {task.get('status')} — {result['reason']}")
     return applied, skipped
 
 
@@ -304,12 +314,14 @@ def format_results(results: list[dict[str, Any]], apply: bool) -> str:
     if not results:
         lines.append("No tasks selected.")
         return "\n".join(lines)
+    lines.extend(format_summary_block(results))
+    lines.append("")
+    lines.append("Results:")
     for item in results:
         lines.append(
             f"{item['task_id']} | {item['current_status']} -> {item['verdict']} | "
             f"{item['task_class']} | {item['reason']}"
         )
-    lines.extend(format_summary_block(results))
     return "\n".join(lines)
 
 
@@ -333,13 +345,13 @@ def main() -> int:
         if applied:
             print("Applied:")
             for item in applied:
-                print(f"- {item}")
+                print(f"- {item['task_id']} -> {item['verdict']} -> {item['reason']}")
         else:
             print("Applied: none")
         if skipped:
             print("Skipped:")
             for item in skipped:
-                print(f"- {item}")
+                print(f"- {item['task_id']} -> {item['verdict']} -> {item['reason']}")
         else:
             print("Skipped: none")
     else:
