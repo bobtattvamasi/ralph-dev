@@ -8,31 +8,24 @@ import json
 import os
 from pathlib import Path
 
-from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
-from re_audit_tasks import classify_task
-
 
 COMPLETED_STATUSES = {"done", "verified_done"}
 
 
-def get_project_dir() -> Path:
+def resolve_project_dir(explicit: str | None = None) -> Path:
+    if explicit:
+        return Path(explicit).resolve()
+    cwd = Path.cwd()
+    if (cwd / "tasks.json").exists():
+        return cwd
     env = os.environ.get("RALPH_PROJECT_DIR")
     if env:
         return Path(env).resolve()
-    return Path.cwd()
+    return cwd
 
 
-PROJECT_DIR = get_project_dir()
-TASKS_FILE = PROJECT_DIR / "tasks.json"
-
-
-def load_tasks() -> dict:
-    return json.loads(TASKS_FILE.read_text(encoding="utf-8"))
-
-
-def find_task(task_id: str) -> dict | None:
-    data = load_tasks()
-    return next((task for task in data.get("tasks", []) if task.get("id") == task_id), None)
+def load_tasks(tasks_file: Path) -> dict:
+    return json.loads(tasks_file.read_text(encoding="utf-8"))
 
 
 def runnable_reason(task: dict, tasks: list[dict]) -> tuple[bool, str]:
@@ -70,10 +63,18 @@ def suggested_next_action(task: dict, is_runnable: bool, reason: str, re_audit: 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Explain task status and operator options")
+    parser.add_argument("--project-dir", default=None, help="Project directory")
     parser.add_argument("task_id", help="Task ID to explain")
     args = parser.parse_args()
 
-    data = load_tasks()
+    project_dir = resolve_project_dir(args.project_dir)
+    os.environ["RALPH_PROJECT_DIR"] = str(project_dir)
+
+    from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
+    from re_audit_tasks import classify_task
+
+    tasks_file = project_dir / "tasks.json"
+    data = load_tasks(tasks_file)
     tasks = data.get("tasks", [])
     task = next((item for item in tasks if item.get("id") == args.task_id), None)
     if task is None:

@@ -6,10 +6,21 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+
+def resolve_project_dir(explicit: str | None = None) -> Path:
+    if explicit:
+        return Path(explicit).resolve()
+    cwd = Path.cwd()
+    if (cwd / "tasks.json").exists():
+        return cwd
+    env = os.environ.get("RALPH_PROJECT_DIR")
+    if env:
+        return Path(env).resolve()
+    return cwd
 
 
 def configure_bot(project_dir: Path):
@@ -115,7 +126,7 @@ def main() -> int:
     parser.add_argument("--project-dir", default=None, help="Project directory")
     args = parser.parse_args()
 
-    project_dir = Path(args.project_dir).resolve() if args.project_dir else Path.cwd()
+    project_dir = resolve_project_dir(args.project_dir)
     if not (project_dir / "tasks.json").exists():
         print(f"fail: no tasks.json in {project_dir}")
         return 1

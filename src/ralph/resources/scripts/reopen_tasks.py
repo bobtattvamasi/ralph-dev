@@ -10,19 +10,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def get_project_dir() -> Path:
+def resolve_project_dir(explicit: str | None = None) -> Path:
+    if explicit:
+        return Path(explicit).resolve()
+    cwd = Path.cwd()
+    if (cwd / "tasks.json").exists():
+        return cwd
     env = os.environ.get("RALPH_PROJECT_DIR")
     if env:
         return Path(env).resolve()
-    return Path.cwd()
-
-
-PROJECT_DIR = get_project_dir()
-TASKS_FILE = PROJECT_DIR / "tasks.json"
+    return cwd
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely reopen one task")
+    parser.add_argument("--project-dir", default=None, help="Project directory")
     parser.add_argument("--task", required=True, help="Task ID")
     parser.add_argument(
         "--to-status",
@@ -33,7 +35,10 @@ def main() -> int:
     parser.add_argument("--note", default="", help="Operator note")
     args = parser.parse_args()
 
-    data = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+    project_dir = resolve_project_dir(args.project_dir)
+    tasks_file = project_dir / "tasks.json"
+
+    data = json.loads(tasks_file.read_text(encoding="utf-8"))
     task = next((item for item in data.get("tasks", []) if item.get("id") == args.task), None)
     if task is None:
         print(f"Task not found: {args.task}")
@@ -49,7 +54,7 @@ def main() -> int:
     previous = str(task.get("revision_notes", "")).strip()
     task["revision_notes"] = f"{previous}\n{entry}".strip() if previous else entry
 
-    TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tasks_file.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"Updated {args.task}: {old_status} -> {args.to_status}")
     return 0
 

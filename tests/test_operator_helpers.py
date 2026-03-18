@@ -165,6 +165,71 @@ def test_reopen_tasks_updates_status_and_notes(tmp_path: Path) -> None:
     assert "Manual review requested" in task["revision_notes"]
 
 
+def test_reopen_tasks_prefers_cwd_over_polluted_ralph_project_dir(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+    polluted_root = tmp_path / "polluted"
+    polluted_root.mkdir()
+    (polluted_root / "tasks.json").write_text(
+        json.dumps({"version": 1, "project": "polluted", "tasks": []}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    env = os.environ.copy()
+    env["RALPH_PROJECT_DIR"] = str(polluted_root)
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REOPEN_TASKS),
+            "--task",
+            "T03",
+            "--to-status",
+            "pending",
+            "--note",
+            "Manual review requested",
+        ],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "Updated T03: verified_done -> pending" in result.stdout
+    data = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))
+    task = next(item for item in data["tasks"] if item["id"] == "T03")
+    assert task["status"] == "pending"
+
+
+def test_explain_task_prefers_cwd_over_polluted_ralph_project_dir(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+    polluted_root = tmp_path / "polluted"
+    polluted_root.mkdir()
+    (polluted_root / "tasks.json").write_text(
+        json.dumps(
+            {"version": 1, "project": "polluted", "tasks": [{"id": "T01", "title": "Wrong task", "status": "done"}]},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    env = os.environ.copy()
+    env["RALPH_PROJECT_DIR"] = str(polluted_root)
+
+    result = subprocess.run(
+        ["python3", str(EXPLAIN_TASK), "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "Task: T01 — Runnable task" in result.stdout
+    assert "Status: pending" in result.stdout
+
+
 def test_bot_smoke_check_collects_help_output() -> None:
     fake_bot = SimpleNamespace()
 
@@ -227,3 +292,18 @@ def test_bot_smoke_check_reports_send_failure(monkeypatch: pytest.MonkeyPatch, t
 
     assert rc == 1
     assert "fail: command=/help parse_mode=HTML length=12 reason=Bad Request" in captured.out
+
+
+def test_bot_smoke_check_resolve_project_dir_prefers_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_dir = create_project(tmp_path)
+    polluted_root = tmp_path / "polluted"
+    polluted_root.mkdir()
+    (polluted_root / "tasks.json").write_text(
+        json.dumps({"version": 1, "project": "polluted", "tasks": []}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RALPH_PROJECT_DIR", str(polluted_root))
+    monkeypatch.chdir(project_dir)
+
+    assert smoke.resolve_project_dir() == project_dir
