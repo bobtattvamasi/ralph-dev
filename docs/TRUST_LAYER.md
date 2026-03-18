@@ -4,9 +4,11 @@
 Ralph must not mark a task as complete unless repository evidence supports that claim.
 
 ## Current Repair Scope
-R10 now covers two implemented steps:
-- Milestone 1: safe Tech Lead review boundary
-- Milestone 2: minimal evidence gate before task closure
+R10 currently covers:
+- safe Tech Lead review boundary
+- minimal evidence gate before task closure
+- audit artifacts and inspectable trust reporting
+- conservative re-audit for backlog truth restoration
 
 ## Closure Principle
 Runtime success is not the same as implementation success.
@@ -45,6 +47,9 @@ Current inspection paths:
 - `ralph.sh audit <TASK_ID>`
 - `ralph.sh audit-last [N]`
 - `ralph.sh trust-report`
+- `python3 scripts/explain_task.py <TASK_ID>`
+- `python3 scripts/re_audit_tasks.py --task <TASK_ID>`
+- `python3 scripts/reopen_tasks.py --task <TASK_ID> --to-status pending|needs_human_review|partial --note "..."`
 - Telegram: `/audit <TASK_ID>`
 - Telegram: `/audit_last [N]`
 - Telegram: `/trust_report`
@@ -71,8 +76,14 @@ This iteration introduces minimal richer statuses for re-audit outcomes:
 - `needs_human_review`
 - `false_positive`
 
+## Operator Workflow
+Recommended operator sequence:
+1. inspect a task with `explain_task.py`
+2. inspect trust evidence with `ralph.sh audit <TASK_ID>`
+3. dry-run `re_audit_tasks.py` before any status change
+4. use `reopen_tasks.py` only for controlled manual review or rerun preparation
+
 ## Still Out Of Scope
-- audit bot commands
 - full status model rollout
 - mass re-audit of historical tasks
 

@@ -31,6 +31,16 @@
 - `needs_human_review`:
   evidence is mixed; machine should not decide alone
 
+## Operator Actions
+- `verified_done`:
+  leave complete unless a new contradiction appears
+- `false_positive`:
+  keep non-runnable; reopen only with an explicit manual note if rerun is justified
+- `partial`:
+  inspect exact missing gap, then reopen manually if the remaining work is clear
+- `needs_human_review`:
+  do not auto-apply; inspect audit, explain-task output, and re-audit reasoning first
+
 ## Direction
 - inspectability is already in place
 - this iteration restores backlog truth conservatively

@@ -1589,7 +1589,7 @@ $human_comment"
     pre_hash=$(git rev-parse HEAD)
 
     set +e
-    run_codex "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "$CODEX_MODEL"
+    run_codex "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "${CODEX_MODEL:-}"
     codex_exit=$?
     set -e
 

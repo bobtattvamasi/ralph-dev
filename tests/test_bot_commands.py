@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -69,6 +71,7 @@ async def test_cmd_help_sends_command_list(bot_env: dict[str, object]) -> None:
     assert "/article [new]" in message
     assert "/timeout [seconds]" in message
     assert "/done [task_id]" in message
+    assert "/audit &lt;task_id&gt;" in message
 
 
 @pytest.mark.asyncio
@@ -245,6 +248,35 @@ async def test_handle_update_routes_trust_report(bot_env: dict[str, object], mon
     await bot.handle_update({"message": {"text": "/trust_report"}})
 
     split_send.assert_awaited_once_with("=== Trust Report ===")
+
+
+@pytest.mark.asyncio
+async def test_send_message_logs_diagnostics_on_http_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bot.API = "https://api.telegram.org/botTEST"
+    bot.CHAT_ID = "123"
+    bot.set_send_context("/help")
+
+    def failing_urlopen(_req, timeout=10):  # noqa: ARG001
+        raise HTTPError(
+            url=bot.API + "/sendMessage",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=BytesIO(b"{\"ok\":false,\"description\":\"Bad Request: can't parse entities\"}"),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", failing_urlopen)
+
+    await bot.send_message("broken <payload>")
+
+    captured = capsys.readouterr()
+    assert "command=/help" in captured.err
+    assert "parse_mode=HTML" in captured.err
+    assert "payload_length=" in captured.err
+    assert "payload_preview=broken <payload>" in captured.err
+    assert "can't parse entities" in captured.err
 
 
 @pytest.mark.asyncio

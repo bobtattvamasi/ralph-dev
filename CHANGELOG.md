@@ -1,3 +1,15 @@
+## [0.5.1] - 2026-03-18
+
+### Added
+- `scripts/explain_task.py` for operator-readable task truth inspection
+- `scripts/reopen_tasks.py` for controlled manual reopen/manual-review transitions
+- `scripts/bot_smoke_check.py` for live Telegram transport smoke checks
+
+### Changed
+- Improved Telegram send diagnostics with command name, parse mode, payload length, preview, and API error body
+- Escaped `/help` task placeholder text for HTML parse mode safety
+- Updated trust/audit/status docs to reflect current operator workflow
+
 ## [0.4.0] - 2026-03-02
 
 ### Fixed

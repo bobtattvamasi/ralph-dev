@@ -2001,8 +2001,8 @@
       "dependencies": [
         "R10-07"
       ],
-      "status": "pending",
-      "completed_at": null,
+      "status": "verified_done",
+      "completed_at": "2026-03-18T14:51:08.671060+00:00",
       "revision_notes": "R10-08 failed after 2 retries",
       "timeout": 420,
       "role": "coder"
@@ -2053,6 +2053,126 @@
       "completed_at": null,
       "revision_notes": "",
       "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R10-11",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Complete packaged trust path coverage",
+      "description": "Close the gap between root runtime and packaged runtime for trust-layer helpers so initialized or installed Ralph instances use the same verification and operator tooling.",
+      "acceptance_criteria": [
+        "Packaged resources include the trust helpers required by packaged ralph.sh, including verify_task_closure.py",
+        "Trust/operator helper copies used by packaged runtime are synchronized with root runtime files",
+        "Automated coverage exercises the packaged trust path instead of only the root repo path",
+        "Packaging regression test fails if a required packaged trust helper is missing"
+      ],
+      "dependencies": [
+        "R10-10"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 360,
+      "role": "coder"
+    },
+    {
+      "id": "R10-12",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "medium",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Align bot completion semantics with trust statuses",
+      "description": "Make operator-facing bot summaries treat verified_done consistently with done so /tasks and related views do not under-report completed work.",
+      "acceptance_criteria": [
+        "Bot task summary treats done and verified_done as completed states",
+        "Pending and blocked dependency hints remain intact in bot task listings",
+        "Regression tests cover bot summary output with verified_done tasks",
+        "No existing bot control command semantics regress while aligning completion counts"
+      ],
+      "dependencies": [
+        "R10-11"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R10-13",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "medium",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Document trust truth precedence",
+      "description": "Clarify in existing trust/operator docs which layer is authoritative when task status, audit artifact, and re-audit verdict disagree.",
+      "acceptance_criteria": [
+        "Existing docs explicitly define tasks.json as backlog truth",
+        "Existing docs explicitly define .ralph/audit/<TASK_ID>.json as latest run truth",
+        "Existing docs explicitly define re_audit_tasks.py as repo-truth reassessment rather than latest-run truth",
+        "Operator workflow explains what to inspect first when these truth layers disagree"
+      ],
+      "dependencies": [
+        "R10-12"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 240,
+      "role": "coder"
+    },
+    {
+      "id": "R10-14",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "medium",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Demote progress.md from authoritative truth",
+      "description": "Remove remaining ambiguity that progress.md is a source of completion truth while keeping it as lightweight narrative history.",
+      "acceptance_criteria": [
+        "Prompt and trust/operator docs no longer describe progress.md as authoritative task truth",
+        "Coder/lead/runtime wording treats progress.md as narrative context only if it is still referenced",
+        "No task acceptance or trust rule depends on progress.md updates for feature completion",
+        "The change does not require deleting progress.md or expanding product scope"
+      ],
+      "dependencies": [
+        "R10-13"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 240,
+      "role": "coder"
+    },
+    {
+      "id": "R10-15",
+      "phase": "R10",
+      "category": "trust",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Explain phase and auto deadlocks explicitly",
+      "description": "Make phase and auto execution paths tell the operator why no task can run when pending tasks remain blocked by status or dependencies.",
+      "acceptance_criteria": [
+        "Phase mode emits explicit blocked or non-runnable reasoning instead of only generic queue exhaustion when pending tasks remain",
+        "Auto mode emits explicit blocked or non-runnable reasoning instead of only generic queue exhaustion when pending tasks remain",
+        "Output identifies the blocked task ids or unmet dependencies that prevent execution",
+        "Regression tests cover phase and auto deadlock explainability without changing targeted task mode semantics"
+      ],
+      "dependencies": [
+        "R10-14"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 360,
       "role": "coder"
     }
   ]

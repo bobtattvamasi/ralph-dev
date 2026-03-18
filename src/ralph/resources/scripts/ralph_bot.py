@@ -42,6 +42,8 @@ CHAT_ID = ""
 API = ""
 ralph_process = None
 caffeinate_process = None
+LAST_SEND_ERROR: dict[str, object] | None = None
+CURRENT_SEND_CONTEXT = ""
 RUNTIME = SimpleNamespace(
     ralph_process=None,
     caffeinate_process=None,
@@ -415,6 +417,50 @@ def prepare_html_message(text: str) -> str:
     return html.escape(text)
 
 
+def set_send_context(command_name: str) -> None:
+    """Record the active command for Telegram diagnostics."""
+    global CURRENT_SEND_CONTEXT
+    CURRENT_SEND_CONTEXT = command_name
+
+
+def _read_error_body(exc: Exception) -> str:
+    if not hasattr(exc, "read"):
+        return ""
+    try:
+        body = exc.read()
+    except Exception:  # noqa: BLE001
+        return ""
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    return str(body)
+
+
+def _log_send_error(exc: Exception, payload: dict[str, object]) -> None:
+    """Emit structured send diagnostics for Telegram 4xx/5xx cases."""
+    global LAST_SEND_ERROR
+    text = str(payload.get("text", ""))
+    preview = text[:300].replace("\n", "\\n")
+    body = _read_error_body(exc)
+    LAST_SEND_ERROR = {
+        "command_name": CURRENT_SEND_CONTEXT or "unknown",
+        "parse_mode": str(payload.get("parse_mode", "")),
+        "payload_length": len(text),
+        "payload_preview": preview,
+        "error": f"{exc.__class__.__name__}: {exc}",
+        "error_body": body,
+    }
+    print(
+        "[bot] Send error: "
+        f"command={LAST_SEND_ERROR['command_name']} "
+        f"parse_mode={LAST_SEND_ERROR['parse_mode']} "
+        f"payload_length={LAST_SEND_ERROR['payload_length']} "
+        f"payload_preview={LAST_SEND_ERROR['payload_preview']} "
+        f"error={LAST_SEND_ERROR['error']} "
+        f"error_body={body}",
+        file=sys.stderr,
+    )
+
+
 def parse_metric_number(row: dict, key: str) -> float:
     """Parse a numeric metrics field with safe fallback."""
     try:
@@ -461,6 +507,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
     """Send message via Telegram API."""
     import urllib.request
 
+    global LAST_SEND_ERROR
     if not text:
         return
 
@@ -484,6 +531,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
             payload["reply_markup"] = reply_markup
 
         try:
+            LAST_SEND_ERROR = None
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
                 f"{API}/sendMessage",
@@ -491,7 +539,8 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
                 headers={"Content-Type": "application/json"},
             )
             urllib.request.urlopen(req, timeout=10)
-        except Exception:
+        except Exception as exc1:  # noqa: BLE001
+            _log_send_error(exc1, payload)
             retry_payload: dict[str, object] = {
                 "chat_id": CHAT_ID,
                 "text": chunk,
@@ -508,7 +557,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
                 )
                 urllib.request.urlopen(req, timeout=10)
             except Exception as exc2:  # noqa: BLE001
-                print(f"[bot] Send error (retry failed): {exc2}", file=sys.stderr)
+                _log_send_error(exc2, retry_payload)
 
 
 async def safe_send(text: str, reply_markup: dict | None = None) -> None:
@@ -1177,6 +1226,7 @@ async def cmd_tail(n: int = 20) -> None:
 
 async def cmd_audit(task_id: str) -> None:
     """Show latest audit summary for a task."""
+    set_send_context("/audit")
     task_id = task_id.strip()
     if not task_id:
         await safe_send("Usage: /audit <task_id>")
@@ -1191,6 +1241,7 @@ async def cmd_audit(task_id: str) -> None:
 
 async def cmd_audit_last(limit_text: str) -> None:
     """Show compact summary for the most recent audit artifacts."""
+    set_send_context("/audit_last")
     raw = limit_text.strip() if limit_text else ""
     try:
         limit = int(raw) if raw else 10
@@ -1208,6 +1259,7 @@ async def cmd_audit_last(limit_text: str) -> None:
 
 async def cmd_trust_report() -> None:
     """Show aggregate trust report from audit artifacts."""
+    set_send_context("/trust_report")
     try:
         summary = get_trust_report_summary()
     except Exception as exc:  # noqa: BLE001
@@ -1218,6 +1270,7 @@ async def cmd_trust_report() -> None:
 
 async def cmd_reload() -> None:
     """Hot-reload bot helpers and command handlers from source."""
+    set_send_context("/reload")
     try:
         module = load_bot_module_from_source()
         apply_hot_reload(module)
@@ -1229,6 +1282,7 @@ async def cmd_reload() -> None:
 
 async def cmd_help() -> None:
     """Send help text."""
+    set_send_context("/help")
     await safe_send(
         "🤖 <b>Ralph Bot</b>\n\n"
         "/status — current state\n"
@@ -1251,7 +1305,7 @@ async def cmd_help() -> None:
         "/log [N] — last N lines from ralph execution log\n"
         "/progress — phase progress bars\n"
         "/tail [N] — last N lines of live codex output\n"
-        "/audit <task_id> — latest trust audit summary\n"
+        "/audit &lt;task_id&gt; — latest trust audit summary\n"
         "/audit_last [N] — latest audit summaries\n"
         "/trust_report — trust summary across audit artifacts\n"
         "/cost — token usage & cost estimate\n"
