@@ -26,6 +26,7 @@ PROJECT_DIR = Path(os.environ.get("RALPH_PROJECT_DIR", Path(__file__).resolve().
 TASKS_FILE = PROJECT_DIR / "tasks.json"
 AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
 BOT_FILE = PROJECT_DIR / "scripts" / "ralph_bot.py"
+REPORT_FILE = PROJECT_DIR / "audit_report.md"
 COMPLETE_STATUSES = {"done", "verified_done"}
 SAFE_AUTO_APPLY_VERDICTS = {"verified_done", "false_positive"}
 
@@ -325,6 +326,68 @@ def format_results(results: list[dict[str, Any]], apply: bool) -> str:
     return "\n".join(lines)
 
 
+def human_verdict(verdict: str) -> str:
+    mapping = {
+        "verified_done": "verified",
+        "false_positive": "false positive",
+        "partial": "partial",
+        "needs_human_review": "unclear",
+    }
+    return mapping.get(verdict, verdict)
+
+
+def scope_label(last: int | None, task_id: str | None) -> str:
+    if task_id:
+        return f"task {task_id}"
+    if last is not None:
+        return f"last {last} completed tasks"
+    return "all completed tasks"
+
+
+def format_human_readable_report(results: list[dict[str, Any]], apply: bool, scope: str) -> str:
+    summary = summarize_verdicts(results)
+    lines = [
+        "# Re-audit Report",
+        "",
+        f"- Generated: {datetime.now(timezone.utc).isoformat()}",
+        f"- Mode: {'apply' if apply else 'dry-run'}",
+        f"- Scope: {scope}",
+        "",
+        "## Summary",
+        f"- Total checked: {summary['total_checked']}",
+        f"- Verified: {summary['verified_done']}",
+        f"- False positive: {summary['false_positive']}",
+        f"- Partial: {summary['partial']}",
+        f"- Unclear: {summary['needs_human_review']}",
+        f"- Auto-applyable: {summary['applyable']}",
+        "",
+        "## Results",
+    ]
+    if not results:
+        lines.append("- No tasks selected.")
+        return "\n".join(lines) + "\n"
+
+    for item in results:
+        lines.extend(
+            [
+                f"### {item['task_id']}",
+                f"- Current status: {item['current_status']}",
+                f"- Classification: {human_verdict(item['verdict'])}",
+                f"- Task class: {item['task_class']}",
+                f"- Reason: {item['reason']}",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_human_readable_report(results: list[dict[str, Any]], apply: bool, last: int | None, task_id: str | None) -> None:
+    REPORT_FILE.write_text(
+        format_human_readable_report(results, apply=apply, scope=scope_label(last, task_id)),
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Conservative re-audit for completed tasks.")
     parser.add_argument("--last", type=int, default=None)
@@ -335,11 +398,13 @@ def main() -> int:
     data = load_tasks()
     selected = select_tasks(data, args.last, args.task)
     results = [classify_task(task) for task in selected]
+    write_human_readable_report(results, apply=args.apply, last=args.last, task_id=args.task)
 
     if args.apply:
         applied, skipped = apply_verdicts(data, results)
         TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(format_results(results, apply=True))
+        print(f"Human-readable report saved to {REPORT_FILE.name}")
         print("")
         print("=== Apply Actions ===")
         if applied:
@@ -356,6 +421,7 @@ def main() -> int:
             print("Skipped: none")
     else:
         print(format_results(results, apply=False))
+        print(f"Human-readable report saved to {REPORT_FILE.name}")
     return 0
 
 

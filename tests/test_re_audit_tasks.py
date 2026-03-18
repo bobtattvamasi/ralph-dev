@@ -61,6 +61,14 @@ def test_reaudit_dry_run_classifies_obvious_false_positive(tmp_path: Path) -> No
     assert "Total checked: 1" in result.stdout
     assert "false_positive: 1" in result.stdout
     assert "applyable: 1" in result.stdout
+    assert "Human-readable report saved to audit_report.md" in result.stdout
+
+    report = (project_dir / "audit_report.md").read_text(encoding="utf-8")
+    assert "# Re-audit Report" in report
+    assert "- Scope: task R8-01" in report
+    assert "### R8-01" in report
+    assert "- Classification: false positive" in report
+    assert "Expected script is missing: scripts/fetch_channel.py" in report
 
 
 def test_reaudit_command_alias_handler_counts_as_verified_done(tmp_path: Path) -> None:
@@ -181,6 +189,39 @@ def test_reaudit_ambiguous_case_becomes_needs_human_review(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "R5-99 | done -> needs_human_review | implementation | Generic implementation task needs human review: repo truth is not strong enough." in result.stdout
+    report = (project_dir / "audit_report.md").read_text(encoding="utf-8")
+    assert "- Classification: unclear" in report
+
+
+def test_reaudit_report_stays_task_scoped(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    write_tasks(
+        project_dir,
+        [
+            {
+                "id": "R8-01",
+                "phase": "R8",
+                "title": "Create fetch channel script",
+                "description": "Add scripts/fetch_channel.py for Telegram channel context.",
+                "status": "done",
+            },
+            {
+                "id": "R5-99",
+                "phase": "R5",
+                "title": "Improve generic orchestrator behavior",
+                "description": "Refine orchestration reliability.",
+                "status": "done",
+            },
+        ],
+    )
+
+    result = run_reaudit(project_dir, "--task", "R8-01")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = (project_dir / "audit_report.md").read_text(encoding="utf-8")
+    assert "### R8-01" in report
+    assert "### R5-99" not in report
 
 
 def test_reaudit_verified_case_becomes_verified_done(tmp_path: Path) -> None:
