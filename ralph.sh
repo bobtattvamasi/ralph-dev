@@ -308,6 +308,36 @@ is_completed_task_status() {
     esac
 }
 
+validate_requested_task() {
+    python3 - "$TARGET" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+task_id = sys.argv[1]
+data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
+tasks = data.get("tasks", [])
+completed_statuses = {"done", "verified_done"}
+
+task = next((item for item in tasks if item.get("id") == task_id), None)
+if task is None:
+    print(f"❌ Requested task not found: {task_id}")
+    raise SystemExit(1)
+
+status = str(task.get("status", ""))
+if status != "pending":
+    print(f"❌ Requested task {task_id} is not runnable: status={status}")
+    raise SystemExit(1)
+
+unmet = [dep for dep in task.get("dependencies", []) if next((t for t in tasks if t.get("id") == dep and t.get("status") in completed_statuses), None) is None]
+if unmet:
+    print(f"❌ Requested task {task_id} is not runnable: unmet dependencies: {', '.join(unmet)}")
+    raise SystemExit(1)
+
+print(f"🎯 Requested task {task_id} is runnable and will be executed directly")
+PY
+}
+
 # State management
 write_state() {
     local status="$1" task="${2:-}" step="${3:-}" message="${4:-}"
@@ -1630,6 +1660,7 @@ case "$MODE" in
     task)
         [ -z "$TARGET" ] && { echo "Usage: ralph.sh task <id>"; exit 1; }
         NEXT_ARGS="--task $TARGET"
+        validate_requested_task
         ;;
     phase)
         [ -z "$TARGET" ] && { echo "Usage: ralph.sh phase <num>"; exit 1; }

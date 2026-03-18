@@ -277,6 +277,14 @@ def load_task_status(project_dir: Path, task_id: str = "T01") -> str:
     raise AssertionError(f"Task {task_id} not found")
 
 
+def load_tasks(project_dir: Path) -> dict:
+    return json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))
+
+
+def write_tasks(project_dir: Path, data: dict) -> None:
+    (project_dir / "tasks.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def load_state(project_dir: Path) -> dict:
     return json.loads((project_dir / "ralph_state.json").read_text(encoding="utf-8"))
 
@@ -325,6 +333,177 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert audit["verification"]["result"] == "pass"
     assert audit["runtime_success"] is True
     assert audit["verified_success"] is True
+
+
+def test_ralph_task_mode_runs_requested_pending_task_exactly(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R1",
+            "title": "Higher priority task that should not run",
+            "description": "Must stay pending when T02 is explicitly requested",
+            "status": "pending",
+            "priority": "high",
+            "dependencies": [],
+            "timeout": 5,
+        },
+        {
+            "id": "T02",
+            "phase": "R1",
+            "title": "Explicitly requested task",
+            "description": "Should run in task mode",
+            "status": "pending",
+            "priority": "low",
+            "dependencies": [],
+            "timeout": 5,
+        },
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T02"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🎯 Requested task T02 is runnable and will be executed directly" in result.stdout
+    assert "📋 Task: T02 — Explicitly requested task" in result.stdout
+    assert load_task_status(project_dir, "T02") == "verified_done"
+    assert load_task_status(project_dir, "T01") == "pending"
+
+
+def test_ralph_task_mode_rejects_non_runnable_requested_task_explicitly(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R1",
+            "title": "Independent runnable task",
+            "description": "Would be next in auto mode",
+            "status": "pending",
+            "priority": "high",
+            "dependencies": [],
+            "timeout": 5,
+        },
+        {
+            "id": "T02",
+            "phase": "R1",
+            "title": "Blocked explicit task",
+            "description": "Should not fall back to T01",
+            "status": "pending",
+            "priority": "low",
+            "dependencies": ["T99"],
+            "timeout": 5,
+        },
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T02"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode != 0
+    assert "Requested task T02 is not runnable: unmet dependencies: T99" in result.stdout
+    assert "📋 Task:" not in result.stdout
+    assert load_task_status(project_dir, "T02") == "pending"
+    assert load_task_status(project_dir, "T01") == "pending"
+
+
+def test_ralph_phase_mode_only_runs_pending_task_from_requested_phase(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["phases"]["R2"] = {"name": "Phase 2", "description": "Phase selection test"}
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R1",
+            "title": "Phase R1 task",
+            "description": "Must stay pending when phase R2 is requested",
+            "status": "pending",
+            "priority": "high",
+            "dependencies": [],
+            "timeout": 5,
+        },
+        {
+            "id": "T02",
+            "phase": "R2",
+            "title": "Phase R2 task",
+            "description": "Should run in phase mode",
+            "status": "pending",
+            "priority": "low",
+            "dependencies": [],
+            "timeout": 5,
+        },
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "phase", "R2"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "📋 Task: T02 — Phase R2 task" in result.stdout
+    assert load_task_status(project_dir, "T02") == "verified_done"
+    assert load_task_status(project_dir, "T01") == "pending"
+
+
+def test_ralph_auto_mode_still_runs_next_runnable_pending_task(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R1",
+            "title": "Blocked high priority task",
+            "description": "Must not run because dependency is unmet",
+            "status": "pending",
+            "priority": "high",
+            "dependencies": ["T99"],
+            "timeout": 5,
+        },
+        {
+            "id": "T02",
+            "phase": "R1",
+            "title": "Runnable medium priority task",
+            "description": "Should run in auto mode",
+            "status": "pending",
+            "priority": "medium",
+            "dependencies": [],
+            "timeout": 5,
+        },
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "auto"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "📋 Task: T02 — Runnable medium priority task" in result.stdout
+    assert load_task_status(project_dir, "T02") == "verified_done"
+    assert load_task_status(project_dir, "T01") == "pending"
 
 
 def test_ralph_blocks_duplicate_launch_with_pid_guard(tmp_path: Path) -> None:

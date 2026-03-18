@@ -1398,7 +1398,7 @@
       "phase": "R6",
       "priority": "high",
       "complexity": "moderate",
-      "status": "done",
+      "status": "false_positive",
       "title": "Bot: /ask команда — быстрый вопрос Ralph",
       "description": "Команда /ask <вопрос> отправляет вопрос в codex с контекстом: ralph_state.json + последние 20 строк лога + список файлов проекта. Ответ в Telegram. Без сохранения истории. Timeout 60s.",
       "acceptance_criteria": [
@@ -1407,14 +1407,15 @@
         "Timeout 60s с graceful error",
         "make test passes"
       ],
-      "completed_at": "2026-03-16T07:05:30.701986+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /ask."
     },
     {
       "id": "R6-02",
       "phase": "R6",
       "priority": "medium",
       "complexity": "moderate",
-      "status": "done",
+      "status": "false_positive",
       "dependencies": [
         "R6-01"
       ],
@@ -1426,7 +1427,8 @@
         "chat_history.md не растёт бесконечно (max 10 turns)",
         "make test passes"
       ],
-      "completed_at": "2026-03-16T07:35:17.066314+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /chat, /chat_history."
     },
     {
       "id": "R6-03",
@@ -1452,7 +1454,7 @@
       "phase": "R7",
       "priority": "high",
       "complexity": "moderate",
-      "status": "done",
+      "status": "false_positive",
       "title": "scripts/ralph_reflect.py — анализ metrics.csv → proposals.json",
       "description": "Читает logs/metrics.csv за 7 дней. Находит паттерны: задачи с >1 retry, таймауты, fix loops, низкий quality_score. Генерирует proposals.json: [{id, problem, proposed_task_title, proposed_task_description, priority}]. Max 5 proposals.",
       "acceptance_criteria": [
@@ -1461,14 +1463,15 @@
         "Находит минимум 1 паттерн на тестовых данных из metrics.csv",
         "Graceful если metrics.csv пустой или отсутствует"
       ],
-      "completed_at": "2026-03-16T07:11:02.640275+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Expected script is missing: scripts/ralph_reflect.py"
     },
     {
       "id": "R7-02",
       "phase": "R7",
       "priority": "high",
       "complexity": "simple",
-      "status": "done",
+      "status": "false_positive",
       "dependencies": [
         "R7-01"
       ],
@@ -1480,14 +1483,15 @@
         "Инструкции по командам в сообщении",
         "Graceful если proposals.json отсутствует"
       ],
-      "completed_at": "2026-03-16T07:15:46.234063+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /reflect, /approve, /reject, /refine."
     },
     {
       "id": "R7-03",
       "phase": "R7",
       "priority": "high",
       "complexity": "moderate",
-      "status": "done",
+      "status": "false_positive",
       "dependencies": [
         "R7-02"
       ],
@@ -1499,7 +1503,8 @@
         "/refine ID текст запускает доработку и обновляет proposals.json",
         "make test passes"
       ],
-      "completed_at": "2026-03-16T07:20:30.829323+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /approve, /reject, /refine."
     },
     {
       "id": "R7-04",
@@ -1525,7 +1530,7 @@
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "done",
+      "status": "false_positive",
       "title": "scripts/fetch_channel.py — читает Telegram канал → channel_context.md",
       "description": "Скрипт принимает TELEGRAM_TOKEN и CHANNEL_ID (из env или аргументов). Читает последние 5 постов через Telegram Bot API (getUpdates или forwardMessage). Сохраняет текст в .ralph/channel_context.md с номерами постов. Graceful fallback если канал недоступен.",
       "acceptance_criteria": [
@@ -1534,14 +1539,15 @@
         "Извлекает номер build log из текста постов (build log #N)",
         "Graceful fallback с предупреждением если канал недоступен"
       ],
-      "completed_at": "2026-03-16T07:25:45.542157+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected script is missing: scripts/fetch_channel.py"
     },
     {
       "id": "R8-02",
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "done",
+      "status": "false_positive",
       "dependencies": [
         "R8-01"
       ],
@@ -1553,7 +1559,8 @@
         "bash -n ralph.sh проходит",
         "Без channel_context.md — только warning в лог"
       ],
-      "completed_at": "2026-03-16T07:30:43.870907+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected script is missing: scripts/fetch_channel.py"
     },
     {
       "id": "R8-03",
@@ -1578,7 +1585,7 @@
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "done",
+      "status": "pending",
       "dependencies": [
         "R8-02",
         "R8-03"
@@ -1591,14 +1598,14 @@
         "Инструкция читать Channel Context из промта",
         "Инструкция читать blog_state.json для номера"
       ],
-      "completed_at": "2026-03-16T11:27:01.020467+00:00"
+      "completed_at": null
     },
     {
       "id": "R8-05",
       "phase": "R8",
       "priority": "medium",
       "complexity": "simple",
-      "status": "done",
+      "status": "false_positive",
       "title": "templates/AGENTS_COORDINATOR.md — роль координатора для проектов",
       "description": "Создать templates/AGENTS_COORDINATOR.md. Роль: принимает идею проекта, задаёт 3-5 уточняющих вопросов, собирает brief. Output: structured brief в docs/PROJECT_BRIEF.md. Инструкции: задавай вопросы по одному, жди ответа, не придумывай детали.",
       "acceptance_criteria": [
@@ -1606,14 +1613,15 @@
         "Содержит инструкции про уточняющие вопросы",
         "Содержит формат output: PROJECT_BRIEF.md"
       ],
-      "completed_at": "2026-03-16T11:32:34.501498+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_COORDINATOR.md"
     },
     {
       "id": "R8-06",
       "phase": "R8",
       "priority": "medium",
       "complexity": "simple",
-      "status": "done",
+      "status": "false_positive",
       "title": "templates/AGENTS_ARCHITECT.md — роль архитектора для проектов",
       "description": "Создать templates/AGENTS_ARCHITECT.md. Роль: читает PROJECT_BRIEF.md, выбирает технический стек, проектирует структуру папок, ключевые решения. Output: docs/ARCHITECTURE.md с секциями: Stack, Structure, Key Decisions, Risks.",
       "acceptance_criteria": [
@@ -1621,14 +1629,15 @@
         "Содержит инструкции по выбору стека",
         "Содержит формат output: ARCHITECTURE.md"
       ],
-      "completed_at": "2026-03-16T11:37:55.697284+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_ARCHITECT.md"
     },
     {
       "id": "R8-07",
       "phase": "R8",
       "priority": "low",
       "complexity": "simple",
-      "status": "done",
+      "status": "false_positive",
       "title": "templates/AGENTS_GAMEDESIGNER.md — роль геймдизайнера",
       "description": "Создать templates/AGENTS_GAMEDESIGNER.md. Роль: пишет GDD (game design document). Секции: Core Loop, Mechanics, Retention, Monetization (если нужно), Art Style Notes. Output: docs/GDD.md.",
       "acceptance_criteria": [
@@ -1636,14 +1645,15 @@
         "Содержит структуру GDD",
         "Содержит инструкции по retention механикам"
       ],
-      "completed_at": "2026-03-16T12:25:07.146189+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_GAMEDESIGNER.md"
     },
     {
       "id": "R8-08",
       "phase": "R8",
       "priority": "low",
       "complexity": "simple",
-      "status": "done",
+      "status": "false_positive",
       "title": "templates/AGENTS_CREATIVE.md — роль креативного директора",
       "description": "Создать templates/AGENTS_CREATIVE.md. Роль: визуальный стиль, палитра, атмосфера проекта. Output: docs/VISUAL_BIBLE.md + файл assets/art_prompts.md с промтами для генерации арта (Midjourney/DALL-E формат).",
       "acceptance_criteria": [
@@ -1651,7 +1661,8 @@
         "Содержит инструкции по визуальному стилю",
         "Содержит формат art_prompts.md с конвенцией имён файлов"
       ],
-      "completed_at": "2026-03-16T12:30:25.353694+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_CREATIVE.md"
     },
     {
       "id": "R9-01",
@@ -1675,9 +1686,9 @@
         "ps aux | grep ralph.sh показывает только один процесс"
       ],
       "dependencies": [],
-      "status": "done",
+      "status": "verified_done",
       "completed_at": "2026-03-16T09:51:13.717203+00:00",
-      "revision_notes": "",
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: verified_done — Command routing, handler alias, help text, and test evidence exist.",
       "timeout": 600,
       "role": "coder"
     },
@@ -1740,9 +1751,9 @@
         "R7-02",
         "R7-03"
       ],
-      "status": "done",
-      "completed_at": "2026-03-16T11:43:44.857196+00:00",
-      "revision_notes": "",
+      "status": "false_positive",
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected test files or named tests are missing.",
       "timeout": 420,
       "role": "coder"
     },
@@ -1769,9 +1780,9 @@
       "dependencies": [
         "R8-01"
       ],
-      "status": "done",
-      "completed_at": "2026-03-16T11:54:22.507065+00:00",
-      "revision_notes": "",
+      "status": "false_positive",
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected script is missing: scripts/fetch_channel.py",
       "timeout": 300,
       "role": "coder"
     },
@@ -1822,9 +1833,9 @@
         "Parser regression tests cover placeholder/template rejection"
       ],
       "dependencies": [],
-      "status": "done",
+      "status": "verified_done",
       "completed_at": "2026-03-17T00:00:00+07:00",
-      "revision_notes": "Milestone 1: review contract hardened and documented.",
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: verified_done — Expected documentation exists and matches required content checks.",
       "timeout": 300,
       "role": "coder"
     },
