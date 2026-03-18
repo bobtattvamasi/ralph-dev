@@ -1,0 +1,24 @@
+{
+  "task_id": "R10-08",
+  "title": "Add CLI and Telegram audit commands",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "R10-08 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R10-08\",\"summary\":\"Задачу нельзя принять: по входным данным нет diff, task в tasks.json всё ещё pending, progress.md не обновлён, а в коде команда бота реализована как /audit, а не /audit_task.\",\"quality_score\":38,\"issues\":[\"Во входном diff указано `(no changes committed)`, поэтому по контракту ревью нет подтверждённой реализации для R10-08.\",\"В tasks.json задача R10-08 остаётся со status=`pending`, completed_at=null и без revision_notes, значит завершение не зафиксировано.\",\"В коде бота есть `/audit`, `/audit_last`, `/trust_report`, но acceptance criteria требует `/audit_task`; это несоответствие интерфейса.\",\"Переданный progress.md не содержит записи о выполнении R10-08, поэтому нет подтверждения интеграции в текущий прогресс проекта.\",\"Прогон тестов зелёный, но в представленном выводе нет явного доказательства тестов именно для новых CLI/Telegram audit-команд.\"],\"fix_instructions\":\"Подготовить и приложить реальный diff для R10-08. Привести Telegram API в точное соответствие acceptance criteria: добавить `/audit_task` или явный алиас с покрытием тестами и help-текстом. Обновить tasks.json для R10-08 после успешной проверки. Добавить/показать тесты, которые явно проверяют CLI audit recent/single task, `/audit_last`, `/audit_task`, `/trust_report`, evidence summary и graceful handling отсутствующих audit-данных. Обновить progress.md записью о выполнении задачи.\",\"alert_reason\":\"\",\"progress_note\":\"R10-08 пока не подтверждён к закрытию.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 1313,
+  "timestamp": "2026-03-18T07:14:59Z",
+  "runtime_success": false,
+  "verified_success": false
+}

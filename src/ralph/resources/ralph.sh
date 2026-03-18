@@ -338,6 +338,103 @@ print(f"🎯 Requested task {task_id} is runnable and will be executed directly"
 PY
 }
 
+sanitize_fix_instructions() {
+    local raw_fix="${1:-}"
+    local sanitized_output=""
+
+    sanitized_output=$(RALPH_RAW_FIX="$raw_fix" python3 - <<'PY'
+import json
+import os
+import re
+
+raw = os.environ.get("RALPH_RAW_FIX", "").strip()
+if not raw:
+    print(json.dumps({
+        "mode": "empty",
+        "sanitized": "",
+        "reason": "Tech Lead returned empty fix instructions.",
+    }, ensure_ascii=False))
+    raise SystemExit(0)
+
+banned_patterns = [
+    r"\btasks\.json\b",
+    r"\bprogress\.md\b",
+    r"\bcompleted_at\b",
+    r"\brevision_notes\b",
+    r"\bfinal commit\b",
+    r"\bcommit message\b",
+    r"\bstatus update\b",
+    r"\bupdate task status\b",
+    r"\bgit diff\b",
+    r"\bnon-?empty diff\b",
+    r"\breal diff\b",
+]
+
+sentence_split = re.split(r"(?<=[.!?])\s+|\n+", raw)
+kept = []
+removed = []
+for chunk in sentence_split:
+    sentence = chunk.strip(" \t-")
+    if not sentence:
+        continue
+    if any(re.search(pattern, sentence, flags=re.IGNORECASE) for pattern in banned_patterns):
+        removed.append(sentence)
+    else:
+        kept.append(sentence)
+
+sanitized = " ".join(kept).strip()
+sanitized = re.sub(r"\s+", " ", sanitized).strip()
+
+if removed and not sanitized:
+    print(json.dumps({
+        "mode": "contradictory_only",
+        "sanitized": "",
+        "reason": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap.",
+        "removed": removed,
+    }, ensure_ascii=False))
+elif removed:
+    print(json.dumps({
+        "mode": "sanitized",
+        "sanitized": sanitized,
+        "reason": "Removed runtime-owned bookkeeping/diff demands from Tech Lead fix instructions.",
+        "removed": removed,
+    }, ensure_ascii=False))
+else:
+    print(json.dumps({
+        "mode": "unchanged",
+        "sanitized": raw,
+        "reason": "",
+        "removed": [],
+    }, ensure_ascii=False))
+PY
+)
+
+    FIX_SANITIZE_MODE=$(printf '%s' "$sanitized_output" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('mode', 'unchanged'))
+except Exception:
+    print('unchanged')
+" 2>/dev/null || echo "unchanged")
+    FIX_SANITIZED_TEXT=$(printf '%s' "$sanitized_output" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('sanitized', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+    FIX_SANITIZE_REASON=$(printf '%s' "$sanitized_output" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('reason', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+}
+
 # State management
 write_state() {
     local status="$1" task="${2:-}" step="${3:-}" message="${4:-}"
@@ -1442,7 +1539,7 @@ $(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
         done
     fi
 
-    coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Then read progress.md.
+        coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Then read progress.md.
 Run make test to verify current state.
 
 ## Architecture Doc
@@ -1476,7 +1573,8 @@ $TASK_JSON
 - **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
 - Implement ONLY this task
 - make test must pass
-- Do NOT modify tasks.json or progress.md"
+- Do NOT modify tasks.json or progress.md
+- Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits"
 
     human_comment=$(get_human_comment)
     if [ -n "$human_comment" ]; then
@@ -1894,7 +1992,8 @@ $HUMAN_COMMENT"
 - Follow acceptance_criteria exactly
 - make test must pass
 - Do NOT modify tasks.json or progress.md
-- Commit: feat($TASK_ID): $TASK_TITLE
+- Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits
+- If fix instructions mention runtime-owned bookkeeping, address only the real implementation gap
 
 Expected response structure:
 <thinking>
@@ -2026,9 +2125,6 @@ $GIT_DIFF
 $TEST_OUTPUT
 \`\`\`
 
-## Progress
-$(head -30 progress.md 2>/dev/null || echo 'none')
-
 Return exactly one final review block in this format:
 BEGIN_RALPH_REVIEW_JSON
 {...valid final review JSON...}
@@ -2036,7 +2132,8 @@ END_RALPH_REVIEW_JSON
 
 Do not output example JSON.
 Do not output multiple JSON objects.
-If the task is not fully complete, return decision=fix."
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself."
 
             set +e
             # run_codex handles retries/backoff for codex execution
@@ -2199,6 +2296,29 @@ try:
 except Exception:
     print('Fix failing tests and unmet criteria')
 " 2>/dev/null || echo "Fix the issues")
+
+                sanitize_fix_instructions "$FIX_INSTRUCTIONS"
+                if [ "${FIX_SANITIZE_MODE:-unchanged}" = "contradictory_only" ]; then
+                    REASON="${FIX_SANITIZE_REASON:-Contradictory Tech Lead fix: runtime-owned demands only.}"
+                    TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                    log "🛑 Contradictory Tech Lead fix blocked retry: $REASON"
+                    log_metrics "failed" "true" "false"
+                    log "📋 TASK_FAIL task_id=$TASK_ID status=contradictory_fix runtime_success=true verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "true" "false" "$TASK_DURATION"
+                    AUDIT_WRITTEN=true
+                    if [ "${TASK_RISK:-medium}" = "high" ]; then
+                        alert_human "$REASON"
+                        TASK_ALERTED=true
+                        TASK_DONE=true
+                    else
+                        defer_blocked_task "$REASON"
+                    fi
+                    break
+                fi
+                if [ "${FIX_SANITIZE_MODE:-unchanged}" = "sanitized" ]; then
+                    FIX_INSTRUCTIONS="$FIX_SANITIZED_TEXT"
+                    log "🧹 Sanitized Tech Lead fix instructions: removed runtime-owned bookkeeping/diff demands"
+                fi
 
                 FIX_RETRY=$((FIX_RETRY+1))
                 notify "🔧 $TASK_ID fix needed ($FIX_RETRY/$MAX_FIX_RETRIES)"

@@ -12,6 +12,14 @@ R10 now covers two implemented steps:
 Runtime success is not the same as implementation success.
 An `approve` decision is necessary, but not sufficient, for trusted completion.
 
+## Ownership Boundary
+- Coder owns implementation, tests, templates, and docs inside task scope.
+- Tech Lead owns review of coder-owned gaps only.
+- Ralph runtime owns `tasks.json`, `progress.md`, final status changes, audit artifacts, and final task commits.
+
+Lead fix instructions must not ask the coder to perform runtime-owned bookkeeping.
+If they do, Ralph sanitizes those demands and fails closed if no real implementation gap remains.
+
 ## Repaired Review Boundary
 Current expected flow:
 1. Tech Lead returns one final review block

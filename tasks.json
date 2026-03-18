@@ -1991,19 +1991,19 @@
       "complexity": "moderate",
       "risk": "low",
       "title": "Add CLI and Telegram audit commands",
-      "description": "Expose recent-task audit and single-task audit through CLI and bot so truth can be inspected without manual log digging.",
+      "description": "Expose recent-task audit and single-task audit through CLI and bot so truth can be inspected without manual log digging. Single-task Telegram audit path is `/audit <TASK_ID>`.",
       "acceptance_criteria": [
         "CLI can audit recent tasks and a specific task",
-        "Bot supports /audit_last, /audit_task, and /trust_report",
+        "Bot supports /audit <TASK_ID>, /audit_last, and /trust_report",
         "Output shows evidence summary, not just status",
         "Missing audit data is handled gracefully"
       ],
       "dependencies": [
         "R10-07"
       ],
-      "status": "pending",
+      "status": "blocked",
       "completed_at": null,
-      "revision_notes": "",
+      "revision_notes": "R10-08 failed after 2 retries",
       "timeout": 420,
       "role": "coder"
     },

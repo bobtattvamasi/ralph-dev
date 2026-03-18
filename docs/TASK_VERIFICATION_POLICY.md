@@ -39,11 +39,13 @@ Current bookkeeping-only set includes:
 If a task claims implementation work but only bookkeeping evidence exists, auto-close should fail.
 
 ## Implemented Minimal Checks
-- Command: handler/routing evidence plus test evidence
+- Command: handler alias/routing evidence plus help-text and test evidence
 - Script: expected script exists and compiles if Python
 - Template: expected template exists
 - Docs-only: documentation file evidence exists
 - Tests-only: real test-file evidence exists
+
+`git diff` size is not itself a completion rule. Verification looks for concrete task evidence, not diff volume for its own sake.
 
 ## Deferred
 - deeper code-feature verification

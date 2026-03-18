@@ -87,6 +87,40 @@ if review_file:
             '{"decision":"approve","task_id":"T01","summary":"Incorrect approve from stdout","quality_score":8,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":"Conflicting stdout review"}'
             "\\n```"
         )
+    elif mode == "lead_contradictory_fix_only":
+        payload = {
+            "decision": "fix",
+            "task_id": "T01",
+            "quality_score": 2,
+            "fix_instructions": "Update tasks.json, update progress.md, add a final commit, and provide a real non-empty git diff.",
+            "progress_note": "Bookkeeping-only contradictory fix",
+        }
+    elif mode == "lead_diff_only_fix":
+        payload = {
+            "decision": "fix",
+            "task_id": "T01",
+            "quality_score": 2,
+            "fix_instructions": "Prepare a real non-empty git diff and final commit for this task.",
+            "progress_note": "Diff-only contradictory fix",
+        }
+    elif mode == "lead_exact_gap_with_bookkeeping_noise":
+        marker = Path(lead_fix_marker) if lead_fix_marker else None
+        if marker is not None and not marker.exists():
+            marker.write_text("fix-issued", encoding="utf-8")
+            payload = {
+                "decision": "fix",
+                "task_id": "T01",
+                "quality_score": 4,
+                "fix_instructions": "Add an /audit_task alias that routes to the single-task audit handler and cover it with a bot test. Do not forget to update tasks.json, progress.md, and provide a real git diff.",
+                "progress_note": "Needs exact API gap only",
+            }
+        else:
+            payload = {
+                "decision": "approve",
+                "task_id": "T01",
+                "quality_score": 8,
+                "progress_note": "Exact gap resolved",
+            }
     else:
         payload = {
             "decision": "approve",
@@ -328,6 +362,8 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert "keyword matching prompt builder" in prompt
     assert "... [truncated" in prompt
     assert len(prompt) <= 2200 + 32
+    assert "Commit: feat(" not in prompt
+    assert "Ralph runtime owns final task bookkeeping" in prompt
     audit = load_audit(project_dir)
     assert audit["status"] == "done"
     assert audit["verification"]["result"] == "pass"
@@ -600,6 +636,75 @@ def test_ralph_fails_closed_on_lead_stdout_review_mismatch(tmp_path: Path) -> No
     assert load_task_status(project_dir) == "blocked"
     assert "Parsed review source: mismatch_fail_closed" in result.stdout
     assert "ambiguous: authoritative review file and stdout disagreed" in result.stdout
+
+
+def test_ralph_blocks_contradictory_bookkeeping_only_fix_instructions(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "lead_contradictory_fix_only"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "blocked"
+    assert "Contradictory Tech Lead fix blocked retry" in result.stdout
+    assert "runtime-owned bookkeeping or diff-production work" in result.stdout
+    assert result.stdout.count("🤖 CODER — Attempt") == 1
+
+
+def test_ralph_blocks_diff_only_fix_without_retry_loop(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "lead_diff_only_fix"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "blocked"
+    assert "Contradictory Tech Lead fix blocked retry" in result.stdout
+    assert "runtime-owned bookkeeping or diff-production work" in result.stdout
+    assert result.stdout.count("🤖 CODER — Attempt") == 1
+
+
+def test_ralph_sanitizes_noisy_fix_and_keeps_exact_feature_gap(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "lead_exact_gap_with_bookkeeping_noise"
+    env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_exact_gap.marker")
+    prompt_file = tmp_path / "coder_prompt_fix.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Sanitized Tech Lead fix instructions" in result.stdout
+    assert "Add an /audit_task alias that routes to the single-task audit handler and cover it with a bot test." in result.stdout
+    assert "tasks.json" not in result.stdout.split("🔧 Fix 1/2:", 1)[1].splitlines()[0]
+    assert "progress.md" not in result.stdout.split("🔧 Fix 1/2:", 1)[1].splitlines()[0]
+    assert "real git diff" not in result.stdout.split("🔧 Fix 1/2:", 1)[1].splitlines()[0]
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "Add an /audit_task alias that routes to the single-task audit handler and cover it with a bot test." in prompt
+    assert "update tasks.json" not in prompt
+    assert "update progress.md" not in prompt
+    assert "real git diff" not in prompt
 
 
 def test_ralph_blocks_bookkeeping_only_closure(tmp_path: Path) -> None:

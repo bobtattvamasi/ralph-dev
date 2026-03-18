@@ -61,7 +61,43 @@ def test_missing_command_handler_blocks_closure(tmp_path: Path) -> None:
     result = verify_task_completion(task, project, ["scripts/ralph_bot.py", "tests/test_bot_commands.py"])
 
     assert result["result"] == "fail_fix"
-    assert "missing handler cmd_ask" in result["reason"]
+    assert "missing handlers: /ask" in result["reason"]
+
+
+def test_command_alias_handler_counts_as_valid_runtime_evidence(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write(
+        project / "scripts" / "ralph_bot.py",
+        """
+async def cmd_start_auto():
+    return None
+
+async def cmd_help():
+    text = "/auto — run all"
+    return None
+
+async def handle_update(update):
+    cmd = "/auto"
+    if cmd == "/auto":
+        await cmd_start_auto()
+""".strip()
+        + "\n",
+    )
+    write(
+        project / "tests" / "test_bot_auto.py",
+        "def test_auto_route():\n    assert '/auto'\n    assert 'cmd_start_auto'\n",
+    )
+    task = {
+        "id": "R10-X3B",
+        "title": "Bot: защита от двойного /auto",
+        "description": "Add /auto guard in Telegram bot.",
+        "acceptance_criteria": ["test_auto_route — /auto is wired"],
+    }
+
+    result = verify_task_completion(task, project, ["scripts/ralph_bot.py", "tests/test_bot_auto.py"])
+
+    assert result["result"] == "pass"
+    assert result["task_class"] == "command"
 
 
 def test_missing_template_file_blocks_closure(tmp_path: Path) -> None:

@@ -128,6 +128,18 @@ def read_text(path: Path) -> str:
         return ""
 
 
+def command_candidate_handlers(token: str) -> set[str]:
+    return {f"cmd_{token}", f"cmd_start_{token}"}
+
+
+def command_routed_handlers(bot_text: str, token: str) -> set[str]:
+    pattern = re.compile(
+        rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
+        re.MULTILINE,
+    )
+    return set(pattern.findall(bot_text))
+
+
 def file_contains_required_content(task: dict, path: Path) -> bool:
     content = read_text(path).lower()
     if not content:
@@ -171,24 +183,40 @@ def verify_task_completion(task: dict, project_dir: Path, changed_files: list[st
     if task_class == "command":
         bot_path = project_dir / "scripts" / "ralph_bot.py"
         bot_text = read_text(bot_path)
-        missing: list[str] = []
+        missing_handler: list[str] = []
+        missing_routing: list[str] = []
+        missing_help: list[str] = []
+        resolved_handlers: dict[str, set[str]] = {}
         if not any(path == "scripts/ralph_bot.py" or path.startswith("tests/") for path in non_bookkeeping):
             return result("fail_fix", task_class, "Verification failed: command task changed no bot or test files.", changed_files, non_bookkeeping)
         for token in command_tokens:
-            handler = f"cmd_{token}"
-            if handler not in bot_text:
-                missing.append(f"missing handler {handler}")
+            handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
+            resolved_handlers[token] = handlers
+            if not any(f"def {handler}(" in bot_text for handler in handlers):
+                missing_handler.append(token)
+            if not re.search(rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']', bot_text):
+                missing_routing.append(token)
             if f"/{token}" not in bot_text:
-                missing.append(f"missing routing for /{token}")
+                missing_help.append(token)
         tests_have_evidence = any(path.startswith("tests/") for path in non_bookkeeping)
         if not tests_have_evidence:
             for test_file in project_dir.glob("tests/test_*.py"):
                 test_text = read_text(test_file)
-                if any(f"/{token}" in test_text or f"cmd_{token}" in test_text for token in command_tokens):
+                if any(
+                    f"/{token}" in test_text or any(handler in test_text for handler in resolved_handlers.get(token, set()))
+                    for token in command_tokens
+                ):
                     tests_have_evidence = True
                     break
-        if missing:
-            return result("fail_fix", task_class, "Verification failed: " + ", ".join(missing), changed_files, non_bookkeeping)
+        missing_parts: list[str] = []
+        if missing_handler:
+            missing_parts.append("missing handlers: " + ", ".join("/" + token for token in missing_handler))
+        if missing_routing:
+            missing_parts.append("missing routing: " + ", ".join("/" + token for token in missing_routing))
+        if missing_help:
+            missing_parts.append("missing command/help evidence: " + ", ".join("/" + token for token in missing_help))
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
         if not tests_have_evidence:
             return result("fail_fix", task_class, "Verification failed: command task has no test or smoke evidence.", changed_files, non_bookkeeping)
         return result("pass", task_class, "Command verification passed.", changed_files, non_bookkeeping)

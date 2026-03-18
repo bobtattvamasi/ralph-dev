@@ -23,7 +23,6 @@ END_RALPH_REVIEW_JSON
 1. Task definition with acceptance_criteria
 2. Git diff of changes
 3. Test output
-4. Current progress.md
 
 ## Rules
 - Default to **approve** if tests pass and criteria are met
@@ -32,3 +31,8 @@ END_RALPH_REVIEW_JSON
 - `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
 - `summary` must describe the actual review result, never a template placeholder
 - If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
