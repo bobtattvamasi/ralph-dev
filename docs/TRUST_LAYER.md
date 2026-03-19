@@ -43,6 +43,14 @@ Ralph now exposes two distinct outcomes:
 
 Each task run writes a compact audit artifact to `.ralph/audit/<TASK_ID>.json`.
 
+## Truth Precedence
+When task state, audit output, and re-audit output disagree, treat them as different truth layers:
+- `tasks.json` is backlog truth: the current scheduler/operator status for the task.
+- `.ralph/audit/<TASK_ID>.json` is latest run truth: what the most recent runtime attempt concluded.
+- `scripts/re_audit_tasks.py` is repo-truth reassessment: a later inspection of current repository evidence, not the latest runtime attempt itself.
+
+These layers can disagree temporarily. Ralph does not auto-resolve that conflict today; the operator must inspect the disagreement explicitly.
+
 Current inspection paths:
 - `ralph.sh audit <TASK_ID>`
 - `ralph.sh audit-last [N]`
@@ -78,10 +86,11 @@ This iteration introduces minimal richer statuses for re-audit outcomes:
 
 ## Operator Workflow
 Recommended operator sequence:
-1. inspect a task with `explain_task.py`
-2. inspect trust evidence with `ralph.sh audit <TASK_ID>`
-3. dry-run `re_audit_tasks.py` before any status change
-4. use `reopen_tasks.py` only for controlled manual review or rerun preparation
+1. inspect `tasks.json` state first via `explain_task.py` or direct task lookup
+2. inspect latest run truth with `ralph.sh audit <TASK_ID>`
+3. inspect current repo truth with dry-run `re_audit_tasks.py`
+4. if they disagree, treat `tasks.json` as backlog truth and decide whether a controlled manual correction or rerun is needed
+5. use `reopen_tasks.py` only for controlled manual review or rerun preparation
 
 ## Still Out Of Scope
 - full status model rollout

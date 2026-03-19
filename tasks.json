@@ -2124,9 +2124,9 @@
       "dependencies": [
         "R10-12"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "verified_done",
+      "completed_at": "2026-03-19T07:23:56.658164+00:00",
+      "revision_notes": "Existing trust/operator docs now define tasks.json as backlog truth, .ralph/audit/<TASK_ID>.json as latest run truth, and re_audit_tasks.py as repo-truth reassessment, with explicit operator inspection order when they disagree.",
       "timeout": 240,
       "role": "coder"
     },
@@ -2148,9 +2148,9 @@
       "dependencies": [
         "R10-13"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "verified_done",
+      "completed_at": "2026-03-19T07:27:43.812709+00:00",
+      "revision_notes": "AGENTS.md and root/packaged runtime prompts now describe progress.md as lightweight narrative context only, not authoritative task truth.",
       "timeout": 240,
       "role": "coder"
     },

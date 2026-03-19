@@ -41,6 +41,16 @@
 - `needs_human_review`:
   do not auto-apply; inspect audit, explain-task output, and re-audit reasoning first
 
+## Truth Precedence
+- `tasks.json` remains backlog truth even when older audit artifacts or a newer re-audit report disagree.
+- `.ralph/audit/<TASK_ID>.json` remains latest run truth even after later manual status correction.
+- `re_audit_tasks.py` is a repo-truth reassessment tool; it does not replace latest run truth by itself.
+
+When these layers disagree, inspect them in this order:
+1. current task status in `tasks.json`
+2. latest runtime attempt in `.ralph/audit/<TASK_ID>.json`
+3. current repository evidence from `re_audit_tasks.py`
+
 ## Direction
 - inspectability is already in place
 - this iteration restores backlog truth conservatively

@@ -1539,7 +1539,7 @@ $(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
         done
     fi
 
-        coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Then read progress.md.
+        coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
 Run make test to verify current state.
 
 ## Architecture Doc
@@ -1939,7 +1939,7 @@ $(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
             done
         fi
 
-        CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Then read progress.md.
+        CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
 Run make test to verify current state.
 
 ## Architecture Doc

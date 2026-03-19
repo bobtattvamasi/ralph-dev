@@ -3,8 +3,8 @@
 ## Read First
 - `ARCHITECTURE.md` — execution model, orchestration, runtime, and state
 - `MEMORY_SYSTEM.md` — memory layers and update policy
-- `progress.md` — recent project progress
 - `tasks.json` — roadmap and task source of truth
+- `progress.md` — lightweight narrative history only, not authoritative task truth
 
 ## General Rules
 1. `ralph.sh` must stay project-agnostic.
