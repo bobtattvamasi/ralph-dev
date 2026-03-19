@@ -93,6 +93,10 @@
     "R10": {
       "name": "Trust Layer Repair",
       "description": "Stop false positives, add verification and auditability, restore backlog truth"
+    },
+    "R11": {
+      "name": "Manual Stabilization",
+      "description": "Clean first-run candidates and truthful runtime/operator end-state behavior"
     }
   },
   "tasks": [
@@ -2175,6 +2179,28 @@
       "status": "verified_done",
       "completed_at": "2026-03-19T07:42:41.439712+00:00",
       "revision_notes": "Phase and auto modes now emit explicit deadlock reasoning for non-runnable pending tasks, including blocked task ids and unmet dependencies; integration tests cover both paths without changing targeted task semantics.",
+      "timeout": 360,
+      "role": "coder"
+    },
+    {
+      "id": "R11-01",
+      "phase": "R11",
+      "category": "reliability",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Distinguish deadlocked queue from completed queue in final runtime state",
+      "description": "When phase or auto mode stops because no runnable task exists, Ralph must not report the queue as fully complete if pending tasks still remain blocked by dependencies or status. Final runtime state and operator-facing completion message should distinguish true completion from deadlocked backlog.",
+      "acceptance_criteria": [
+        "Phase or auto mode does not write an 'All tasks complete' final state/message when pending tasks still remain non-runnable",
+        "Final runtime output explicitly distinguishes true queue completion from deadlocked or blocked queue exhaustion",
+        "Deadlocked end-state output still includes the blocked task ids or unmet dependency details already emitted earlier in the run",
+        "Regression tests cover deadlocked phase or auto final-state behavior without changing targeted task mode semantics"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
       "timeout": 360,
       "role": "coder"
     }
