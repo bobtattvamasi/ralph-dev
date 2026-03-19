@@ -142,6 +142,7 @@ def test_reaudit_missing_command_still_becomes_false_positive(tmp_path: Path) ->
 def test_reaudit_apply_updates_tasks_for_strong_case(tmp_path: Path) -> None:
     project_dir = tmp_path / "project"
     project_dir.mkdir()
+    (project_dir / ".ralph" / "audit").mkdir(parents=True)
     write_tasks(
         project_dir,
         [
@@ -155,6 +156,21 @@ def test_reaudit_apply_updates_tasks_for_strong_case(tmp_path: Path) -> None:
             }
         ],
     )
+    (project_dir / ".ralph" / "audit" / "R8-01.json").write_text(
+        json.dumps(
+            {
+                "task_id": "R8-01",
+                "status": "done",
+                "verification": {"result": "pass", "reason": "stale success", "task_class": "script", "evidence_files": []},
+                "changes": {"all": ["scripts/fetch_channel.py"], "non_bookkeeping": ["scripts/fetch_channel.py"]},
+                "runtime_success": True,
+                "verified_success": True,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     result = run_reaudit(project_dir, "--task", "R8-01", "--apply")
     data = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))
@@ -167,6 +183,54 @@ def test_reaudit_apply_updates_tasks_for_strong_case(tmp_path: Path) -> None:
     assert "false_positive" in data["tasks"][0]["revision_notes"]
     assert "Expected script is missing: scripts/fetch_channel.py" in data["tasks"][0]["revision_notes"]
     assert data["tasks"][0]["completed_at"] is None
+    assert not (project_dir / ".ralph" / "audit" / "R8-01.json").exists()
+
+
+def test_reaudit_apply_false_positive_keeps_reason_and_clears_stale_latest_run_truth(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / ".ralph" / "audit").mkdir(parents=True)
+    write_tasks(
+        project_dir,
+        [
+            {
+                "id": "R5-01",
+                "phase": "R5",
+                "title": "Create run_eval helper",
+                "description": "Add scripts/run_eval.py for evaluation flow.",
+                "status": "done",
+                "revision_notes": "old note",
+            }
+        ],
+    )
+    (project_dir / ".ralph" / "audit" / "R5-01.json").write_text(
+        json.dumps(
+            {
+                "task_id": "R5-01",
+                "status": "done",
+                "verification": {"result": "pass", "reason": "stale success", "task_class": "script", "evidence_files": []},
+                "changes": {"all": ["scripts/run_eval.py"], "non_bookkeeping": ["scripts/run_eval.py"]},
+                "runtime_success": True,
+                "verified_success": True,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_reaudit(project_dir, "--task", "R5-01", "--apply")
+    data = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))
+    task = data["tasks"][0]
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "R5-01 | done -> false_positive | script | Expected script is missing: scripts/run_eval.py" in result.stdout
+    assert task["status"] == "false_positive"
+    assert "Re-audit " in task["revision_notes"]
+    assert "false_positive" in task["revision_notes"]
+    assert "Expected script is missing: scripts/run_eval.py" in task["revision_notes"]
+    assert task["completed_at"] is None
+    assert not (project_dir / ".ralph" / "audit" / "R5-01.json").exists()
 
 
 def test_reaudit_ambiguous_case_becomes_needs_human_review(tmp_path: Path) -> None:
@@ -319,6 +383,42 @@ def test_reaudit_apply_skips_partial_and_needs_human_review(tmp_path: Path) -> N
     assert data["tasks"][1]["status"] == "done"
     assert data["tasks"][0]["revision_notes"] == ""
     assert data["tasks"][1]["revision_notes"] == ""
+
+
+def test_reaudit_apply_skips_tasks_already_aligned_to_verified_done(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "templates").mkdir()
+    (project_dir / "templates" / "AGENTS_COORDINATOR.md").write_text(
+        "Ask clarifying questions.\nOutput PROJECT_BRIEF.md.\n",
+        encoding="utf-8",
+    )
+    write_tasks(
+        project_dir,
+        [
+            {
+                "id": "R8-05",
+                "phase": "R8",
+                "title": "Add coordinator template",
+                "description": "Create templates/AGENTS_COORDINATOR.md for project intake.",
+                "status": "verified_done",
+                "revision_notes": "trusted note",
+                "completed_at": "2026-03-18T00:00:00+00:00",
+                "acceptance_criteria": ["templates/AGENTS_COORDINATOR.md exists"],
+            }
+        ],
+    )
+
+    result = run_reaudit(project_dir, "--task", "R8-05", "--apply")
+    data = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))
+    task = data["tasks"][0]
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Applied: none" in result.stdout
+    assert "- R8-05 -> verified_done -> already aligned" in result.stdout
+    assert task["status"] == "verified_done"
+    assert task["revision_notes"] == "trusted note"
+    assert task["completed_at"] == "2026-03-18T00:00:00+00:00"
 
 
 def test_next_task_still_only_picks_pending() -> None:

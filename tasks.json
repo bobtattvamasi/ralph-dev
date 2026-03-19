@@ -1320,14 +1320,15 @@
       "complexity": "complex",
       "title": "Offline eval harness: eval_cases/ + scripts/run_eval.py",
       "description": "Create eval_cases/ with 8 frozen fixtures (valid approve, invalid JSON, done->approve, rate-limit, timeout, blocked, high-risk, fix-retry). Create scripts/run_eval.py that feeds fixtures into extract_json.py + validate_lead_review_json logic and emits scorecard: schema_valid, decision_match, recovery_ok.",
-      "status": "done",
+      "status": "false_positive",
       "acceptance_criteria": [
         "eval_cases/ contains 8 fixture JSON files",
         "scripts/run_eval.py runs all cases and prints scorecard",
         "make eval target added to Makefile",
         "all 8 cases pass"
       ],
-      "completed_at": "2026-03-13T09:37:32.086565+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: false_positive — Expected script is missing: scripts/run_eval.py"
     },
     {
       "id": "R5-02",
@@ -1337,13 +1338,14 @@
       "title": "Structured run artifacts: runs/<run_id>/ per execution",
       "description": "Each ralph.sh run gets a unique run_id (timestamp+task). Save to runs/<run_id>/: prompt.txt, coder_output.txt, lead_output.txt, review.json, diff.patch, test_output.txt, final_state.json.",
       "dependencies": [],
-      "status": "done",
+      "status": "false_positive",
       "acceptance_criteria": [
         "runs/ dir created per task execution",
         "all 7 artifact files saved",
         "runs/ added to .gitignore"
       ],
-      "completed_at": "2026-03-13T10:06:40.220111+00:00"
+      "completed_at": null,
+      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: false_positive — Expected test files or named tests are missing."
     },
     {
       "id": "R5-03",
@@ -1353,13 +1355,14 @@
       "title": "Typed state schema: Pydantic models for state/task/review",
       "description": "Create scripts/models.py with Pydantic models: RalphState, TaskRecord, LeadReview. Replace ad-hoc json.loads branches in ralph_bot.py with model validation. Keep backward compat with existing JSON files.",
       "dependencies": [],
-      "status": "done",
+      "status": "verified_done",
       "acceptance_criteria": [
         "scripts/models.py with 3 Pydantic models",
         "ralph_bot.py uses RalphState for read_state()",
         "make test passes"
       ],
-      "completed_at": "2026-03-16T00:00:00+07:00"
+      "completed_at": "2026-03-16T00:00:00+07:00",
+      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: verified_done — Expected script paths exist in repository."
     },
     {
       "id": "R5-04",
@@ -2003,7 +2006,7 @@
       ],
       "status": "verified_done",
       "completed_at": "2026-03-18T14:51:08.671060+00:00",
-      "revision_notes": "R10-08 failed after 2 retries",
+      "revision_notes": "Trust-tail hygiene 2026-03-19: stale failed revision note removed after verified_done alignment; previous failed latest-run artifact was superseded by repo-truth confirmation.",
       "timeout": 420,
       "role": "coder"
     },
@@ -2025,9 +2028,9 @@
       "dependencies": [
         "R10-08"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "verified_done",
+      "completed_at": "2026-03-19T05:51:16.820546+00:00",
+      "revision_notes": "Trust-tail hygiene 2026-03-19: stale failed revision note removed after execution evidence was confirmed and task was aligned to verified_done.",
       "timeout": 420,
       "role": "coder"
     },
@@ -2049,9 +2052,9 @@
       "dependencies": [
         "R10-09"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "verified_done",
+      "completed_at": "2026-03-19T06:44:19.234918+00:00",
+      "revision_notes": "Re-audit apply corrected recent false positives and aligned backlog truth with the current audit_report.md report.",
       "timeout": 300,
       "role": "coder"
     },
@@ -2073,9 +2076,9 @@
       "dependencies": [
         "R10-10"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "verified_done",
+      "completed_at": "2026-03-19T07:03:36.703982+00:00",
+      "revision_notes": "Packaged trust/runtime path now includes verify_task_closure.py and models.py, and packaging tests cover packaged trust resource presence plus packaged verifier execution.",
       "timeout": 360,
       "role": "coder"
     },

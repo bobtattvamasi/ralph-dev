@@ -261,6 +261,15 @@ def summarize_verdicts(results: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def clear_stale_audit_artifact(task_id: str, verdict: str) -> None:
+    """Remove stale latest-run truth when re-audit downgrades a task."""
+    if verdict != "false_positive":
+        return
+    path = AUDIT_DIR / f"{task_id}.json"
+    if path.exists():
+        path.unlink()
+
+
 def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     applied: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
@@ -280,12 +289,22 @@ def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> tuple
                 }
             )
             continue
+        if task.get("status") == verdict:
+            skipped.append(
+                {
+                    "task_id": task["id"],
+                    "verdict": verdict,
+                    "reason": "already aligned",
+                }
+            )
+            continue
         task["status"] = verdict
         if verdict == "verified_done":
             task["completed_at"] = task.get("completed_at") or now
         else:
             task["completed_at"] = None
         task["revision_notes"] = f"Re-audit {now}: {verdict} — {result['reason']}"
+        clear_stale_audit_artifact(task["id"], verdict)
         applied.append(
             {
                 "task_id": task["id"],
