@@ -174,6 +174,80 @@ async def test_cmd_progress_shows_phase_bars(bot_env: dict[str, object]) -> None
     assert "🔜 Next: R1-02" in message
 
 
+def test_get_tasks_summary_counts_verified_done_and_keeps_dependency_hints(
+    bot_env: dict[str, object],
+) -> None:
+    bot.TASKS_FILE.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "project": "test-project",
+                "tasks": [
+                    {"id": "T01", "phase": "R1", "title": "Verified", "status": "verified_done"},
+                    {"id": "T02", "phase": "R1", "title": "Done", "status": "done"},
+                    {"id": "T03", "phase": "R1", "title": "Free pending", "status": "pending"},
+                    {
+                        "id": "T04",
+                        "phase": "R1",
+                        "title": "Depends on verified",
+                        "status": "pending",
+                        "dependencies": ["T01"],
+                    },
+                    {
+                        "id": "T05",
+                        "phase": "R1",
+                        "title": "Depends on false positive",
+                        "status": "pending",
+                        "dependencies": ["T06"],
+                    },
+                    {"id": "T06", "phase": "R1", "title": "False positive", "status": "false_positive"},
+                    {"id": "T07", "phase": "R1", "title": "Blocked task", "status": "blocked"},
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    message = bot.get_tasks_summary()
+
+    assert "📊 Tasks: 2/7 done" in message
+    assert "T04" in message
+    assert "Depends on verified" in message
+    assert "T04 [medium] Depends on verified" in message
+    assert "needs T01" not in message
+    assert "T05 [medium] Depends on false positive ⛔ needs T06" in message
+    assert "T07" not in message
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_tasks_with_trust_aware_counts(bot_env: dict[str, object]) -> None:
+    bot.TASKS_FILE.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "project": "test-project",
+                "tasks": [
+                    {"id": "T01", "phase": "R1", "title": "Verified", "status": "verified_done"},
+                    {"id": "T02", "phase": "R1", "title": "Todo", "status": "pending", "dependencies": ["T01"]},
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    await bot.handle_update({"message": {"text": "/tasks"}})
+
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once()
+    message = safe_send.await_args.args[0]
+    assert "📊 Tasks: 1/2 done" in message
+    assert "needs T01" not in message
+
+
 @pytest.mark.asyncio
 async def test_handle_update_routes_help(bot_env: dict[str, object]) -> None:
     await bot.handle_update({"message": {"text": "/help"}})

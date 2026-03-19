@@ -249,7 +249,7 @@ def get_tasks_summary(phase: str | None = None) -> str:
     tasks = data["tasks"]
     if phase:
         tasks = [item for item in tasks if str(item.get("phase", "")) == phase]
-    done = [item for item in tasks if item["status"] == "done"]
+    done = [item for item in tasks if item["status"] in COMPLETED_TASK_STATUSES]
     pending = [item for item in tasks if item["status"] == "pending"]
     lines = [f"📊 Tasks: {len(done)}/{len(tasks)} done\n"]
     if pending:
