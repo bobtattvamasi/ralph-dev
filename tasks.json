@@ -2203,6 +2203,30 @@
       "revision_notes": "",
       "timeout": 360,
       "role": "coder"
+    },
+    {
+      "id": "R11-02",
+      "phase": "R11",
+      "category": "reliability",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Finalize runtime state cleanly after successful task closure",
+      "description": "When a task closes successfully, Ralph must finish without tail-shell failures and must return runtime state to a truthful final idle/completed state instead of leaving ralph_state.json stuck in running/current task state.",
+      "acceptance_criteria": [
+        "Successful task completion does not end with a REASON or other unbound-variable tail failure",
+        "After a successful one-task run, final runtime state is updated consistently instead of remaining stuck in running/current task state",
+        "Successful completion no longer leaves ralph_state.json pointing at the just-finished task as if it were still active",
+        "Regression tests cover successful closure finalization path"
+      ],
+      "dependencies": [
+        "R11-01"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
     }
   ]
 }
