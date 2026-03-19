@@ -147,3 +147,73 @@ def test_tests_only_task_requires_actual_test_evidence(tmp_path: Path) -> None:
 
     assert result["result"] == "fail_fix"
     assert "no changed test files" in result["reason"] or "only bookkeeping" in result["reason"]
+
+
+def test_reaudit_reporting_task_passes_with_saved_report_evidence(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write(
+        project / "scripts" / "re_audit_tasks.py",
+        """
+REPORT_FILE = PROJECT_DIR / "audit_report.md"
+
+def human_verdict(verdict: str) -> str:
+    mapping = {"verified_done": "verified", "false_positive": "false positive", "needs_human_review": "unclear"}
+    return mapping.get(verdict, verdict)
+
+print("Human-readable report saved to audit_report.md")
+""".strip()
+        + "\n",
+    )
+    write(
+        project / "tests" / "test_re_audit_tasks.py",
+        """
+def test_report_written():
+    assert "audit_report.md"
+    assert "Classification: unclear"
+""".strip()
+        + "\n",
+    )
+    write(
+        project / "audit_report.md",
+        """
+# Re-audit Report
+
+## Results
+### R10-09
+- Classification: unclear
+""".strip()
+        + "\n",
+    )
+    task = {
+        "id": "R10-09",
+        "title": "Re-audit suspicious recent done tasks",
+        "description": "Run the repaired trust checks over suspicious recent tasks and produce a compact truth report for human review.",
+        "acceptance_criteria": [
+            "Suspicious recent tasks are re-checked with the new audit flow",
+            "Report classifies tasks as verified, partial, false positive, or unclear",
+            "Results are saved in a human-readable report",
+            "No hidden feature work is mixed into the re-audit step",
+        ],
+    }
+
+    result = verify_task_completion(task, project, ["tasks.json", "audit_report.md", ".ralph/audit/R10-09.json"])
+
+    assert result["result"] == "pass"
+    assert result["task_class"] == "reaudit-report"
+
+
+def test_generic_implementation_task_still_fails_on_report_and_state_files_only(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write(project / "audit_report.md", "# Re-audit Report\n")
+    task = {
+        "id": "R10-X7",
+        "title": "Improve orchestration reliability",
+        "description": "Tighten generic runtime behavior.",
+        "acceptance_criteria": ["make test passes"],
+    }
+
+    result = verify_task_completion(task, project, ["tasks.json", "audit_report.md", ".ralph/audit/R10-X7.json"])
+
+    assert result["result"] == "fail_fix"
+    assert result["task_class"] == "implementation"
+    assert "only bookkeeping/state/report files changed" in result["reason"]

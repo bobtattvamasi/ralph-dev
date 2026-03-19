@@ -14,6 +14,7 @@ from pathlib import Path
 BOOKKEEPING_EXACT = {
     "tasks.json",
     "progress.md",
+    "audit_report.md",
     "ralph_state.json",
     "ralph_control.json",
     "ralph_alerts.log",
@@ -29,6 +30,7 @@ BOOKKEEPING_PREFIXES = (
     ".pytest_cache/",
     "__pycache__/",
     ".ralph/audit/",
+    "ralph/audit/",
 )
 DOC_KEYWORDS = (
     "readme",
@@ -114,6 +116,12 @@ def detect_task_class(task: dict, expected_paths: list[str], command_tokens: lis
         return "command"
     if title.startswith("tests:") or expected_tests or "pytest" in combined:
         return "tests-only"
+    if (
+        "re-audit" in combined
+        and "report" in combined
+        and any(keyword in combined for keyword in ("verified", "partial", "false positive", "unclear"))
+    ):
+        return "reaudit-report"
     if any(path.startswith("docs/") for path in expected_paths) or any(path.endswith(".md") for path in expected_paths):
         return "docs-only"
     if any(keyword in combined for keyword in DOC_KEYWORDS):
@@ -175,6 +183,44 @@ def verify_task_completion(task: dict, project_dir: Path, changed_files: list[st
     command_tokens = extract_command_tokens(task)
     expected_tests = extract_expected_test_names(task)
     task_class = detect_task_class(task, expected_paths, command_tokens, expected_tests)
+
+    if task_class == "reaudit-report":
+        script_path = project_dir / "scripts" / "re_audit_tasks.py"
+        test_path = project_dir / "tests" / "test_re_audit_tasks.py"
+        report_path = project_dir / "audit_report.md"
+
+        missing_parts: list[str] = []
+        script_text = read_text(script_path)
+        tests_text = read_text(test_path)
+        report_text = read_text(report_path)
+
+        if not script_text:
+            missing_parts.append("scripts/re_audit_tasks.py is missing")
+        if not tests_text:
+            missing_parts.append("tests/test_re_audit_tasks.py is missing")
+        if not report_text:
+            missing_parts.append("audit_report.md is missing")
+        if script_text:
+            if "audit_report.md" not in script_text or "Human-readable report saved to" not in script_text:
+                missing_parts.append("re-audit script does not persist human-readable report")
+            if "false positive" not in script_text or "unclear" not in script_text:
+                missing_parts.append("re-audit script does not expose human-readable classifications")
+        if tests_text:
+            if "audit_report.md" not in tests_text or "Classification: unclear" not in tests_text:
+                missing_parts.append("re-audit report path is not covered by targeted tests")
+        if report_text:
+            if "# Re-audit Report" not in report_text or "## Results" not in report_text:
+                missing_parts.append("audit_report.md does not contain saved re-audit report output")
+
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
+        return result(
+            "pass",
+            task_class,
+            "Re-audit reporting verification passed.",
+            changed_files,
+            non_bookkeeping,
+        )
 
     if task_class not in {"docs-only", "template"} and not non_bookkeeping:
         reason = "Verification failed: only bookkeeping/state/report files changed; no implementation evidence found."
