@@ -44,7 +44,10 @@ def pick_next(tasks, *, task_id=None, phase=None):
 
 def explain_non_runnable(tasks, *, phase=None):
     done = {t["id"] for t in tasks if t["status"] in COMPLETED_STATUSES}
-    pending = [t for t in tasks if t["status"] == "pending"]
+    unresolved = [t for t in tasks if t["status"] not in COMPLETED_STATUSES]
+    if phase is not None:
+        unresolved = [t for t in unresolved if str(t.get("phase")) == str(phase)]
+    pending = [t for t in unresolved if t["status"] == "pending"]
     if phase is not None:
         pending = [t for t in pending if str(t.get("phase")) == str(phase)]
     blocked = []
@@ -58,10 +61,26 @@ def explain_non_runnable(tasks, *, phase=None):
                     "unmet_dependencies": unmet,
                 }
             )
+    blocked_by_status = [
+        {
+            "id": task["id"],
+            "title": task.get("title", ""),
+            "status": task.get("status", ""),
+        }
+        for task in unresolved
+        if task.get("status") != "pending"
+    ]
+    reason = "no_pending"
+    if blocked:
+        reason = "blocked_dependencies"
+    elif blocked_by_status:
+        reason = "blocked_statuses"
     return {
         "has_pending": bool(pending),
+        "has_unresolved": bool(unresolved),
         "blocked_pending": blocked,
-        "reason": "blocked_dependencies" if blocked else "no_pending",
+        "blocked_by_status": blocked_by_status,
+        "reason": reason,
     }
 
 

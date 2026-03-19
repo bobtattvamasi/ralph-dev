@@ -573,8 +573,11 @@ def test_ralph_phase_mode_explains_deadlocked_pending_tasks(tmp_path: Path) -> N
     assert "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T01" in result.stdout
     assert "Phase R2 blocked details: T01 needs T99" in result.stdout
     assert "Phase R2 complete!" not in result.stdout
-    assert "No more pending tasks!" in result.stdout
+    assert "No runnable tasks remain in Phase R2; pending tasks are blocked." in result.stdout
     assert load_task_status(project_dir, "T01") == "pending"
+    state = load_state(project_dir)
+    assert state["current_phase_step"] == "deadlocked"
+    assert state["message"] == "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T01"
 
 
 def test_ralph_auto_mode_explains_deadlocked_pending_tasks(tmp_path: Path) -> None:
@@ -606,8 +609,133 @@ def test_ralph_auto_mode_explains_deadlocked_pending_tasks(tmp_path: Path) -> No
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Auto deadlocked: pending tasks remain blocked by dependencies: T01" in result.stdout
     assert "Auto blocked details: T01 needs T99" in result.stdout
-    assert "No more pending tasks!" in result.stdout
+    assert "No runnable tasks remain; pending tasks are blocked." in result.stdout
     assert load_task_status(project_dir, "T01") == "pending"
+    state = load_state(project_dir)
+    assert state["current_phase_step"] == "deadlocked"
+    assert state["message"] == "Auto deadlocked: pending tasks remain blocked by dependencies: T01"
+
+
+def test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["phases"]["R2"] = {"name": "Phase 2", "description": "Mixed runnable and blocked"}
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R2",
+            "title": "Runnable first",
+            "description": "Should complete before deadlock is detected",
+            "status": "pending",
+            "priority": "high",
+            "dependencies": [],
+            "timeout": 5,
+        },
+        {
+            "id": "T02",
+            "phase": "R2",
+            "title": "Blocked after first task",
+            "description": "Should keep phase from reporting completion",
+            "status": "pending",
+            "priority": "medium",
+            "dependencies": ["T99"],
+            "timeout": 5,
+        },
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "phase", "R2"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "║ ✅ TASK COMPLETE" in result.stdout
+    assert "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02" in result.stdout
+    assert "Phase R2 blocked details: T02 needs T99" in result.stdout
+    assert "Phase R2 complete!" not in result.stdout
+    assert load_task_status(project_dir, "T01") == "verified_done"
+    assert load_task_status(project_dir, "T02") == "pending"
+    state = load_state(project_dir)
+    assert state["current_phase_step"] == "deadlocked"
+    assert state["message"] == "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02"
+
+
+def test_ralph_auto_mode_does_not_report_complete_when_only_blocked_statuses_remain(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R1",
+            "title": "Blocked backlog item",
+            "description": "Should keep auto mode from reporting completion",
+            "status": "blocked",
+            "priority": "high",
+            "dependencies": [],
+            "timeout": 5,
+        }
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "auto"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "All tasks complete" not in result.stdout
+    assert "Auto blocked by status: T01(blocked)" in result.stdout
+    assert "Auto status details: T01 status=blocked" in result.stdout
+    assert "No runnable tasks remain; unresolved tasks are blocked by status." in result.stdout
+    state = load_state(project_dir)
+    assert state["current_phase_step"] == "deadlocked"
+    assert state["message"] == "Auto blocked: unresolved tasks remain non-runnable by status: T01(blocked)"
+
+
+def test_ralph_phase_mode_does_not_report_complete_when_only_blocked_statuses_remain(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["phases"]["R2"] = {"name": "Phase 2", "description": "Blocked status exhaustion"}
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R2",
+            "title": "Blocked phase item",
+            "description": "Should keep phase mode from reporting completion",
+            "status": "failed",
+            "priority": "high",
+            "dependencies": [],
+            "timeout": 5,
+        }
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "phase", "R2"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Phase R2 complete!" not in result.stdout
+    assert "Phase R2 blocked by status: T01(failed)" in result.stdout
+    assert "Phase R2 status details: T01 status=failed" in result.stdout
+    assert "No runnable tasks remain in Phase R2; unresolved tasks are blocked by status." in result.stdout
+    state = load_state(project_dir)
+    assert state["current_phase_step"] == "deadlocked"
+    assert state["message"] == "Phase R2 blocked: unresolved tasks remain non-runnable by status: T01(failed)"
 
 
 def test_ralph_blocks_duplicate_launch_with_pid_guard(tmp_path: Path) -> None:

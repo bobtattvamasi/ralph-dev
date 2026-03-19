@@ -59,7 +59,7 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
 
     auto_result = run([str(ralph_bin), "auto", "--project-dir", str(project_dir)], env=runtime_env)
     assert auto_result.returncode == 0
-    assert "No more pending tasks" in auto_result.stdout
+    assert "All tasks complete!" in auto_result.stdout
 
     bot_help_result = run([str(ralph_bin), "bot", "--help"], cwd=tmp_path)
     assert bot_help_result.returncode == 0

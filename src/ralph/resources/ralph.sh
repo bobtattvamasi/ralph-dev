@@ -144,6 +144,11 @@ mkdir -p "$LOG_DIR"
 RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
 METRICS_FILE="$LOG_DIR/metrics.csv"
 [ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
+FINAL_STATE_STATUS="idle"
+FINAL_STATE_STEP="idle"
+FINAL_STATE_MESSAGE="All tasks complete"
+FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
+QUEUE_EXIT_LOG="🎉 All tasks complete!"
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 # Prevent duplicate ralph instances
 if { [ "$MODE" = "task" ] || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
@@ -339,7 +344,7 @@ PY
 }
 
 log_deadlock_reason() {
-    local explain_json reason ids details prefix
+    local explain_json reason ids details status_ids status_details prefix
     if [ "$MODE" = "phase" ]; then
         explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" --explain 2>/dev/null || echo '{}')
         prefix="Phase $TARGET"
@@ -348,14 +353,63 @@ log_deadlock_reason() {
         prefix="Auto"
     fi
     reason=$(printf '%s' "$explain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('reason',''))" 2>/dev/null || echo "")
-    if [ "$reason" != "blocked_dependencies" ]; then
+    if [ "$reason" != "blocked_dependencies" ] && [ "$reason" != "blocked_statuses" ]; then
         return 1
     fi
     ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(item['id'] for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
     details=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('; '.join(f\"{item['id']} needs {', '.join(item.get('unmet_dependencies', []))}\" for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
+    status_ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(f\"{item['id']}({item.get('status','')})\" for item in data.get('blocked_by_status', [])))" 2>/dev/null || true)
+    status_details=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('; '.join(f\"{item['id']} status={item.get('status','')}\" for item in data.get('blocked_by_status', [])))" 2>/dev/null || true)
     [ -n "$ids" ] && log "⚠️ $prefix deadlocked: pending tasks remain blocked by dependencies: $ids"
     [ -n "$details" ] && log "⚠️ $prefix blocked details: $details"
+    [ -n "$status_ids" ] && log "⚠️ $prefix blocked by status: $status_ids"
+    [ -n "$status_details" ] && log "⚠️ $prefix status details: $status_details"
     return 0
+}
+
+set_queue_exit_state() {
+    local explain_json reason ids status_ids prefix
+
+    FINAL_STATE_STATUS="idle"
+    FINAL_STATE_STEP="idle"
+    FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
+
+    if [ "$MODE" = "phase" ]; then
+        explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" --explain 2>/dev/null || echo '{}')
+        prefix="Phase $TARGET"
+        FINAL_STATE_MESSAGE="$prefix complete"
+        QUEUE_EXIT_LOG="🎉 $prefix complete!"
+    else
+        explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --explain 2>/dev/null || echo '{}')
+        prefix="Auto"
+        FINAL_STATE_MESSAGE="All tasks complete"
+        QUEUE_EXIT_LOG="🎉 All tasks complete!"
+    fi
+
+    reason=$(printf '%s' "$explain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('reason',''))" 2>/dev/null || echo "")
+    if [ "$reason" = "blocked_dependencies" ]; then
+        ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(item['id'] for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
+        FINAL_STATE_STEP="deadlocked"
+        FINAL_STATE_MESSAGE="$prefix deadlocked: pending tasks remain blocked by dependencies"
+        [ -n "$ids" ] && FINAL_STATE_MESSAGE="$FINAL_STATE_MESSAGE: $ids"
+        FINAL_NOTIFY_MESSAGE="⚠️ Ralph stopped: pending tasks remain blocked. Run /status for details."
+        if [ "$MODE" = "phase" ]; then
+            QUEUE_EXIT_LOG="⚠️ No runnable tasks remain in $prefix; pending tasks are blocked."
+        else
+            QUEUE_EXIT_LOG="⚠️ No runnable tasks remain; pending tasks are blocked."
+        fi
+    elif [ "$reason" = "blocked_statuses" ]; then
+        status_ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(f\"{item['id']}({item.get('status','')})\" for item in data.get('blocked_by_status', [])))" 2>/dev/null || true)
+        FINAL_STATE_STEP="deadlocked"
+        FINAL_STATE_MESSAGE="$prefix blocked: unresolved tasks remain non-runnable by status"
+        [ -n "$status_ids" ] && FINAL_STATE_MESSAGE="$FINAL_STATE_MESSAGE: $status_ids"
+        FINAL_NOTIFY_MESSAGE="⚠️ Ralph stopped: unresolved tasks remain blocked by status. Run /status for details."
+        if [ "$MODE" = "phase" ]; then
+            QUEUE_EXIT_LOG="⚠️ No runnable tasks remain in $prefix; unresolved tasks are blocked by status."
+        else
+            QUEUE_EXIT_LOG="⚠️ No runnable tasks remain; unresolved tasks are blocked by status."
+        fi
+    fi
 }
 
 sanitize_fix_instructions() {
@@ -1811,9 +1865,12 @@ while true; do
 
     if [ "$TASK_JSON" = "null" ] || [ -z "$TASK_JSON" ]; then
         if [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
+            set_queue_exit_state
             log_deadlock_reason || true
+            log "$QUEUE_EXIT_LOG"
+        else
+            log "🎉 No more pending tasks!"
         fi
-        log "🎉 No more pending tasks!"
         break
     fi
 
@@ -2454,7 +2511,12 @@ except Exception:
 
     if [ "$MODE" = "phase" ]; then
         REMAINING=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" 2>/dev/null || echo "null")
-        [ "$REMAINING" = "null" ] && { log "🎉 Phase $TARGET complete!"; break; }
+        if [ "$REMAINING" = "null" ]; then
+            set_queue_exit_state
+            log_deadlock_reason || true
+            log "$QUEUE_EXIT_LOG"
+            break
+        fi
     fi
     log "DEBUG: Finished task $TASK_ID, continuing to next..."
     # Circuit breaker check
@@ -2468,8 +2530,8 @@ except Exception:
     continue
 done
 
-write_state "idle" "" "idle" "All tasks complete"
-notify "🎉 Ralph finished! Run /status for details."
+write_state "$FINAL_STATE_STATUS" "" "$FINAL_STATE_STEP" "$FINAL_STATE_MESSAGE"
+notify "$FINAL_NOTIFY_MESSAGE"
 log "════════════════════════════════════════════════════"
 log "💰 SESSION TOTAL: ${SESSION_TASKS} tasks, ~$(format_tokens "$SESSION_TOKENS") tokens (~\$$(estimate_cost "$SESSION_TOKENS"))"
 log "════════════════════════════════════════════════════"
