@@ -2222,8 +2222,8 @@
       "dependencies": [
         "R11-01"
       ],
-      "status": "pending",
-      "completed_at": null,
+      "status": "verified_done",
+      "completed_at": "2026-03-19T17:41:25.767454+00:00",
       "revision_notes": "",
       "timeout": 300,
       "role": "coder"

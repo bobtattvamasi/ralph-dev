@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R11-02: Finalize runtime state cleanly after successful task closure
+- Files: .ralph/audit/R11-01.json,ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
+- Result: approved
+- Notes: 
+- Time: 2026-03-19T17:41:25Z
+
 ### R11-01: Distinguish deadlocked queue from completed queue in final runtime state
 - Files: ralph.sh,scripts/next_task.py,src/ralph/resources/ralph.sh,src/ralph/resources/scripts/next_task.py,tests/test_cli_packaging.py,tests/test_integration.py
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T12:20:03Z
-
-### R9-04: Tests: покрытие fetch_channel.py
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T11:54:22Z

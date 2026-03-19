@@ -86,3 +86,4 @@
 - **R8-07** (2026-03-16 12:25 UTC): 
 - **R8-08** (2026-03-16 12:30 UTC): 
 - **R11-01** (2026-03-19 09:05 UTC): Reviewed diff and test evidence: deadlocked dependency and blocked-status end states no longer emit completion messaging, final state records deadlock context, and 121 tests passed with 1 skipped.
+- **R11-02** (2026-03-19 17:41 UTC): Reviewed the diff and test evidence: `ralph.sh` initializes and resets `REASON`, adds a task-mode success exit-state helper, and applies it on successful closure so final state no longer claims the task is still running or that the whole queue is complete. Integration tests now assert idle/completed final state, cleared `current_task`, preserved pending follow-up tasks, and absence of tail-shell unbound-variable failures. Test suite passed: 122 passed, 1 skipped.
