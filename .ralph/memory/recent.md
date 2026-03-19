@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R11-01: Distinguish deadlocked queue from completed queue in final runtime state
+- Files: ralph.sh,scripts/next_task.py,src/ralph/resources/ralph.sh,src/ralph/resources/scripts/next_task.py,tests/test_cli_packaging.py,tests/test_integration.py
+- Result: approved
+- Notes: 
+- Time: 2026-03-19T09:05:10Z
+
 ### R8-08: templates/AGENTS_CREATIVE.md — роль креативного директора
 - Files: none
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T11:54:22Z
-
-### R9-05: Tests: integration test полного цикла coder→lead→commit
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T11:49:06Z

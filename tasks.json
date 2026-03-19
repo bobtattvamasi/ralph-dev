@@ -2198,8 +2198,8 @@
         "Regression tests cover deadlocked phase or auto final-state behavior without changing targeted task mode semantics"
       ],
       "dependencies": [],
-      "status": "pending",
-      "completed_at": null,
+      "status": "verified_done",
+      "completed_at": "2026-03-19T09:05:10.233891+00:00",
       "revision_notes": "",
       "timeout": 360,
       "role": "coder"

@@ -85,3 +85,4 @@
 - **R5-04** (2026-03-16 12:20 UTC): 
 - **R8-07** (2026-03-16 12:25 UTC): 
 - **R8-08** (2026-03-16 12:30 UTC): 
+- **R11-01** (2026-03-19 09:05 UTC): Reviewed diff and test evidence: deadlocked dependency and blocked-status end states no longer emit completion messaging, final state records deadlock context, and 121 tests passed with 1 skipped.
