@@ -149,6 +149,7 @@ FINAL_STATE_STEP="idle"
 FINAL_STATE_MESSAGE="All tasks complete"
 FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
 QUEUE_EXIT_LOG="🎉 All tasks complete!"
+REASON=""
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 # Prevent duplicate ralph instances
 if { [ "$MODE" = "task" ] || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
@@ -410,6 +411,14 @@ set_queue_exit_state() {
             QUEUE_EXIT_LOG="⚠️ No runnable tasks remain; unresolved tasks are blocked by status."
         fi
     fi
+}
+
+set_task_success_exit_state() {
+    FINAL_STATE_STATUS="idle"
+    FINAL_STATE_STEP="completed"
+    FINAL_STATE_MESSAGE="Task $TASK_ID complete"
+    FINAL_NOTIFY_MESSAGE="✅ Ralph finished requested task $TASK_ID. Run /status for details."
+    QUEUE_EXIT_LOG="✅ Requested task $TASK_ID complete!"
 }
 
 sanitize_fix_instructions() {
@@ -1850,6 +1859,7 @@ esac
 # ─── Main loop ───
 while true; do
     CONTROL_STATUS=0
+    REASON=""
     check_control || CONTROL_STATUS=$?
     if [ $CONTROL_STATUS -eq 1 ]; then
         log "⏹ Stop signal received"
@@ -2363,6 +2373,7 @@ except Exception:
                     log "╚═══════════════════════════════════════════╝"
                     log "💰 Task $TASK_ID cost: ~$(format_tokens "$TASK_TOKENS") tokens (~\$$(estimate_cost "$TASK_TOKENS") at \$3/1M input)"
                     SESSION_TASKS=$((SESSION_TASKS + 1))
+                    [ "$MODE" = "task" ] && set_task_success_exit_state
                 fi
                 ;;
 

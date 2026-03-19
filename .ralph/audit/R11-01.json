@@ -1,0 +1,45 @@
+{
+  "task_id": "R11-01",
+  "title": "Distinguish deadlocked queue from completed queue in final runtime state",
+  "status": "done",
+  "verification": {
+    "result": "pass",
+    "reason": "Generic implementation verification passed.",
+    "task_class": "implementation",
+    "evidence_files": [
+      "ralph.sh",
+      "scripts/next_task.py",
+      "src/ralph/resources/ralph.sh",
+      "src/ralph/resources/scripts/next_task.py",
+      "tests/test_cli_packaging.py",
+      "tests/test_integration.py"
+    ]
+  },
+  "changes": {
+    "all": [
+      "ralph.sh",
+      "scripts/next_task.py",
+      "src/ralph/resources/ralph.sh",
+      "src/ralph/resources/scripts/next_task.py",
+      "tests/test_cli_packaging.py",
+      "tests/test_integration.py"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "scripts/next_task.py",
+      "src/ralph/resources/ralph.sh",
+      "src/ralph/resources/scripts/next_task.py",
+      "tests/test_cli_packaging.py",
+      "tests/test_integration.py"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"R11-01\",\"summary\":\"Final queue exhaustion now distinguishes true completion from deadlocked or status-blocked backlog in phase and auto modes, and regression coverage passes.\",\"quality_score\":94,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"Reviewed diff and test evidence: deadlocked dependency and blocked-status end states no longer emit completion messaging, final state records deadlock context, and 121 tests passed with 1 skipped.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 1,
+  "duration_sec": 1490,
+  "timestamp": "2026-03-19T09:05:10Z",
+  "runtime_success": true,
+  "verified_success": true
+}

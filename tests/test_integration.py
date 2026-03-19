@@ -369,6 +369,50 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert audit["verification"]["result"] == "pass"
     assert audit["runtime_success"] is True
     assert audit["verified_success"] is True
+    state = load_state(project_dir)
+    assert state["status"] == "idle"
+    assert state["current_task"] == ""
+    assert state["current_phase_step"] == "completed"
+    assert state["message"] == "Task T01 complete"
+
+
+def test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"].append(
+        {
+            "id": "T02",
+            "phase": "R1",
+            "title": "Second pending task",
+            "description": "Should remain pending after explicit single-task run",
+            "status": "pending",
+            "priority": "medium",
+            "dependencies": [],
+            "timeout": 5,
+        }
+    )
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "unbound variable" not in (result.stdout + result.stderr)
+    assert "REASON" not in result.stderr
+    assert load_task_status(project_dir, "T01") == "verified_done"
+    assert load_task_status(project_dir, "T02") == "pending"
+    state = load_state(project_dir)
+    assert state["status"] == "idle"
+    assert state["current_task"] == ""
+    assert state["current_phase_step"] == "completed"
+    assert state["message"] == "Task T01 complete"
+    assert "All tasks complete" not in state["message"]
 
 
 def test_ralph_task_mode_runs_requested_pending_task_exactly(tmp_path: Path) -> None:
