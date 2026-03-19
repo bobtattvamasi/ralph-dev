@@ -42,12 +42,39 @@ def pick_next(tasks, *, task_id=None, phase=None):
     return candidates[0]
 
 
+def explain_non_runnable(tasks, *, phase=None):
+    done = {t["id"] for t in tasks if t["status"] in COMPLETED_STATUSES}
+    pending = [t for t in tasks if t["status"] == "pending"]
+    if phase is not None:
+        pending = [t for t in pending if str(t.get("phase")) == str(phase)]
+    blocked = []
+    for task in pending:
+        unmet = [dep for dep in task.get("dependencies", []) if dep not in done]
+        if unmet:
+            blocked.append(
+                {
+                    "id": task["id"],
+                    "title": task.get("title", ""),
+                    "unmet_dependencies": unmet,
+                }
+            )
+    return {
+        "has_pending": bool(pending),
+        "blocked_pending": blocked,
+        "reason": "blocked_dependencies" if blocked else "no_pending",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", default=None)
     parser.add_argument("--phase", default=None)
+    parser.add_argument("--explain", action="store_true")
     args = parser.parse_args()
     data = load_tasks()
+    if args.explain:
+        print(json.dumps(explain_non_runnable(data["tasks"], phase=args.phase), indent=2, ensure_ascii=False))
+        sys.exit(0)
     task = pick_next(data["tasks"], task_id=args.task, phase=args.phase)
     if task is None:
         print("null")

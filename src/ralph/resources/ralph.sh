@@ -338,6 +338,26 @@ print(f"🎯 Requested task {task_id} is runnable and will be executed directly"
 PY
 }
 
+log_deadlock_reason() {
+    local explain_json reason ids details prefix
+    if [ "$MODE" = "phase" ]; then
+        explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" --explain 2>/dev/null || echo '{}')
+        prefix="Phase $TARGET"
+    else
+        explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --explain 2>/dev/null || echo '{}')
+        prefix="Auto"
+    fi
+    reason=$(printf '%s' "$explain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('reason',''))" 2>/dev/null || echo "")
+    if [ "$reason" != "blocked_dependencies" ]; then
+        return 1
+    fi
+    ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(item['id'] for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
+    details=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('; '.join(f\"{item['id']} needs {', '.join(item.get('unmet_dependencies', []))}\" for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
+    [ -n "$ids" ] && log "⚠️ $prefix deadlocked: pending tasks remain blocked by dependencies: $ids"
+    [ -n "$details" ] && log "⚠️ $prefix blocked details: $details"
+    return 0
+}
+
 sanitize_fix_instructions() {
     local raw_fix="${1:-}"
     local sanitized_output=""
@@ -1790,6 +1810,9 @@ while true; do
     TASK_JSON=$(python3 "$RALPH_DIR/scripts/next_task.py" $NEXT_ARGS 2>/dev/null || echo "null")
 
     if [ "$TASK_JSON" = "null" ] || [ -z "$TASK_JSON" ]; then
+        if [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
+            log_deadlock_reason || true
+        fi
         log "🎉 No more pending tasks!"
         break
     fi

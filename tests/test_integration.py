@@ -542,6 +542,74 @@ def test_ralph_auto_mode_still_runs_next_runnable_pending_task(tmp_path: Path) -
     assert load_task_status(project_dir, "T01") == "pending"
 
 
+def test_ralph_phase_mode_explains_deadlocked_pending_tasks(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["phases"]["R2"] = {"name": "Phase 2", "description": "Deadlock explanation test"}
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R2",
+            "title": "Blocked in phase",
+            "description": "Should not be reported as phase complete",
+            "status": "pending",
+            "priority": "high",
+            "dependencies": ["T99"],
+            "timeout": 5,
+        }
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "phase", "R2"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T01" in result.stdout
+    assert "Phase R2 blocked details: T01 needs T99" in result.stdout
+    assert "Phase R2 complete!" not in result.stdout
+    assert "No more pending tasks!" in result.stdout
+    assert load_task_status(project_dir, "T01") == "pending"
+
+
+def test_ralph_auto_mode_explains_deadlocked_pending_tasks(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"] = [
+        {
+            "id": "T01",
+            "phase": "R1",
+            "title": "Blocked in auto",
+            "description": "Should not be reported as pure queue exhaustion",
+            "status": "pending",
+            "priority": "high",
+            "dependencies": ["T99"],
+            "timeout": 5,
+        }
+    ]
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "auto"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Auto deadlocked: pending tasks remain blocked by dependencies: T01" in result.stdout
+    assert "Auto blocked details: T01 needs T99" in result.stdout
+    assert "No more pending tasks!" in result.stdout
+    assert load_task_status(project_dir, "T01") == "pending"
+
+
 def test_ralph_blocks_duplicate_launch_with_pid_guard(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     env["MOCK_CODEX_SLEEP"] = "4"

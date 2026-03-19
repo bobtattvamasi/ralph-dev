@@ -2172,9 +2172,9 @@
       "dependencies": [
         "R10-14"
       ],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "",
+      "status": "verified_done",
+      "completed_at": "2026-03-19T07:42:41.439712+00:00",
+      "revision_notes": "Phase and auto modes now emit explicit deadlock reasoning for non-runnable pending tasks, including blocked task ids and unmet dependencies; integration tests cover both paths without changing targeted task semantics.",
       "timeout": 360,
       "role": "coder"
     }
