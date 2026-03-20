@@ -2251,6 +2251,30 @@
       "revision_notes": "",
       "timeout": 300,
       "role": "coder"
+    },
+    {
+      "id": "R11-04",
+      "phase": "R11",
+      "category": "reliability",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Preserve clean final tail and truthful state after successful one-task completion",
+      "description": "When a requested task closes successfully, Ralph must not end the final reporting tail with a shell syntax error and must preserve the truthful final runtime state instead of regressing back to running/current task. The fix must keep the clean one-task exit behavior established by R11-03 without reintroducing the earlier tail hang.",
+      "acceptance_criteria": [
+        "Successful one-task completion does not end with a shell syntax error in the final reporting tail",
+        "Successful closure preserves a truthful final runtime state instead of regressing back to running or current-task state",
+        "Successful one-task completion still exits cleanly without reintroducing the previous tail hang",
+        "Regression tests cover this successful-tail finalization path"
+      ],
+      "dependencies": [
+        "R11-03"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
     }
   ]
 }
