@@ -2227,6 +2227,30 @@
       "revision_notes": "",
       "timeout": 300,
       "role": "coder"
+    },
+    {
+      "id": "R11-03",
+      "phase": "R11",
+      "category": "reliability",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Exit cleanly after successful one-task final status reporting",
+      "description": "When a requested task closes successfully, Ralph must not leave the orchestration process hanging in the final status/reporting tail. Nested final status reporting must complete cleanly so ./ralph.sh task <TASK_ID> exits normally after success while preserving the truthful final runtime state established by R11-02.",
+      "acceptance_criteria": [
+        "Successful one-task completion does not leave ./ralph.sh task <TASK_ID> hanging in the final status/reporting tail",
+        "Post-success final or status reporting returns cleanly instead of stalling on a nested ralph.sh status call",
+        "Successful closure still preserves the truthful final runtime state after task completion",
+        "Regression tests cover successful-closure tail exit behavior"
+      ],
+      "dependencies": [
+        "R11-02"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
     }
   ]
 }
