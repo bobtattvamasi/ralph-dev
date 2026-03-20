@@ -178,11 +178,11 @@ extract_tokens() {
 }
 
 format_tokens() {
-    python3 -c "print(f'{int(${1:-0}):,}')"
+    python3 -c "print(f'{int(${1:-0}):,}')" 2>/dev/null || printf '%s' "${1:-0}"
 }
 
 estimate_cost() {
-    python3 -c "print(f'{(int(${1:-0}) * 3 / 1000000):.2f}')"
+    python3 -c "print(f'{(int(${1:-0}) * 3 / 1000000):.2f}')" 2>/dev/null || printf '0.00'
 }
 
 ensure_metrics_schema() {
@@ -419,6 +419,12 @@ set_task_success_exit_state() {
     FINAL_STATE_MESSAGE="Task $TASK_ID complete"
     FINAL_NOTIFY_MESSAGE="✅ Ralph finished requested task $TASK_ID. Run /status for details."
     QUEUE_EXIT_LOG="✅ Requested task $TASK_ID complete!"
+}
+
+persist_task_success_state() {
+    [ "$MODE" = "task" ] || return 0
+    set_task_success_exit_state
+    write_state "$FINAL_STATE_STATUS" "" "$FINAL_STATE_STEP" "$FINAL_STATE_MESSAGE"
 }
 
 sanitize_fix_instructions() {
@@ -2373,6 +2379,7 @@ except Exception:
                             break
                         fi
                     fi
+                    persist_task_success_state
                     git add -A
                     git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
                     log_metrics "success" "true" "true"
@@ -2392,10 +2399,6 @@ except Exception:
                     log "╚═══════════════════════════════════════════╝"
                     log "💰 Task $TASK_ID cost: ~$(format_tokens "$TASK_TOKENS") tokens (~\$$(estimate_cost "$TASK_TOKENS") at \$3/1M input)"
                     SESSION_TASKS=$((SESSION_TASKS + 1))
-                    if [ "$MODE" = "task" ]; then
-                        set_task_success_exit_state
-                        write_state "$FINAL_STATE_STATUS" "" "$FINAL_STATE_STEP" "$FINAL_STATE_MESSAGE"
-                    fi
                 fi
                 ;;
 

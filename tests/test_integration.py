@@ -455,6 +455,42 @@ exec "{sys.executable}" "$@"
     assert state["message"] == "Task T01 complete"
 
 
+def test_ralph_task_success_preserves_final_state_if_success_tail_reporting_hits_formatter_error(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    python_shim = tmp_path / "bin" / "python3"
+    write_executable(
+        python_shim,
+        f"""#!/usr/bin/env bash
+if [ "${{1:-}}" = "-c" ] && printf '%s' "${{2:-}}" | grep -Fq "* 3 / 1000000"; then
+    echo "forced estimate_cost failure" >&2
+    exit 91
+fi
+exec "{sys.executable}" "$@"
+""",
+    )
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    assert "forced estimate_cost failure" not in (result.stdout + result.stderr)
+    assert "=== Final State ===" in result.stdout
+    assert "Status: idle" in result.stdout
+    assert "Step: completed" in result.stdout
+    state = load_state(project_dir)
+    assert state["status"] == "idle"
+    assert state["current_task"] == ""
+    assert state["current_phase_step"] == "completed"
+    assert state["message"] == "Task T01 complete"
+
+
 def test_ralph_task_mode_runs_requested_pending_task_exactly(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     tasks = load_tasks(project_dir)

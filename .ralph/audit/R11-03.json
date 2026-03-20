@@ -1,0 +1,37 @@
+{
+  "task_id": "R11-03",
+  "title": "Exit cleanly after successful one-task final status reporting",
+  "status": "done",
+  "verification": {
+    "result": "pass",
+    "reason": "Generic implementation verification passed.",
+    "task_class": "implementation",
+    "evidence_files": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py"
+    ]
+  },
+  "changes": {
+    "all": [
+      ".ralph/audit/R11-02.json",
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"R11-03\",\"summary\":\"Финальный хвост успешного одиночного запуска теперь завершается чисто без вложенного `ralph.sh status`, при этом итоговое runtime-состояние сохраняется корректным и регрессия покрыта тестом.\",\"quality_score\":96,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"Проверены инструкции, diff и тесты. В `src/ralph/resources/ralph.sh` финальный вывод вынесен в `print_final_report()` и больше не вызывает вложенный `status`, который раньше запускал `pytest` и мог зависнуть в хвосте отчётности. При этом итоговое состояние по-прежнему пишется через `write_state \\\"$FINAL_STATE_STATUS\\\" ...`, что сохраняет правдивый финальный runtime-state из R11-02. Интеграционные тесты покрывают и корректную финализацию idle/completed, и отсутствие nested status/pytest в успешном tail. Тестовый прогон зелёный: 123 passed, 1 skipped.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 1,
+  "duration_sec": 969,
+  "timestamp": "2026-03-20T02:51:28Z",
+  "runtime_success": true,
+  "verified_success": true
+}
