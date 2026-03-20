@@ -14,6 +14,7 @@
 5. Bash changes must pass `bash -n ralph.sh`.
 6. Python changes must pass `python3 -c "import ast; ast.parse(...)"` where applicable.
 7. Prefer repo-local state and configuration over machine-level assumptions.
+8. Prefer narrow task execution over broad repo exploration: start from the known hot zone and expand only when evidence requires it.
 
 ## Notes
 - Ralph attaches to any repo that contains `tasks.json`.
