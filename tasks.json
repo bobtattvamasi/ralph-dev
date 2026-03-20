@@ -1592,7 +1592,7 @@
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "pending",
+      "status": "partial",
       "dependencies": [
         "R8-02",
         "R8-03"
@@ -1605,7 +1605,8 @@
         "Инструкция читать Channel Context из промта",
         "Инструкция читать blog_state.json для номера"
       ],
-      "completed_at": null
+      "completed_at": null,
+      "revision_notes": "Historical aggregate task no longer used as a live execution candidate: dependency truth is non-runnable and current repo truth is partial. Replace with narrower R12 tasks for journalist template completion and context pipeline pieces."
     },
     {
       "id": "R8-05",
@@ -2272,6 +2273,72 @@
       ],
       "status": "verified_done",
       "completed_at": "2026-03-20T04:01:41.388646+00:00",
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R12-01",
+      "phase": "R12",
+      "category": "feature",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Bot: minimal /ask command with single-shot Ralph response",
+      "description": "Add the smallest operator-facing /ask command path in scripts/ralph_bot.py so the bot can accept one short prompt and return one single-shot Ralph response without introducing chat history or multi-turn state.",
+      "acceptance_criteria": [
+        "/ask command is routed in scripts/ralph_bot.py",
+        "A dedicated /ask handler exists for the single-shot response path",
+        "Regression tests cover the minimal /ask command behavior",
+        "No chat history or multi-turn /chat behavior is introduced in this task"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R12-02",
+      "phase": "R12",
+      "category": "feature",
+      "priority": "medium",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Minimal scripts/run_eval.py skeleton for offline eval fixtures",
+      "description": "Add the smallest standalone scripts/run_eval.py entrypoint that can load a basic eval fixture source and emit a bounded offline evaluation result without introducing broader eval orchestration or run artifact history.",
+      "acceptance_criteria": [
+        "scripts/run_eval.py exists and is safely executable or importable",
+        "The script can load at least one basic eval fixture source",
+        "Regression tests cover the minimal run_eval.py path",
+        "This task does not introduce broader run history or runs/<run_id>/ storage"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R12-03",
+      "phase": "R12",
+      "category": "docs",
+      "priority": "medium",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Complete AGENTS_JOURNALIST.md with concrete examples and context rules",
+      "description": "Finish templates/AGENTS_JOURNALIST.md as a standalone template task: add clear Channel Context guidance, blog_state numbering guidance, one good post example, and one bad post example with an explanation.",
+      "acceptance_criteria": [
+        "templates/AGENTS_JOURNALIST.md contains a good post example section",
+        "templates/AGENTS_JOURNALIST.md contains a bad post example section with explanation",
+        "The template explicitly tells the journalist role to read Channel Context from the prompt",
+        "The template explicitly tells the journalist role to read blog_state.json for numbering"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
       "revision_notes": "",
       "timeout": 300,
       "role": "coder"
