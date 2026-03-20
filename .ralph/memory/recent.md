@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R11-03: Exit cleanly after successful one-task final status reporting
+- Files: .ralph/audit/R11-02.json,ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
+- Result: approved
+- Notes: 
+- Time: 2026-03-20T02:51:28Z
+
 ### R11-02: Finalize runtime state cleanly after successful task closure
 - Files: .ralph/audit/R11-01.json,ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-16T12:25:07Z
-
-### R5-04: Prompt versioning: version header in AGENTS_*.md
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T12:20:03Z
