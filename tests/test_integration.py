@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -413,6 +414,36 @@ def test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion(tmp
     assert state["current_phase_step"] == "completed"
     assert state["message"] == "Task T01 complete"
     assert "All tasks complete" not in state["message"]
+
+
+def test_ralph_task_success_final_tail_does_not_run_nested_status_pytest(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    python_shim = tmp_path / "bin" / "python3"
+    write_executable(
+        python_shim,
+        f"""#!/usr/bin/env bash
+if [ "${{1:-}}" = "-m" ] && [ "${{2:-}}" = "pytest" ] && [ "${{3:-}}" = "--tb=no" ] && [ "${{4:-}}" = "-q" ]; then
+    echo "status pytest should not run during final tail" >&2
+    exit 97
+fi
+exec "{sys.executable}" "$@"
+""",
+    )
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    assert "=== Final State ===" in result.stdout
+    assert "Task T01 complete" in result.stdout
+    assert "status pytest should not run during final tail" not in (result.stdout + result.stderr)
 
 
 def test_ralph_task_mode_runs_requested_pending_task_exactly(tmp_path: Path) -> None:

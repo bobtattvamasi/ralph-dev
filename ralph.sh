@@ -1758,10 +1758,7 @@ self_heal_environment() {
 }
 
 # ─── Status ───
-if [ "$MODE" = "status" ]; then
-    echo "=== Test Status ==="
-    python3 -m pytest --tb=no -q 2>/dev/null | tail -1 || echo "tests not run"
-    echo ""
+print_task_progress_report() {
     echo "=== Task Progress ==="
     python3 -c "
 import json
@@ -1781,6 +1778,26 @@ if pending:
     for t in pending[:5]:
         print('  {} [{}] {}'.format(t['id'], t['priority'], t['title']))
 "
+}
+
+print_status_report() {
+    echo "=== Test Status ==="
+    python3 -m pytest --tb=no -q 2>/dev/null | tail -1 || echo "tests not run"
+    echo ""
+    print_task_progress_report
+}
+
+print_final_report() {
+    echo "=== Final State ==="
+    echo "Status: $FINAL_STATE_STATUS"
+    echo "Step: $FINAL_STATE_STEP"
+    echo "Message: $FINAL_STATE_MESSAGE"
+    echo ""
+    print_task_progress_report
+}
+
+if [ "$MODE" = "status" ]; then
+    print_status_report
     exit 0
 fi
 
@@ -2547,4 +2564,4 @@ log "═════════════════════════
 log "💰 SESSION TOTAL: ${SESSION_TASKS} tasks, ~$(format_tokens "$SESSION_TOKENS") tokens (~\$$(estimate_cost "$SESSION_TOKENS"))"
 log "════════════════════════════════════════════════════"
 log "📊 Final:"
-"$RALPH_DIR"/"ralph.sh" status
+print_final_report
