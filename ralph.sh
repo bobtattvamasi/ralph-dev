@@ -1760,24 +1760,26 @@ self_heal_environment() {
 # ─── Status ───
 print_task_progress_report() {
     echo "=== Task Progress ==="
-    python3 -c "
+    python3 - <<'PY' 2>/dev/null || echo "task progress unavailable"
 import json
-d = json.load(open('tasks.json'))
-tasks = d['tasks']
-done = sum(1 for t in tasks if t['status'] in {'done', 'verified_done'})
+from pathlib import Path
+
+data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
+tasks = data["tasks"]
+done = sum(1 for task in tasks if task["status"] in {"done", "verified_done"})
 total = len(tasks)
-print(f'  Total: {done}/{total} tasks done')
-for phase in sorted(set(str(t['phase']) for t in tasks)):
-    pt = [t for t in tasks if str(t['phase']) == phase]
-    pd = sum(1 for t in pt if t['status'] in {'done', 'verified_done'})
-    print(f'  Phase {phase}: {pd}/{len(pt)}')
+print(f"  Total: {done}/{total} tasks done")
+for phase in sorted({str(task["phase"]) for task in tasks}):
+    phase_tasks = [task for task in tasks if str(task["phase"]) == phase]
+    phase_done = sum(1 for task in phase_tasks if task["status"] in {"done", "verified_done"})
+    print(f"  Phase {phase}: {phase_done}/{len(phase_tasks)}")
 print()
-pending = [t for t in tasks if t['status'] == 'pending']
+pending = [task for task in tasks if task["status"] == "pending"]
 if pending:
-    print('Next pending:')
-    for t in pending[:5]:
-        print('  {} [{}] {}'.format(t['id'], t['priority'], t['title']))
-"
+    print("Next pending:")
+    for task in pending[:5]:
+        print(f"  {task['id']} [{task['priority']}] {task['title']}")
+PY
 }
 
 print_status_report() {
@@ -2390,7 +2392,10 @@ except Exception:
                     log "╚═══════════════════════════════════════════╝"
                     log "💰 Task $TASK_ID cost: ~$(format_tokens "$TASK_TOKENS") tokens (~\$$(estimate_cost "$TASK_TOKENS") at \$3/1M input)"
                     SESSION_TASKS=$((SESSION_TASKS + 1))
-                    [ "$MODE" = "task" ] && set_task_success_exit_state
+                    if [ "$MODE" = "task" ]; then
+                        set_task_success_exit_state
+                        write_state "$FINAL_STATE_STATUS" "" "$FINAL_STATE_STEP" "$FINAL_STATE_MESSAGE"
+                    fi
                 fi
                 ;;
 

@@ -441,9 +441,18 @@ exec "{sys.executable}" "$@"
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert load_task_status(project_dir) == "verified_done"
+    assert "syntax error" not in (result.stdout + result.stderr)
+    assert "unexpected token" not in (result.stdout + result.stderr)
     assert "=== Final State ===" in result.stdout
+    assert "Status: idle" in result.stdout
+    assert "Step: completed" in result.stdout
     assert "Task T01 complete" in result.stdout
     assert "status pytest should not run during final tail" not in (result.stdout + result.stderr)
+    state = load_state(project_dir)
+    assert state["status"] == "idle"
+    assert state["current_task"] == ""
+    assert state["current_phase_step"] == "completed"
+    assert state["message"] == "Task T01 complete"
 
 
 def test_ralph_task_mode_runs_requested_pending_task_exactly(tmp_path: Path) -> None:
