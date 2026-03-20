@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R12-02: Minimal scripts/run_eval.py skeleton for offline eval fixtures
+- Files: .ralph/audit/R11-04.json,scripts/run_eval.py,src/ralph/resources/scripts/run_eval.py,tests/fixtures/basic_eval_fixture.json,tests/test_run_eval.py
+- Result: approved
+- Notes: 
+- Time: 2026-03-20T18:05:09Z
+
 ### R11-04: Preserve clean final tail and truthful state after successful one-task completion
 - Files: .ralph/audit/R11-03.json,ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-19T09:05:10Z
-
-### R8-08: templates/AGENTS_CREATIVE.md — роль креативного директора
-- Files: none
-- Result: approved
-- Notes: 
-- Time: 2026-03-16T12:30:25Z
