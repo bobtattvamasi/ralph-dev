@@ -534,6 +534,53 @@ def test_ralph_task_mode_runs_requested_pending_task_exactly(tmp_path: Path) -> 
     assert load_task_status(project_dir, "T01") == "pending"
 
 
+def test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_run(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Minimal script task"
+    tasks["tasks"][0]["description"] = "Add scripts/run_eval.py and keep it importable."
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/run_eval.py exists and is safely executable or importable"
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir(exist_ok=True)
+    (project_dir / "src" / "ralph" / "resources" / "scripts").mkdir(parents=True, exist_ok=True)
+    (project_dir / "scripts" / "run_eval.py").write_text(
+        "def main():\n    return 0\n\nif __name__ == '__main__':\n    raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+    (project_dir / "src" / "ralph" / "resources" / "scripts" / "run_eval.py").write_text(
+        "def main():\n    return 0\n\nif __name__ == '__main__':\n    raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [str(RALPH_SH), "handoff", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🪄 HANDOFF — Using existing validated worktree state" in result.stdout
+    assert "🤖 CODER — Attempt" not in result.stdout
+    assert "👔 TECH LEAD — Reviewing" in result.stdout
+    assert load_task_status(project_dir) == "verified_done"
+    audit = load_audit(project_dir)
+    assert audit["status"] == "done"
+    assert audit["verification"]["result"] == "pass"
+    assert audit["runtime_success"] is True
+    assert audit["verified_success"] is True
+    state = load_state(project_dir)
+    assert state["status"] == "idle"
+    assert state["current_task"] == ""
+    assert state["current_phase_step"] == "completed"
+    assert state["message"] == "Task T01 complete"
+
+
 def test_ralph_task_mode_rejects_non_runnable_requested_task_explicitly(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     tasks = load_tasks(project_dir)

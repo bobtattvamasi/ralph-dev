@@ -151,15 +151,20 @@ FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
 QUEUE_EXIT_LOG="🎉 All tasks complete!"
 REASON=""
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
+
+is_single_task_mode() {
+    [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
+}
+
 # Prevent duplicate ralph instances
-if { [ "$MODE" = "task" ] || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+if { is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
     _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
     if [ -n "$_existing_pid" ] && kill -0 "$_existing_pid" 2>/dev/null; then
         echo "⚠️  Ralph already running (PID $_existing_pid). Aborting duplicate launch."
         exit 1
     fi
 fi
-if [ "$MODE" = "task" ] || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
+if is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
     OWNS_MAIN_PID=1
     echo "$$" > "$PROJECT_DIR/ralph_main.pid"
 fi
@@ -422,7 +427,7 @@ set_task_success_exit_state() {
 }
 
 persist_task_success_state() {
-    [ "$MODE" = "task" ] || return 0
+    is_single_task_mode || return 0
     set_task_success_exit_state
     write_state "$FINAL_STATE_STATUS" "" "$FINAL_STATE_STEP" "$FINAL_STATE_MESSAGE"
 }
@@ -1868,6 +1873,11 @@ case "$MODE" in
         NEXT_ARGS="--task $TARGET"
         validate_requested_task
         ;;
+    handoff)
+        [ -z "$TARGET" ] && { echo "Usage: ralph.sh handoff <id>"; exit 1; }
+        NEXT_ARGS="--task $TARGET"
+        validate_requested_task
+        ;;
     phase)
         [ -z "$TARGET" ] && { echo "Usage: ralph.sh phase <num>"; exit 1; }
         NEXT_ARGS="--phase $TARGET"
@@ -1876,7 +1886,7 @@ case "$MODE" in
         NEXT_ARGS=""
         ;;
     *)
-        echo "Usage: ralph.sh {task|phase|auto|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
+        echo "Usage: ralph.sh {task|handoff|phase|auto|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
         exit 1
         ;;
 esac
@@ -2005,56 +2015,86 @@ print(task.get('role', 'coder'))
             break
         fi
 
-        # ═══ CODER ═══
-        CURRENT_ATTEMPT=$((FIX_RETRY + 1))
-        log "═══════════════════════════════════════════"
-        log "🤖 CODER — Attempt ${CURRENT_ATTEMPT}/${MAX_ATTEMPTS}"
-        log "Task: ${TASK_ID} — ${TASK_TITLE}"
-        log "═══════════════════════════════════════════"
-        log "🤖 [CODER] Attempt $((FIX_RETRY+1))..."
-        write_state "running" "$TASK_ID" "coder" "Coder implementing..."
-        notify "🤖 [CODER] Starting: $TASK_ID — $TASK_TITLE"
-        CODER_START=$(date +%s)
-        apply_timeout_override
+        PRE_HASH=$(git rev-parse HEAD)
+        CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
+        CODER_TOKENS=0
+        CODER_DURATION=0
+        CODEX_EXIT=0
 
-        # Inject memory context
-        PROJECT_AGENTS=""
-        PROJECT_ARCHITECTURE=""
-        PROJECT_MEMORY_SYSTEM=""
-        MEMORY_CORE=""
-        MEMORY_RECENT=""
-        RELEVANT_CONTEXT=""
-        if [ -f "AGENTS.md" ]; then
-            PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
-        fi
-        if [ -f "ARCHITECTURE.md" ]; then
-            PROJECT_ARCHITECTURE=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
-        fi
-        if [ -f "MEMORY_SYSTEM.md" ]; then
-            PROJECT_MEMORY_SYSTEM=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
-        fi
-        if [ -f ".ralph/memory/core.md" ]; then
-            MEMORY_CORE=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
-        fi
-        if [ -f ".ralph/memory/recent.md" ]; then
-            MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
-        fi
-        RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" || true)
+        if [ "$MODE" = "handoff" ] && [ "$FIX_RETRY" -eq 0 ]; then
+            CURRENT_ATTEMPT=1
+            log "═══════════════════════════════════════════"
+            log "🪄 HANDOFF — Using existing validated worktree state"
+            log "Task: ${TASK_ID} — ${TASK_TITLE}"
+            log "═══════════════════════════════════════════"
+            write_state "running" "$TASK_ID" "handoff" "Preparing validated worktree handoff..."
+            notify "🪄 [HANDOFF] Starting: $TASK_ID — $TASK_TITLE"
+            CODER_START=$(date +%s)
 
-        # Read required_context files
-        CONTEXT_CONTENT=""
-        if [ -n "$TASK_CONTEXT_FILES" ]; then
-            for ctx_file in $TASK_CONTEXT_FILES; do
-                if [ -f "$ctx_file" ]; then
-                    CONTEXT_CONTENT="${CONTEXT_CONTENT}
+            if [ -z "$(git status --short 2>/dev/null)" ]; then
+                REASON="Handoff requested but no existing worktree evidence was found."
+                TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                log "$REASON"
+                log_metrics "failed" "false" "false"
+                RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+                AUDIT_WRITTEN=true
+                defer_blocked_task "$REASON"
+                break
+            fi
+
+            git add -A
+            git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
+        else
+            # ═══ CODER ═══
+            CURRENT_ATTEMPT=$((FIX_RETRY + 1))
+            log "═══════════════════════════════════════════"
+            log "🤖 CODER — Attempt ${CURRENT_ATTEMPT}/${MAX_ATTEMPTS}"
+            log "Task: ${TASK_ID} — ${TASK_TITLE}"
+            log "═══════════════════════════════════════════"
+            log "🤖 [CODER] Attempt $((FIX_RETRY+1))..."
+            write_state "running" "$TASK_ID" "coder" "Coder implementing..."
+            notify "🤖 [CODER] Starting: $TASK_ID — $TASK_TITLE"
+            CODER_START=$(date +%s)
+            apply_timeout_override
+
+            # Inject memory context
+            PROJECT_AGENTS=""
+            PROJECT_ARCHITECTURE=""
+            PROJECT_MEMORY_SYSTEM=""
+            MEMORY_CORE=""
+            MEMORY_RECENT=""
+            RELEVANT_CONTEXT=""
+            if [ -f "AGENTS.md" ]; then
+                PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
+            fi
+            if [ -f "ARCHITECTURE.md" ]; then
+                PROJECT_ARCHITECTURE=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
+            fi
+            if [ -f "MEMORY_SYSTEM.md" ]; then
+                PROJECT_MEMORY_SYSTEM=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
+            fi
+            if [ -f ".ralph/memory/core.md" ]; then
+                MEMORY_CORE=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
+            fi
+            if [ -f ".ralph/memory/recent.md" ]; then
+                MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
+            fi
+            RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" || true)
+
+            # Read required_context files
+            CONTEXT_CONTENT=""
+            if [ -n "$TASK_CONTEXT_FILES" ]; then
+                for ctx_file in $TASK_CONTEXT_FILES; do
+                    if [ -f "$ctx_file" ]; then
+                        CONTEXT_CONTENT="${CONTEXT_CONTENT}
 ## File: $ctx_file
 $(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
 "
-                fi
-            done
-        fi
+                    fi
+                done
+            fi
 
-        CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
+            CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
 Run make test to verify current state.
 
 ## Architecture Doc
@@ -2084,22 +2124,22 @@ ${RELEVANT_CONTEXT:-No keyword-matched source snippets found.}
 ## Your Task
 $TASK_JSON"
 
-        if [ -n "$FIX_INSTRUCTIONS" ]; then
-            CODER_PROMPT="$CODER_PROMPT
+            if [ -n "$FIX_INSTRUCTIONS" ]; then
+                CODER_PROMPT="$CODER_PROMPT
 
 ## Fix Instructions from Tech Lead (MUST address)
 $FIX_INSTRUCTIONS"
-        fi
+            fi
 
-        HUMAN_COMMENT=$(get_human_comment)
-        if [ -n "$HUMAN_COMMENT" ]; then
-            CODER_PROMPT="$CODER_PROMPT
+            HUMAN_COMMENT=$(get_human_comment)
+            if [ -n "$HUMAN_COMMENT" ]; then
+                CODER_PROMPT="$CODER_PROMPT
 
 ## Human Comment (from project owner via Telegram)
 $HUMAN_COMMENT"
-        fi
+            fi
 
-        CODER_PROMPT="$CODER_PROMPT
+            CODER_PROMPT="$CODER_PROMPT
 
 ## Rules
 - **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
@@ -2119,39 +2159,37 @@ Expected response structure:
 \`\`\`python
 ... code ...
 \`\`\`"
-        CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
+            CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
 
-        PRE_HASH=$(git rev-parse HEAD)
+            set +e
+            # run_codex handles retries/backoff for codex execution
+            run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
+            CODEX_EXIT=$?
+            set -e
+            CONTROL_STATUS=0
+            check_control || CONTROL_STATUS=$?
+            if [ $CONTROL_STATUS -eq 1 ]; then
+                log "⏹ Stop signal received"
+                write_state "stopped" "" "" "Stopped by user"
+                notify "⏹ Ralph stopped by user"
+                cleanup
+                exit 0
+            elif [ $CONTROL_STATUS -eq 2 ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
+                skip_current_task
+                TASK_DONE=true
+                TASK_SKIPPED=true
+                break
+            fi
+            CODER_TOKENS=$(extract_tokens "$CODER_OUTPUT")
+            TASK_TOKENS=$((TASK_TOKENS + ${CODER_TOKENS:-0}))
+            SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
+            log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
 
-        CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
-        set +e
-        # run_codex handles retries/backoff for codex execution
-        run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
-        CODEX_EXIT=$?
-        set -e
-        CONTROL_STATUS=0
-        check_control || CONTROL_STATUS=$?
-        if [ $CONTROL_STATUS -eq 1 ]; then
-            log "⏹ Stop signal received"
-            write_state "stopped" "" "" "Stopped by user"
-            notify "⏹ Ralph stopped by user"
-            cleanup
-            exit 0
-        elif [ $CONTROL_STATUS -eq 2 ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
-            skip_current_task
-            TASK_DONE=true
-            TASK_SKIPPED=true
-            break
-        fi
-        CODER_TOKENS=$(extract_tokens "$CODER_OUTPUT")
-        TASK_TOKENS=$((TASK_TOKENS + ${CODER_TOKENS:-0}))
-        SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
-        log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
-
-        # Commit any unstaged changes the coder left behind
-        if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
-            git add -A
-            git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
+            # Commit any unstaged changes the coder left behind
+            if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
+                git add -A
+                git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
+            fi
         fi
 
         ASSET_STATUS=0
@@ -2502,7 +2540,7 @@ except Exception:
     done
 
     if [ "$TASK_SKIPPED" = true ]; then
-        [ "$MODE" = "task" ] && break
+        is_single_task_mode && break
         continue
     fi
 
@@ -2512,7 +2550,7 @@ except Exception:
             RALPH_AUDIT_REASON="${REASON:-Task blocked}" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
             AUDIT_WRITTEN=true
         fi
-        [ "$MODE" = "task" ] && break
+        is_single_task_mode && break
         continue
     fi
 
@@ -2538,12 +2576,12 @@ except Exception:
             break
         else
             defer_blocked_task "$REASON"
-            [ "$MODE" = "task" ] && break
+            is_single_task_mode && break
             continue
         fi
     fi
 
-    [ "$MODE" = "task" ] && break
+    is_single_task_mode && break
 
     if [ "$MODE" = "phase" ]; then
         REMAINING=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" 2>/dev/null || echo "null")
