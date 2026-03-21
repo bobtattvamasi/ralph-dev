@@ -80,7 +80,7 @@ async def test_cmd_ask_without_input_returns_usage(bot_env: dict[str, object]) -
     await bot.cmd_ask("   ")
 
     safe_send = bot_env["safe_send"]
-    safe_send.assert_awaited_once_with("Usage: /ask <question>\nExample: /ask what is Ralph doing now?")
+    safe_send.assert_awaited_once_with(bot.ASK_USAGE_TEXT)
 
 
 @pytest.mark.asyncio
@@ -294,6 +294,14 @@ async def test_handle_update_routes_ask(bot_env: dict[str, object], monkeypatch:
     await bot.handle_update({"message": {"text": "/ask what is Ralph doing now?"}})
 
     ask_mock.assert_awaited_once_with("what is Ralph doing now?")
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_empty_ask_to_usage(bot_env: dict[str, object]) -> None:
+    await bot.handle_update({"message": {"text": "/ask   "}})
+
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once_with(bot.ASK_USAGE_TEXT)
 
 
 @pytest.mark.asyncio

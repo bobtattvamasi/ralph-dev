@@ -48,6 +48,7 @@ RUNTIME = SimpleNamespace(
     ralph_process=None,
     caffeinate_process=None,
 )
+ASK_USAGE_TEXT = "Usage: /ask <question>\nExample: /ask what is Ralph doing now?"
 
 HOT_RELOAD_EXPORTS = [
     "read_state",
@@ -1274,7 +1275,7 @@ async def cmd_ask(prompt: str) -> None:
     set_send_context("/ask")
     question = prompt.strip()
     if not question:
-        await safe_send("Usage: /ask <question>\nExample: /ask what is Ralph doing now?")
+        await safe_send(ASK_USAGE_TEXT)
         return
     await safe_send("⚠️ /ask routing is available, but the answer backend is not implemented in this task.")
 
@@ -1405,7 +1406,7 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/trust_report":
         await cmd_trust_report()
     elif cmd == "/ask":
-        await cmd_ask(args)
+        await cmd_ask(args.lstrip())
     elif cmd == "/cost":
         await cmd_cost()
     elif cmd == "/stats":
