@@ -156,6 +156,94 @@ is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
 }
 
+handoff_candidate_paths() {
+    python3 - "$RALPH_DIR" "$1" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ralph_dir = Path(sys.argv[1])
+task = json.loads(sys.argv[2])
+project_dir = Path.cwd()
+sys.path.insert(0, str(ralph_dir / "scripts"))
+
+from verify_task_closure import (  # type: ignore
+    command_candidate_handlers,
+    command_routed_handlers,
+    extract_command_tokens,
+    extract_path_candidates,
+    read_text,
+)
+paths: set[str] = set(extract_path_candidates(task))
+command_tokens = extract_command_tokens(task)
+
+if command_tokens:
+    bot_path = project_dir / "scripts" / "ralph_bot.py"
+    bot_text = read_text(bot_path)
+    paths.add("scripts/ralph_bot.py")
+    packaged_bot = project_dir / "src" / "ralph" / "resources" / "scripts" / "ralph_bot.py"
+    if packaged_bot.exists():
+        paths.add("src/ralph/resources/scripts/ralph_bot.py")
+    for token in command_tokens:
+        handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
+        for test_file in (project_dir / "tests").glob("test_*.py"):
+            test_text = read_text(test_file)
+            if f"/{token}" in test_text or any(handler in test_text for handler in handlers):
+                paths.add(test_file.relative_to(project_dir).as_posix())
+
+for path in sorted(paths):
+    print(path)
+PY
+}
+
+handoff_worktree_evidence_paths() {
+    local task_json="$1"
+    local candidate_paths=""
+    local path=""
+
+    candidate_paths=$(handoff_candidate_paths "$task_json")
+    [ -n "$candidate_paths" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if [ -n "$(git status --porcelain --untracked-files=all -- "$path" 2>/dev/null)" ]; then
+            printf '%s\n' "$path"
+        fi
+    done <<< "$candidate_paths"
+}
+
+handoff_repo_backed_evidence_paths() {
+    local task_json="$1"
+    local candidate_paths=""
+    local head_changed=""
+    local path=""
+
+    git rev-parse --verify HEAD^ >/dev/null 2>&1 || return 0
+    candidate_paths=$(handoff_candidate_paths "$task_json")
+    [ -n "$candidate_paths" ] || return 0
+    head_changed=$(git diff --name-only HEAD^ HEAD 2>/dev/null || true)
+    [ -n "$head_changed" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if printf '%s\n' "$head_changed" | grep -Fxq "$path"; then
+            printf '%s\n' "$path"
+        fi
+    done <<< "$candidate_paths"
+}
+
+handoff_stage_paths() {
+    local paths="$1"
+    local path=""
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        git add -A -- "$path"
+    done <<< "$paths"
+}
+
 # Prevent duplicate ralph instances
 if { is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
     _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
@@ -256,7 +344,7 @@ PY
         RALPH_AUDIT_VERIFICATION_JSON="$verification_json_payload" \
         RALPH_AUDIT_CHANGED_FILES_JSON="$changed_files_json" \
         RALPH_AUDIT_REVIEW_JSON="${REVIEW_JSON:-{}}" \
-        RALPH_AUDIT_REVIEW_RAW="$REVIEW" \
+        RALPH_AUDIT_REVIEW_RAW="${REVIEW:-}" \
         RALPH_AUDIT_ATTEMPTS="$CURRENT_ATTEMPT" \
         RALPH_AUDIT_DURATION="$audit_duration" \
         RALPH_AUDIT_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -2020,19 +2108,48 @@ print(task.get('role', 'coder'))
         CODER_TOKENS=0
         CODER_DURATION=0
         CODEX_EXIT=0
+        SKIP_CODER_STAGE=0
 
         if [ "$MODE" = "handoff" ] && [ "$FIX_RETRY" -eq 0 ]; then
+            HANDOFF_WORKTREE_EVIDENCE=""
+            HANDOFF_REPO_EVIDENCE=""
             CURRENT_ATTEMPT=1
             log "═══════════════════════════════════════════"
-            log "🪄 HANDOFF — Using existing validated worktree state"
+            log "🪄 HANDOFF — Evaluating existing task-scoped candidate state"
             log "Task: ${TASK_ID} — ${TASK_TITLE}"
             log "═══════════════════════════════════════════"
             write_state "running" "$TASK_ID" "handoff" "Preparing validated worktree handoff..."
             notify "🪄 [HANDOFF] Starting: $TASK_ID — $TASK_TITLE"
             CODER_START=$(date +%s)
 
-            if [ -z "$(git status --short 2>/dev/null)" ]; then
-                REASON="Handoff requested but no existing worktree evidence was found."
+            HANDOFF_WORKTREE_EVIDENCE=$(handoff_worktree_evidence_paths "$TASK_JSON")
+            if [ -n "$HANDOFF_WORKTREE_EVIDENCE" ]; then
+                log "🪄 HANDOFF — Using existing task-scoped worktree evidence"
+                handoff_stage_paths "$HANDOFF_WORKTREE_EVIDENCE"
+                if [ -z "$(git diff --cached --name-only 2>/dev/null)" ]; then
+                    REASON="Handoff requested but task-scoped worktree evidence could not be staged."
+                    TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                    log "$REASON"
+                    log_metrics "failed" "false" "false"
+                    RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+                    AUDIT_WRITTEN=true
+                    defer_blocked_task "$REASON"
+                    break
+                fi
+                git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
+                SKIP_CODER_STAGE=1
+            else
+                HANDOFF_REPO_EVIDENCE=$(handoff_repo_backed_evidence_paths "$TASK_JSON")
+                if [ -n "$HANDOFF_REPO_EVIDENCE" ]; then
+                    PRE_HASH=$(git rev-parse HEAD^)
+                    log "🪄 HANDOFF — Using repo-backed candidate state from current HEAD"
+                    SKIP_CODER_STAGE=1
+                fi
+            fi
+
+            if [ "$SKIP_CODER_STAGE" -eq 0 ]; then
+                REASON="Handoff requested but no task-scoped worktree evidence or exact-task repo-backed candidate evidence was found. Runtime-owned artifacts do not count."
+                QUALITY="n/a"
                 TASK_DURATION=$(( $(date +%s) - TASK_START ))
                 log "$REASON"
                 log_metrics "failed" "false" "false"
@@ -2041,10 +2158,9 @@ print(task.get('role', 'coder'))
                 defer_blocked_task "$REASON"
                 break
             fi
+        fi
 
-            git add -A
-            git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
-        else
+        if [ "$SKIP_CODER_STAGE" -eq 0 ]; then
             # ═══ CODER ═══
             CURRENT_ATTEMPT=$((FIX_RETRY + 1))
             log "═══════════════════════════════════════════"

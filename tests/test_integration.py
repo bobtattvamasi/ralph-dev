@@ -565,7 +565,7 @@ def test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_ru
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "🪄 HANDOFF — Using existing validated worktree state" in result.stdout
+    assert "🪄 HANDOFF — Using existing task-scoped worktree evidence" in result.stdout
     assert "🤖 CODER — Attempt" not in result.stdout
     assert "👔 TECH LEAD — Reviewing" in result.stdout
     assert load_task_status(project_dir) == "verified_done"
@@ -579,6 +579,108 @@ def test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_ru
     assert state["current_task"] == ""
     assert state["current_phase_step"] == "completed"
     assert state["message"] == "Task T01 complete"
+
+
+def test_ralph_handoff_ignores_runtime_owned_dirty_artifacts_without_opening_candidate_path(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    audit_dir = project_dir / ".ralph" / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    (audit_dir / "T99.json").write_text('{"status":"done"}\n', encoding="utf-8")
+
+    result = subprocess.run(
+        [str(RALPH_SH), "handoff", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🤖 CODER — Attempt" not in result.stdout
+    assert "👔 TECH LEAD — Reviewing" not in result.stdout
+    assert "Runtime-owned artifacts do not count" in result.stdout
+    assert load_task_status(project_dir) == "blocked"
+    audit = load_audit(project_dir)
+    assert audit["status"] == "blocked"
+    assert audit["runtime_success"] is False
+    assert audit["verified_success"] is False
+
+
+def test_ralph_handoff_mode_closes_from_repo_backed_candidate_state_without_coder_run(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Minimal script task"
+    tasks["tasks"][0]["description"] = "Add scripts/run_eval.py and keep it importable."
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/run_eval.py exists and is safely executable or importable"
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir(exist_ok=True)
+    (project_dir / "src" / "ralph" / "resources" / "scripts").mkdir(parents=True, exist_ok=True)
+    (project_dir / "scripts" / "run_eval.py").write_text(
+        "def main():\n    return 0\n\nif __name__ == '__main__':\n    raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+    (project_dir / "src" / "ralph" / "resources" / "scripts" / "run_eval.py").write_text(
+        "def main():\n    return 0\n\nif __name__ == '__main__':\n    raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feat: repo-backed candidate"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [str(RALPH_SH), "handoff", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🪄 HANDOFF — Using repo-backed candidate state from current HEAD" in result.stdout
+    assert "🤖 CODER — Attempt" not in result.stdout
+    assert "👔 TECH LEAD — Reviewing" in result.stdout
+    assert load_task_status(project_dir) == "verified_done"
+    audit = load_audit(project_dir)
+    assert audit["status"] == "done"
+    assert audit["verification"]["result"] == "pass"
+    assert audit["runtime_success"] is True
+    assert audit["verified_success"] is True
+    state = load_state(project_dir)
+    assert state["status"] == "idle"
+    assert state["current_phase_step"] == "completed"
+
+
+def test_ralph_handoff_fail_closes_without_worktree_or_repo_backed_candidate_state(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "handoff", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🤖 CODER — Attempt" not in result.stdout
+    assert "👔 TECH LEAD — Reviewing" not in result.stdout
+    assert "no task-scoped worktree evidence or exact-task repo-backed candidate evidence was found" in result.stdout
+    assert load_task_status(project_dir) == "blocked"
+    audit = load_audit(project_dir)
+    assert audit["status"] == "blocked"
+    assert audit["runtime_success"] is False
+    assert audit["verified_success"] is False
 
 
 def test_ralph_task_mode_rejects_non_runnable_requested_task_explicitly(tmp_path: Path) -> None:
