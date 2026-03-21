@@ -1,0 +1,24 @@
+{
+  "task_id": "R12-04",
+  "title": "Bot: route /ask and add dedicated cmd_ask usage handler",
+  "status": "blocked",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "Handoff requested but no task-scoped worktree evidence or exact-task repo-backed candidate evidence was found. Runtime-owned artifacts do not count.",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "",
+    "parsed": {}
+  },
+  "attempts": 1,
+  "duration_sec": 2,
+  "timestamp": "2026-03-21T12:31:38Z",
+  "runtime_success": false,
+  "verified_success": false
+}
