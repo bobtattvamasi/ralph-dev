@@ -1,0 +1,40 @@
+{
+  "task_id": "R12-02",
+  "title": "Minimal scripts/run_eval.py skeleton for offline eval fixtures",
+  "status": "done",
+  "verification": {
+    "result": "pass",
+    "reason": "Script verification passed.",
+    "task_class": "script",
+    "evidence_files": [
+      "scripts/run_eval.py",
+      "src/ralph/resources/scripts/run_eval.py",
+      "tests/fixtures/basic_eval_fixture.json",
+      "tests/test_run_eval.py"
+    ]
+  },
+  "changes": {
+    "all": [
+      ".ralph/audit/R11-04.json",
+      "scripts/run_eval.py",
+      "src/ralph/resources/scripts/run_eval.py",
+      "tests/fixtures/basic_eval_fixture.json",
+      "tests/test_run_eval.py"
+    ],
+    "non_bookkeeping": [
+      "scripts/run_eval.py",
+      "src/ralph/resources/scripts/run_eval.py",
+      "tests/fixtures/basic_eval_fixture.json",
+      "tests/test_run_eval.py"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"R12-02\",\"summary\":\"Добавлен минимальный офлайн `run_eval.py` для JSON fixture-источника с ограничением числа кейсов и покрытием регрессией; критерии задачи выполнены.\",\"quality_score\":97,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"Проверены критерии, diff и тестовый прогон. `scripts/run_eval.py` и ресурсная копия добавляют безопасный importable/CLI entrypoint, умеют читать базовый JSON fixture, считать bounded offline-результат и не вводят run history или `runs/<run_id>/` хранение. Покрытие есть на загрузку fixture, bounded evaluation и CLI-path. Прогон зелёный: 128 passed, 1 skipped.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 1,
+  "duration_sec": 297,
+  "timestamp": "2026-03-20T18:05:10Z",
+  "runtime_success": true,
+  "verified_success": true
+}
