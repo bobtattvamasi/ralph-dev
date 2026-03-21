@@ -72,6 +72,23 @@ async def test_cmd_help_sends_command_list(bot_env: dict[str, object]) -> None:
     assert "/timeout [seconds]" in message
     assert "/done [task_id]" in message
     assert "/audit &lt;task_id&gt;" in message
+    assert "/ask &lt;question&gt;" in message
+
+
+@pytest.mark.asyncio
+async def test_cmd_ask_without_input_returns_usage(bot_env: dict[str, object]) -> None:
+    await bot.cmd_ask("   ")
+
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once_with("Usage: /ask <question>\nExample: /ask what is Ralph doing now?")
+
+
+@pytest.mark.asyncio
+async def test_cmd_ask_with_input_stays_backend_free(bot_env: dict[str, object]) -> None:
+    await bot.cmd_ask("what is Ralph doing now?")
+
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once_with("⚠️ /ask routing is available, but the answer backend is not implemented in this task.")
 
 
 @pytest.mark.asyncio
@@ -267,6 +284,16 @@ async def test_handle_update_routes_timeout(bot_env: dict[str, object]) -> None:
     payload = json.loads(control_file.read_text(encoding="utf-8"))
     assert payload["action"] == "timeout"
     assert payload["comment"] == "60"
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_ask(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    ask_mock = AsyncMock()
+    monkeypatch.setattr(bot, "cmd_ask", ask_mock)
+
+    await bot.handle_update({"message": {"text": "/ask what is Ralph doing now?"}})
+
+    ask_mock.assert_awaited_once_with("what is Ralph doing now?")
 
 
 @pytest.mark.asyncio

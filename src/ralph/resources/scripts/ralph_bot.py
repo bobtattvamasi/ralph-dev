@@ -81,6 +81,7 @@ HOT_RELOAD_EXPORTS = [
     "cmd_audit",
     "cmd_audit_last",
     "cmd_trust_report",
+    "cmd_ask",
     "cmd_help",
     "cmd_reload",
     "handle_update",
@@ -1268,6 +1269,16 @@ async def cmd_trust_report() -> None:
     await send_split_message(summary)
 
 
+async def cmd_ask(prompt: str) -> None:
+    """Handle the narrow /ask entrypoint without implementing an answer backend."""
+    set_send_context("/ask")
+    question = prompt.strip()
+    if not question:
+        await safe_send("Usage: /ask <question>\nExample: /ask what is Ralph doing now?")
+        return
+    await safe_send("⚠️ /ask routing is available, but the answer backend is not implemented in this task.")
+
+
 async def cmd_reload() -> None:
     """Hot-reload bot helpers and command handlers from source."""
     set_send_context("/reload")
@@ -1308,6 +1319,7 @@ async def cmd_help() -> None:
         "/audit &lt;task_id&gt; — latest trust audit summary\n"
         "/audit_last [N] — latest audit summaries\n"
         "/trust_report — trust summary across audit artifacts\n"
+        "/ask &lt;question&gt; — bounded operator question entrypoint\n"
         "/cost — token usage & cost estimate\n"
         "/stats — aggregated task metrics from metrics.csv\n"
         "/limits — today's spend vs cost limit\n"
@@ -1392,6 +1404,8 @@ async def handle_update(update: dict) -> None:
         await cmd_audit_last(args)
     elif cmd == "/trust_report":
         await cmd_trust_report()
+    elif cmd == "/ask":
+        await cmd_ask(args)
     elif cmd == "/cost":
         await cmd_cost()
     elif cmd == "/stats":
