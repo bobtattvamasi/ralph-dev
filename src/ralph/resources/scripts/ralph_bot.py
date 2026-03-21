@@ -49,6 +49,8 @@ RUNTIME = SimpleNamespace(
     caffeinate_process=None,
 )
 ASK_USAGE_TEXT = "Usage: /ask <question>\nExample: /ask what is Ralph doing now?"
+ASK_MAX_QUESTION_CHARS = 280
+ASK_MAX_RESPONSE_CHARS = 1200
 
 HOT_RELOAD_EXPORTS = [
     "read_state",
@@ -268,6 +270,43 @@ def get_tasks_summary(phase: str | None = None) -> str:
     if done:
         lines.append(f"\n✅ Done: {', '.join(item['id'] for item in done)}")
     return "\n".join(lines)
+
+
+def build_repo_local_ask_backend() -> dict[str, object]:
+    """Return the explicit repo-local backend contract used by /ask.
+
+    This backend is intentionally bounded and single-shot:
+    - input: one question string
+    - context: current repo-local Ralph state plus pending-task summary
+    - output: one rendered response string
+    - memory: none; no chat history or multi-turn state is stored
+    """
+    return {
+        "name": "repo_local_single_shot",
+        "mode": "single_shot",
+        "max_question_chars": ASK_MAX_QUESTION_CHARS,
+        "max_response_chars": ASK_MAX_RESPONSE_CHARS,
+        "answer": answer_repo_local_question,
+    }
+
+
+def answer_repo_local_question(question: str) -> str:
+    """Answer one /ask question from repo-local state without keeping history."""
+    bounded_question = " ".join(question.split())[:ASK_MAX_QUESTION_CHARS]
+    state = read_state()
+    state_status = state.get("status", "idle")
+    current_task = state.get("current_task") or "none"
+    tasks_summary = get_tasks_summary()
+    tasks_summary = tasks_summary[:600].strip()
+    response = (
+        "🧠 Ralph single-shot reply\n"
+        f"Question: {bounded_question}\n"
+        f"Status: {state_status}\n"
+        f"Current task: {current_task}\n\n"
+        "Repo-local snapshot:\n"
+        f"{tasks_summary}"
+    )
+    return response[:ASK_MAX_RESPONSE_CHARS].rstrip()
 
 
 def get_log_tail(n: int = 15) -> str:
@@ -1271,13 +1310,16 @@ async def cmd_trust_report() -> None:
 
 
 async def cmd_ask(prompt: str) -> None:
-    """Handle the narrow /ask entrypoint without implementing an answer backend."""
+    """Handle the narrow /ask entrypoint through the repo-local single-shot backend."""
     set_send_context("/ask")
     question = prompt.strip()
     if not question:
         await safe_send(ASK_USAGE_TEXT)
         return
-    await safe_send("⚠️ /ask routing is available, but the answer backend is not implemented in this task.")
+    backend = build_repo_local_ask_backend()
+    answer_fn = backend["answer"]
+    response = answer_fn(question)
+    await safe_send(response)
 
 
 async def cmd_reload() -> None:

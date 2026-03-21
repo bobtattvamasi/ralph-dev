@@ -84,11 +84,16 @@ async def test_cmd_ask_without_input_returns_usage(bot_env: dict[str, object]) -
 
 
 @pytest.mark.asyncio
-async def test_cmd_ask_with_input_stays_backend_free(bot_env: dict[str, object]) -> None:
+async def test_cmd_ask_with_input_returns_repo_local_single_shot_response(bot_env: dict[str, object]) -> None:
     await bot.cmd_ask("what is Ralph doing now?")
 
     safe_send = bot_env["safe_send"]
-    safe_send.assert_awaited_once_with("⚠️ /ask routing is available, but the answer backend is not implemented in this task.")
+    safe_send.assert_awaited_once()
+    message = safe_send.await_args.args[0]
+    assert "🧠 Ralph single-shot reply" in message
+    assert "Question: what is Ralph doing now?" in message
+    assert "Status: idle" in message
+    assert "Repo-local snapshot:" in message
 
 
 @pytest.mark.asyncio
