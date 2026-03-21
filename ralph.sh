@@ -220,24 +220,58 @@ handoff_worktree_evidence_paths() {
     done <<< "$candidate_paths"
 }
 
-handoff_repo_backed_evidence_paths() {
+handoff_empty_tree_hash() {
+    printf '%s\n' "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+}
+
+handoff_commit_parent_hash() {
+    local commit_hash="$1"
+    git rev-parse "${commit_hash}^" 2>/dev/null || handoff_empty_tree_hash
+}
+
+handoff_latest_repo_candidate_commit() {
     local task_json="$1"
     local candidate_paths=""
-    local head_changed=""
+    local commit_hash=""
+    local changed_paths=""
+    local filtered_paths=""
     local path=""
 
-    git rev-parse --verify HEAD^ >/dev/null 2>&1 || return 0
     candidate_paths=$(handoff_candidate_paths "$task_json")
     [ -n "$candidate_paths" ] || return 0
-    head_changed=$(git diff --name-only HEAD^ HEAD 2>/dev/null || true)
-    [ -n "$head_changed" ] || return 0
 
+    set --
     while IFS= read -r path; do
         [ -n "$path" ] || continue
-        if printf '%s\n' "$head_changed" | grep -Fxq "$path"; then
-            printf '%s\n' "$path"
-        fi
+        set -- "$@" "$path"
     done <<< "$candidate_paths"
+    [ "$#" -gt 0 ] || return 0
+
+    while IFS= read -r commit_hash; do
+        [ -n "$commit_hash" ] || continue
+        changed_paths=$(git diff-tree --root --no-commit-id --name-only -r "$commit_hash" 2>/dev/null || true)
+        [ -n "$changed_paths" ] || continue
+        filtered_paths=""
+        while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            handoff_is_runtime_owned_path "$path" && continue
+            filtered_paths="${filtered_paths}${path}"$'\n'
+        done <<< "$changed_paths"
+        [ -n "$filtered_paths" ] || continue
+
+        while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if ! printf '%s\n' "$candidate_paths" | grep -Fxq "$path"; then
+                filtered_paths=""
+                break
+            fi
+        done <<< "$filtered_paths"
+
+        if [ -n "$filtered_paths" ]; then
+            printf '%s\n' "$commit_hash"
+            return 0
+        fi
+    done < <(git log --format=%H -- "$@" 2>/dev/null || true)
 }
 
 handoff_stage_paths() {
@@ -1663,14 +1697,15 @@ except Exception:
 }
 
 collect_preclosure_changed_files_json() {
-    python3 - "$PRE_HASH" <<'PY'
+    python3 - "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" <<'PY'
 import json
 import subprocess
 import sys
 
-pre_hash = sys.argv[1]
+base_hash = sys.argv[1]
+target_hash = sys.argv[2]
 commands = [
-    ["git", "diff", "--name-only", pre_hash, "HEAD"],
+    ["git", "diff", "--name-only", base_hash, target_hash],
     ["git", "diff", "--name-only", "--cached"],
     ["git", "diff", "--name-only"],
     ["git", "ls-files", "--others", "--exclude-standard"],
@@ -2162,6 +2197,8 @@ print(task.get('role', 'coder'))
         fi
 
         PRE_HASH=$(git rev-parse HEAD)
+        REVIEW_BASE_HASH="$PRE_HASH"
+        REVIEW_TARGET_HASH="HEAD"
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
         CODER_TOKENS=0
         CODER_DURATION=0
@@ -2171,6 +2208,7 @@ print(task.get('role', 'coder'))
         if [ "$MODE" = "handoff" ] && [ "$FIX_RETRY" -eq 0 ]; then
             HANDOFF_WORKTREE_EVIDENCE=""
             HANDOFF_REPO_EVIDENCE=""
+            HANDOFF_REPO_COMMIT=""
             HANDOFF_UNRELATED_CHANGES=""
             CURRENT_ATTEMPT=1
             log "═══════════════════════════════════════════"
@@ -2209,10 +2247,11 @@ print(task.get('role', 'coder'))
                 fi
                 git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
                 SKIP_CODER_STAGE=1
+                REVIEW_TARGET_HASH="HEAD"
             else
-                HANDOFF_REPO_EVIDENCE=$(handoff_repo_backed_evidence_paths "$TASK_JSON")
-                if [ -n "$HANDOFF_REPO_EVIDENCE" ]; then
-                    HANDOFF_UNRELATED_CHANGES=$(handoff_unrelated_repo_backed_changes "$TASK_JSON")
+                HANDOFF_REPO_COMMIT=$(handoff_latest_repo_candidate_commit "$TASK_JSON")
+                if [ -n "$HANDOFF_REPO_COMMIT" ]; then
+                    HANDOFF_UNRELATED_CHANGES=$(handoff_unrelated_worktree_tracked_changes "$TASK_JSON")
                     if [ -n "$HANDOFF_UNRELATED_CHANGES" ]; then
                         REASON="Handoff requested with unrelated tracked changes outside the exact task scope: $(printf '%s' "$HANDOFF_UNRELATED_CHANGES" | paste -sd ', ' -)"
                         QUALITY="n/a"
@@ -2224,8 +2263,10 @@ print(task.get('role', 'coder'))
                         defer_blocked_task "$REASON"
                         break
                     fi
-                    PRE_HASH=$(git rev-parse HEAD^)
-                    log "🪄 HANDOFF — Using repo-backed candidate state from current HEAD"
+                    PRE_HASH=$(handoff_commit_parent_hash "$HANDOFF_REPO_COMMIT")
+                    REVIEW_BASE_HASH="$PRE_HASH"
+                    REVIEW_TARGET_HASH="$HANDOFF_REPO_COMMIT"
+                    log "🪄 HANDOFF — Using repo-backed candidate state from commit ${HANDOFF_REPO_COMMIT}"
                     SKIP_CODER_STAGE=1
                 fi
             fi
@@ -2418,10 +2459,10 @@ Expected response structure:
         log "⏱️ Coder took ${CODER_DURATION}s"
 
         POST_HASH=$(git rev-parse HEAD)
-        if [ "$PRE_HASH" = "$POST_HASH" ]; then
+        if [ "${REVIEW_BASE_HASH:-$PRE_HASH}" = "${REVIEW_TARGET_HASH:-$POST_HASH}" ]; then
             GIT_DIFF="(no changes committed)"
         else
-            GIT_DIFF=$(git diff "$PRE_HASH" HEAD -- ':!ralph.sh' ':!.ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
+            GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph.sh' ':!.ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
         TEST_OUTPUT=$(make test 2>&1 | tail -40 || echo "tests failed")
 
@@ -2597,7 +2638,7 @@ except Exception:
                     python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" verified_done
                     python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
                     # Update memory with task summary
-                    CHANGED_FILES=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
+                    CHANGED_FILES=$(git diff --name-only "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
                     python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
 
                     if [ "$TASK_RISK" = "high" ]; then
