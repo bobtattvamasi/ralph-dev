@@ -179,6 +179,12 @@ from verify_task_closure import (  # type: ignore
 paths: set[str] = set(extract_path_candidates(task))
 command_tokens = extract_command_tokens(task)
 
+for path in list(paths):
+    if path.startswith("scripts/"):
+        packaged_path = f"src/ralph/resources/{path}"
+        if (project_dir / packaged_path).exists():
+            paths.add(packaged_path)
+
 if command_tokens:
     bot_path = project_dir / "scripts" / "ralph_bot.py"
     bot_text = read_text(bot_path)
@@ -242,6 +248,58 @@ handoff_stage_paths() {
         [ -n "$path" ] || continue
         git add -A -- "$path"
     done <<< "$paths"
+}
+
+handoff_is_runtime_owned_path() {
+    case "${1:-}" in
+        tasks.json|progress.md|audit_report.md|ralph_state.json|ralph_control.json|ralph_alerts.log|ralph_main.pid|ralph_codex.pid|ralph_codex.pgid|.ralph/memory/recent.md|.ralph/memory/decisions.md|.ralph/memory/patterns.md) return 0 ;;
+        logs/*|.pytest_cache/*|__pycache__/*|.ralph/audit/*|ralph/audit/*) return 0 ;;
+    esac
+    return 1
+}
+
+handoff_unrelated_worktree_tracked_changes() {
+    local task_json="$1"
+    local candidate_paths=""
+    local tracked_paths=""
+    local path=""
+
+    candidate_paths=$(handoff_candidate_paths "$task_json")
+    tracked_paths=$(
+        {
+            git diff --name-only 2>/dev/null
+            git diff --cached --name-only 2>/dev/null
+        } | awk 'NF' | sort -u
+    )
+    [ -n "$tracked_paths" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        handoff_is_runtime_owned_path "$path" && continue
+        if ! printf '%s\n' "$candidate_paths" | grep -Fxq "$path"; then
+            printf '%s\n' "$path"
+        fi
+    done <<< "$tracked_paths"
+}
+
+handoff_unrelated_repo_backed_changes() {
+    local task_json="$1"
+    local candidate_paths=""
+    local head_changed=""
+    local path=""
+
+    git rev-parse --verify HEAD^ >/dev/null 2>&1 || return 0
+    candidate_paths=$(handoff_candidate_paths "$task_json")
+    head_changed=$(git diff --name-only HEAD^ HEAD 2>/dev/null || true)
+    [ -n "$head_changed" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        handoff_is_runtime_owned_path "$path" && continue
+        if ! printf '%s\n' "$candidate_paths" | grep -Fxq "$path"; then
+            printf '%s\n' "$path"
+        fi
+    done <<< "$head_changed"
 }
 
 # Prevent duplicate ralph instances
@@ -2113,6 +2171,7 @@ print(task.get('role', 'coder'))
         if [ "$MODE" = "handoff" ] && [ "$FIX_RETRY" -eq 0 ]; then
             HANDOFF_WORKTREE_EVIDENCE=""
             HANDOFF_REPO_EVIDENCE=""
+            HANDOFF_UNRELATED_CHANGES=""
             CURRENT_ATTEMPT=1
             log "═══════════════════════════════════════════"
             log "🪄 HANDOFF — Evaluating existing task-scoped candidate state"
@@ -2124,6 +2183,18 @@ print(task.get('role', 'coder'))
 
             HANDOFF_WORKTREE_EVIDENCE=$(handoff_worktree_evidence_paths "$TASK_JSON")
             if [ -n "$HANDOFF_WORKTREE_EVIDENCE" ]; then
+                HANDOFF_UNRELATED_CHANGES=$(handoff_unrelated_worktree_tracked_changes "$TASK_JSON")
+                if [ -n "$HANDOFF_UNRELATED_CHANGES" ]; then
+                    REASON="Handoff requested with unrelated tracked changes outside the exact task scope: $(printf '%s' "$HANDOFF_UNRELATED_CHANGES" | paste -sd ', ' -)"
+                    QUALITY="n/a"
+                    TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                    log "$REASON"
+                    log_metrics "failed" "false" "false"
+                    RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+                    AUDIT_WRITTEN=true
+                    defer_blocked_task "$REASON"
+                    break
+                fi
                 log "🪄 HANDOFF — Using existing task-scoped worktree evidence"
                 handoff_stage_paths "$HANDOFF_WORKTREE_EVIDENCE"
                 if [ -z "$(git diff --cached --name-only 2>/dev/null)" ]; then
@@ -2141,6 +2212,18 @@ print(task.get('role', 'coder'))
             else
                 HANDOFF_REPO_EVIDENCE=$(handoff_repo_backed_evidence_paths "$TASK_JSON")
                 if [ -n "$HANDOFF_REPO_EVIDENCE" ]; then
+                    HANDOFF_UNRELATED_CHANGES=$(handoff_unrelated_repo_backed_changes "$TASK_JSON")
+                    if [ -n "$HANDOFF_UNRELATED_CHANGES" ]; then
+                        REASON="Handoff requested with unrelated tracked changes outside the exact task scope: $(printf '%s' "$HANDOFF_UNRELATED_CHANGES" | paste -sd ', ' -)"
+                        QUALITY="n/a"
+                        TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                        log "$REASON"
+                        log_metrics "failed" "false" "false"
+                        RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+                        AUDIT_WRITTEN=true
+                        defer_blocked_task "$REASON"
+                        break
+                    fi
                     PRE_HASH=$(git rev-parse HEAD^)
                     log "🪄 HANDOFF — Using repo-backed candidate state from current HEAD"
                     SKIP_CODER_STAGE=1
