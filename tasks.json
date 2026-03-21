@@ -97,6 +97,10 @@
     "R11": {
       "name": "Manual Stabilization",
       "description": "Clean first-run candidates and truthful runtime/operator end-state behavior"
+    },
+    "R12": {
+      "name": "Fresh Execution Canaries",
+      "description": "Narrow replacement tasks for clean coder-first execution candidates"
     }
   },
   "tasks": [
@@ -2293,9 +2297,9 @@
         "No chat history or multi-turn /chat behavior is introduced in this task"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "blocked",
       "completed_at": null,
-      "revision_notes": "",
+      "revision_notes": "Fresh coder-first canary proved this task was too broad and under-specified for cheap execution. Replaced by narrower R12 /ask routing and backend tasks.",
       "timeout": 300,
       "role": "coder"
     },
@@ -2341,6 +2345,53 @@
       "completed_at": null,
       "revision_notes": "",
       "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R12-04",
+      "phase": "R12",
+      "category": "feature",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Bot: route /ask and add dedicated cmd_ask usage handler",
+      "description": "Add the smallest operator-facing /ask command surface in scripts/ralph_bot.py by routing /ask through handle_update to a dedicated cmd_ask handler. This task only covers command parsing, empty-input usage/help behavior, and a bounded handler entrypoint. It must not implement the final answer-generation backend.",
+      "acceptance_criteria": [
+        "/ask is routed in scripts/ralph_bot.py",
+        "A dedicated cmd_ask handler exists",
+        "Empty-input /ask returns a clear usage/help response",
+        "Regression tests cover routing and handler invocation for /ask",
+        "This task does not implement chat history, multi-turn state, or final answer-generation backend"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R12-05",
+      "phase": "R12",
+      "category": "feature",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Bot: implement bounded single-shot backend for /ask",
+      "description": "Implement the smallest repo-local backend used by cmd_ask so /ask <question> returns one bounded single-shot Ralph response without chat history or multi-turn state.",
+      "acceptance_criteria": [
+        "cmd_ask returns one bounded single-shot response for non-empty input",
+        "The response path uses one explicit repo-local backend shape documented in code",
+        "No chat history or multi-turn state is introduced",
+        "Regression tests cover the successful non-empty /ask response path"
+      ],
+      "dependencies": [
+        "R12-04"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 420,
       "role": "coder"
     }
   ]
