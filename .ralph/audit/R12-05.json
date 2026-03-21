@@ -1,0 +1,36 @@
+{
+  "task_id": "R12-05",
+  "title": "Bot: implement bounded single-shot backend for /ask",
+  "status": "done",
+  "verification": {
+    "result": "pass",
+    "reason": "Command verification passed.",
+    "task_class": "command",
+    "evidence_files": [
+      "scripts/ralph_bot.py",
+      "src/ralph/resources/scripts/ralph_bot.py",
+      "tests/test_bot_commands.py"
+    ]
+  },
+  "changes": {
+    "all": [
+      "scripts/ralph_bot.py",
+      "src/ralph/resources/scripts/ralph_bot.py",
+      "tests/test_bot_commands.py"
+    ],
+    "non_bookkeeping": [
+      "scripts/ralph_bot.py",
+      "src/ralph/resources/scripts/ralph_bot.py",
+      "tests/test_bot_commands.py"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"R12-05\",\"summary\":\"Implemented a bounded repo-local single-shot /ask backend with an explicit backend contract, no multi-turn state, and regression coverage for the successful non-empty response path; provided test suite passes.\",\"quality_score\":93,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"R12-05 is ready to land based on the provided diff and passing tests.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 2,
+  "duration_sec": 1636,
+  "timestamp": "2026-03-21T19:14:09Z",
+  "runtime_success": true,
+  "verified_success": true
+}
