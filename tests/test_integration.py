@@ -393,7 +393,7 @@ def test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run(tmp_path: Path
     prompt_file = tmp_path / "coder_prompt_narrow.txt"
     env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
     env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
-    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\\n"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
 
     result = subprocess.run(
         [str(RALPH_SH), "task", "T01"],
