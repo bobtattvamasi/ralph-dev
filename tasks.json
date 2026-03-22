@@ -2439,6 +2439,28 @@
       "revision_notes": "",
       "timeout": 300,
       "role": "coder"
+    },
+    {
+      "id": "R12-08",
+      "phase": "R12",
+      "category": "repair",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Repair: restore green narrow-prompt integration baseline before retrying R12-06",
+      "description": "Fix the already-committed runtime regression in the narrow coder prompt path so tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run passes again and the repository returns to a green preflight baseline before any new R12-06 retry.",
+      "acceptance_criteria": [
+        "tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run passes again",
+        "The simple exact-task narrow prompt path closes as verified_done in the integration scenario",
+        "The repair touches only the narrow prompt/profile path and directly related test expectations",
+        "Verifier, audit, handoff semantics, scheduler, and timeout/backoff policy remain unchanged"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
     }
   ]
 }
