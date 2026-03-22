@@ -377,6 +377,47 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert state["message"] == "Task T01 complete"
 
 
+def test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Simple exact-task script update"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py with the smallest exact-task change."
+    tasks["tasks"][0]["complexity"] = "simple"
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/narrow_target.py is updated",
+        "Simple exact-task path stays narrow by default",
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    prompt_file = tmp_path / "coder_prompt_narrow.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Role Instructions (AGENTS_CODER.md)" in prompt
+    assert "## Exact Task Targets" in prompt
+    assert "scripts/narrow_target.py" in prompt
+    assert "## Relevant Source Snippets" in prompt
+    assert "## Architecture Doc" not in prompt
+    assert "## Memory System Doc" not in prompt
+    assert "## Project Context (from memory)" not in prompt
+    assert "## Recent Tasks (what was done before you)" not in prompt
+    assert "Ralph runtime owns final task bookkeeping" in prompt
+
+
 def test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     tasks = load_tasks(project_dir)

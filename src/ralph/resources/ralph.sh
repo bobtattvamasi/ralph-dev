@@ -156,6 +156,74 @@ is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
 }
 
+coder_prompt_profile() {
+    python3 - "$RALPH_DIR" "$1" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ralph_dir = Path(sys.argv[1])
+task = json.loads(sys.argv[2])
+sys.path.insert(0, str(ralph_dir / "scripts"))
+
+from verify_task_closure import extract_path_candidates, is_bookkeeping_file, normalize_path  # type: ignore
+
+texts: list[str] = [task.get("title", ""), task.get("description", "")]
+texts.extend(task.get("acceptance_criteria", []) or [])
+texts.extend(task.get("test_steps", []) or [])
+combined = "\n".join(texts).lower()
+
+required_context = [
+    normalize_path(path)
+    for path in (task.get("required_context") or [])
+    if isinstance(path, str) and normalize_path(path)
+]
+explicit_project_docs = {
+    "agents.md",
+    "architecture.md",
+    "memory_system.md",
+    "progress.md",
+    ".ralph/memory/core.md",
+    ".ralph/memory/recent.md",
+    ".ralph/memory/patterns.md",
+    ".ralph/memory/decisions.md",
+}
+requires_project_docs = any(path.lower() in explicit_project_docs for path in required_context) or any(
+    marker in combined
+    for marker in (
+        "agents.md",
+        "architecture.md",
+        "memory_system.md",
+        ".ralph/memory/",
+        "project-wide docs",
+        "project wide docs",
+        "project-wide doc",
+        "project wide doc",
+    )
+)
+
+candidate_paths = [
+    path for path in extract_path_candidates(task) if not is_bookkeeping_file(path)
+]
+concrete_targets = [
+    path for path in candidate_paths if not path.startswith("docs/") and not path.endswith(".md")
+]
+
+profile = "broad"
+if (
+    task.get("complexity", "moderate") == "simple"
+    and not required_context
+    and concrete_targets
+    and not requires_project_docs
+):
+    profile = "narrow"
+
+print(json.dumps({"profile": profile, "targets": concrete_targets}, ensure_ascii=False))
+PY
+}
+
 handoff_candidate_paths() {
     python3 - "$RALPH_DIR" "$1" <<'PY'
 from __future__ import annotations
@@ -1776,6 +1844,9 @@ run_coder_agent() {
     local relevant_context=""
     local context_content=""
     local coder_prompt=""
+    local prompt_profile_json=""
+    local coder_prompt_profile_name="broad"
+    local coder_prompt_targets=""
     local human_comment=""
     local coder_output=""
     local pre_hash=""
@@ -1801,6 +1872,9 @@ run_coder_agent() {
     fi
 
     relevant_context=$(build_relevant_context "$TASK_JSON" || true)
+    prompt_profile_json=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
+    coder_prompt_profile_name=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
+    coder_prompt_targets=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
 
     if [ -n "${TASK_CONTEXT_FILES:-}" ]; then
         local ctx_file
@@ -1814,6 +1888,29 @@ $(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
         done
     fi
 
+    if [ "$coder_prompt_profile_name" = "narrow" ]; then
+        coder_prompt="Read ${CODER_ROLE_FILE} first. Use AGENTS.md only if repository conventions become ambiguous. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
+Run make test to verify current state.
+
+## Role Instructions (${CODER_ROLE_FILE})
+${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
+
+## Exact Task Targets
+${coder_prompt_targets:-No explicit concrete target paths detected.}
+
+## Relevant Source Snippets
+${relevant_context:-No keyword-matched source snippets found.}
+
+## Your Task
+$TASK_JSON
+
+## Rules
+- **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
+- Implement ONLY this task
+- make test must pass
+- Do NOT modify tasks.json or progress.md
+- Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits"
+    else
         coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
 Run make test to verify current state.
 
@@ -1850,6 +1947,7 @@ $TASK_JSON
 - make test must pass
 - Do NOT modify tasks.json or progress.md
 - Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits"
+    fi
 
     human_comment=$(get_human_comment)
     if [ -n "$human_comment" ]; then
@@ -2304,6 +2402,9 @@ print(task.get('role', 'coder'))
             MEMORY_CORE=""
             MEMORY_RECENT=""
             RELEVANT_CONTEXT=""
+            PROMPT_PROFILE_JSON=""
+            CODER_PROMPT_PROFILE_NAME="broad"
+            CODER_PROMPT_TARGETS=""
             if [ -f "AGENTS.md" ]; then
                 PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
             fi
@@ -2320,6 +2421,11 @@ print(task.get('role', 'coder'))
                 MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
             fi
             RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" || true)
+            if [ -z "$FIX_INSTRUCTIONS" ]; then
+                PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
+                CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
+                CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
+            fi
 
             # Read required_context files
             CONTEXT_CONTENT=""
@@ -2334,7 +2440,23 @@ $(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
                 done
             fi
 
-            CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
+            if [ "$CODER_PROMPT_PROFILE_NAME" = "narrow" ]; then
+                CODER_PROMPT="Read ${CODER_ROLE_FILE} first. Use AGENTS.md only if repository conventions become ambiguous. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
+Run make test to verify current state.
+
+## Role Instructions (${CODER_ROLE_FILE})
+${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
+
+## Exact Task Targets
+${CODER_PROMPT_TARGETS:-No explicit concrete target paths detected.}
+
+## Relevant Source Snippets
+${RELEVANT_CONTEXT:-No keyword-matched source snippets found.}
+
+## Your Task
+$TASK_JSON"
+            else
+                CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
 Run make test to verify current state.
 
 ## Architecture Doc
@@ -2363,6 +2485,7 @@ ${RELEVANT_CONTEXT:-No keyword-matched source snippets found.}
 
 ## Your Task
 $TASK_JSON"
+            fi
 
             if [ -n "$FIX_INSTRUCTIONS" ]; then
                 CODER_PROMPT="$CODER_PROMPT
