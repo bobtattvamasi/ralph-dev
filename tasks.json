@@ -2393,6 +2393,29 @@
       "revision_notes": "",
       "timeout": 420,
       "role": "coder"
+    },
+    {
+      "id": "R12-06",
+      "phase": "R12",
+      "category": "optimization",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Runtime: narrow coder prompt assembly for simple exact-task runs",
+      "description": "Reduce fresh coder-first cost for simple exact-task runs by making ralph.sh choose a smaller default coder prompt when the requested task has a concrete artifact target, no broad required_context, and no explicit need for project-wide docs. The narrow path must preserve task truth, ownership rules, verifier/audit behavior, and existing handoff/task semantics.",
+      "acceptance_criteria": [
+        "Simple exact-task runs with a concrete artifact target use a narrower coder prompt path in ralph.sh",
+        "The narrow prompt path still includes task JSON, coder role instructions, and essential ownership/trust rules",
+        "Project-wide docs and broad memory context are skipped by default on the narrow path unless the task explicitly requires them",
+        "Default task mode, handoff mode, verifier, audit, and final-state behavior remain unchanged",
+        "Regression tests cover narrow prompt path selection for a simple exact-task run"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
     }
   ]
 }
