@@ -168,7 +168,11 @@ ralph_dir = Path(sys.argv[1])
 task = json.loads(sys.argv[2])
 sys.path.insert(0, str(ralph_dir / "scripts"))
 
-from verify_task_closure import extract_path_candidates, is_bookkeeping_file, normalize_path  # type: ignore
+import verify_task_closure as task_closure  # type: ignore
+
+extract_path_candidates = task_closure.extract_path_candidates
+normalize_path = task_closure.normalize_path
+is_bookkeeping = getattr(task_closure, "is_bookkeeping", task_closure.is_bookkeeping_file)
 
 texts: list[str] = [task.get("title", ""), task.get("description", "")]
 texts.extend(task.get("acceptance_criteria", []) or [])
@@ -205,7 +209,7 @@ requires_project_docs = any(path.lower() in explicit_project_docs for path in re
 )
 
 candidate_paths = [
-    path for path in extract_path_candidates(task) if not is_bookkeeping_file(path)
+    path for path in extract_path_candidates(task) if not is_bookkeeping(path)
 ]
 concrete_targets = [
     path for path in candidate_paths if not path.startswith("docs/") and not path.endswith(".md")
@@ -2421,11 +2425,9 @@ print(task.get('role', 'coder'))
                 MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
             fi
             RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" || true)
-            if [ -z "$FIX_INSTRUCTIONS" ]; then
-                PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
-                CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
-                CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
-            fi
+            PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
+            CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
+            CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
 
             # Read required_context files
             CONTEXT_CONTENT=""

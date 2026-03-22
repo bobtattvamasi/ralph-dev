@@ -49,6 +49,17 @@ def load_changed_files() -> list[str]:
     return []
 
 
+def is_bookkeeping_file(path: str) -> bool:
+    normalized = normalize_path(path)
+    if normalized in BOOKKEEPING_EXACT:
+        return True
+    return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
+
+
+def is_bookkeeping(path: str) -> bool:
+    return is_bookkeeping_file(path)
+
+
 def extract_path_candidates(task: dict[str, Any]) -> list[str]:
     text_parts = [
         str(task.get("title", "")),

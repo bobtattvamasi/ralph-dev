@@ -53,6 +53,10 @@ def is_bookkeeping_file(path: str) -> bool:
     return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
 
 
+def is_bookkeeping(path: str) -> bool:
+    return is_bookkeeping_file(path)
+
+
 def extract_path_candidates(task: dict) -> list[str]:
     texts: list[str] = [task.get("title", ""), task.get("description", "")]
     texts.extend(task.get("acceptance_criteria", []) or [])

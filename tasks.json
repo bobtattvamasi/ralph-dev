@@ -2416,6 +2416,29 @@
       "revision_notes": "",
       "timeout": 300,
       "role": "coder"
+    },
+    {
+      "id": "R12-07",
+      "phase": "R12",
+      "category": "optimization",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "medium",
+      "title": "Runtime: remove duplicate full-test instruction from narrow coder prompt path",
+      "description": "Reduce fresh coder-first cost for simple exact-task runs by keeping the existing runtime smoke test and post-coder runtime test gates, but removing the duplicate full `make test` instruction from the narrow coder prompt path. Replace it with a requirement to run only targeted validation for the exact hot zone unless broader validation is justified by evidence.",
+      "acceptance_criteria": [
+        "The narrow coder prompt path no longer tells the coder to run full `make test` before coding",
+        "The narrow coder prompt path explicitly asks for targeted validation in the exact hot zone unless evidence requires broader checks",
+        "Runtime smoke/preflight `make test` and post-coder runtime `make test` remain unchanged",
+        "Broad coder prompt behavior, handoff behavior, verifier, audit, and final-state semantics remain unchanged",
+        "Regression tests cover that the narrow prompt path no longer embeds the duplicate full-test instruction while existing task-mode behavior stays green"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "",
+      "timeout": 300,
+      "role": "coder"
     }
   ]
 }
