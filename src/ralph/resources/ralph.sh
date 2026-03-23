@@ -157,7 +157,7 @@ is_single_task_mode() {
 }
 
 detect_runtime_task_class() {
-    printf '%s' "${TASK_JSON:-null}" | python3 - "$RALPH_DIR" <<'PY'
+    python3 - "$RALPH_DIR" "${TASK_JSON:-null}" <<'PY'
 from __future__ import annotations
 
 import json
@@ -165,11 +165,11 @@ import sys
 from pathlib import Path
 
 ralph_dir = Path(sys.argv[1])
+task = json.loads(sys.argv[2])
 sys.path.insert(0, str(ralph_dir / "scripts"))
 
 from verify_task_closure import detect_task_class, extract_command_tokens, extract_expected_test_names, extract_path_candidates  # type: ignore
 
-task = json.load(sys.stdin)
 expected_paths = extract_path_candidates(task)
 command_tokens = extract_command_tokens(task)
 expected_tests = extract_expected_test_names(task)
@@ -466,11 +466,37 @@ extract_tokens() {
 }
 
 format_tokens() {
-    python3 -c "print(f'{int(${1:-0}):,}')" 2>/dev/null || printf '%s' "${1:-0}"
+    local tokens="${1:-0}"
+    local formatted=""
+    local status=0
+
+    set +e
+    formatted=$(python3 -c "print(f'{int(${tokens}):,}')" 2>/dev/null)
+    status=$?
+    set -e
+
+    if [ "$status" -eq 0 ] && [ -n "$formatted" ]; then
+        printf '%s' "$formatted"
+    else
+        printf '%s' "$tokens"
+    fi
 }
 
 estimate_cost() {
-    python3 -c "print(f'{(int(${1:-0}) * 3 / 1000000):.2f}')" 2>/dev/null || printf '0.00'
+    local tokens="${1:-0}"
+    local cost=""
+    local status=0
+
+    set +e
+    cost=$(python3 -c "print(f'{(int(${tokens}) * 3 / 1000000):.2f}')" 2>/dev/null)
+    status=$?
+    set -e
+
+    if [ "$status" -eq 0 ] && [ -n "$cost" ]; then
+        printf '%s' "$cost"
+    else
+        printf '0.00'
+    fi
 }
 
 ensure_metrics_schema() {
@@ -2296,6 +2322,7 @@ while true; do
     fi
 
     TASK_JSON=$(python3 "$RALPH_DIR/scripts/next_task.py" $NEXT_ARGS 2>/dev/null || echo "null")
+    export TASK_JSON
 
     if [ "$TASK_JSON" = "null" ] || [ -z "$TASK_JSON" ]; then
         if [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
