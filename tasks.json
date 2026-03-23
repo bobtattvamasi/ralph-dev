@@ -2466,7 +2466,7 @@
       "id": "OPS-01",
       "phase": "OPS",
       "title": "Fix: codex timeout too short — increase to 900s for all complexities",
-      "status": "--status",
+      "status": "verified_done",
       "complexity": "simple",
       "category": "fix",
       "priority": "critical",
@@ -2476,7 +2476,7 @@
         "no more timeout retries on docs tasks"
       ],
       "revision_notes": "verified_done",
-      "completed_at": null
+      "completed_at": "2026-03-23T11:17:28.968299+00:00"
     },
     {
       "id": "OPS-02",
