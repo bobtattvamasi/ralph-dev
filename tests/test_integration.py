@@ -32,12 +32,18 @@ def read_latest_ralph_log(project_dir: Path) -> str:
     return logs[-1].read_text(encoding="utf-8")
 
 
-def write_test_logging_makefile(project_dir: Path, log_name: str = "make_test.log") -> Path:
+def write_test_logging_makefile(
+    project_dir: Path,
+    log_name: str = "make_test.log",
+    pre_sleep_s: float = 0.0,
+    post_sleep_s: float = 0.0,
+) -> Path:
     log_path = project_dir / log_name
     (project_dir / "Makefile").write_text(
         ".PHONY: test\n\n"
         "test:\n"
-        f"\t@python3 -c \"from pathlib import Path; log_path = Path({log_name!r}); phase = 'post' if Path('coder_started').exists() else 'pre'; "
+        f"\t@python3 -c \"import time; from pathlib import Path; log_path = Path({log_name!r}); phase = 'post' if Path('coder_started').exists() else 'pre'; "
+        f"sleep_s = {pre_sleep_s!r} if phase == 'pre' else {post_sleep_s!r}; time.sleep(sleep_s); "
         "fh = log_path.open('a', encoding='utf-8'); fh.write(phase + '\\\\n'); fh.close()\"\n",
         encoding="utf-8",
     )
@@ -456,6 +462,29 @@ def test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test(tm
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert make_log.read_text(encoding="utf-8").splitlines() == ["post"]
+    assert "Pre-task check: fast Python validation" in read_latest_ralph_log(project_dir)
+
+
+def test_ralph_task_mode_fast_pre_task_check_completes_within_30_seconds(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    make_log = write_test_logging_makefile(project_dir, pre_sleep_s=35.0)
+    env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
+
+    started_at = time.perf_counter()
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    elapsed_s = time.perf_counter() - started_at
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert elapsed_s < 30, f"expected fast pre-task validation under 30s, got {elapsed_s:.2f}s"
     assert make_log.read_text(encoding="utf-8").splitlines() == ["post"]
     assert "Pre-task check: fast Python validation" in read_latest_ralph_log(project_dir)
 
