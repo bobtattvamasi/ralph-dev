@@ -1,5 +1,11 @@
 # Recent Task History
 
+### OPS-03: Observability: stream codex output to ralph log in real time
+- Files: ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
+- Result: approved
+- Notes: Доработай timeout/failure ветку в `run_codex()` так, чтобы перед логированием `TIMEOUT`/failure гарантированно завершался и flush-ился FIFO stream logger, а затем вызывался `archive_codex_output()` для сохранения полного вывода в `logs/codex_TASKID_N.txt`; добавь точечный regression test именно на этот сценарий.
+- Time: 2026-03-23T16:16:45Z
+
 ### R12-05: Bot: implement bounded single-shot backend for /ask
 - Files: scripts/ralph_bot.py,src/ralph/resources/scripts/ralph_bot.py,tests/test_bot_commands.py
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-20T04:01:41Z
-
-### R11-03: Exit cleanly after successful one-task final status reporting
-- Files: .ralph/audit/R11-02.json,ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
-- Result: approved
-- Notes: 
-- Time: 2026-03-20T02:51:28Z

@@ -2498,7 +2498,7 @@
       "id": "OPS-03",
       "phase": "OPS",
       "title": "Observability: stream codex output to ralph log in real time",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "feature",
       "priority": "high",
@@ -2507,7 +2507,8 @@
         "no gap between 'Attempt 1...' and TIMEOUT in log",
         "on failure: codex output saved to logs/codex_TASKID_N.txt"
       ],
-      "revision_notes": "blind spot: ralph has no visibility into what codex does"
+      "revision_notes": "blind spot: ralph has no visibility into what codex does",
+      "completed_at": "2026-03-23T16:16:45.426986+00:00"
     },
     {
       "id": "OPS-04",

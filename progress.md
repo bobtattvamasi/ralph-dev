@@ -92,3 +92,4 @@
 - **R12-02** (2026-03-20 18:05 UTC): Проверены критерии, diff и тестовый прогон. `scripts/run_eval.py` и ресурсная копия добавляют безопасный importable/CLI entrypoint, умеют читать базовый JSON fixture, считать bounded offline-результат и не вводят run history или `runs/<run_id>/` хранение. Покрытие есть на загрузку fixture, bounded evaluation и CLI-path. Прогон зелёный: 128 passed, 1 skipped.
 - **R12-04** (2026-03-21 17:15 UTC): Reviewed diff and test evidence: 137 passed, 1 skipped.
 - **R12-05** (2026-03-21 19:14 UTC): R12-05 is ready to land based on the provided diff and passing tests.
+- **OPS-03** (2026-03-23 16:16 UTC): OPS-03 observability criteria verified by the shell changes and integration coverage for streamed log lines, timeout ordering, and archived codex output.
