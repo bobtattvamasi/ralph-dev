@@ -208,6 +208,16 @@ requires_project_docs = any(path.lower() in explicit_project_docs for path in re
     )
 )
 
+def is_broad_required_context(path: str) -> bool:
+    lowered = path.lower()
+    if lowered in explicit_project_docs or lowered.endswith(".md"):
+        return True
+    if any(token in path for token in ("*", "?", "[")):
+        return True
+    return path in {".", "./"} or path.endswith("/")
+
+broad_required_context = any(is_broad_required_context(path) for path in required_context)
+
 candidate_paths = [
     path for path in extract_path_candidates(task) if not is_bookkeeping(path)
 ]
@@ -218,7 +228,7 @@ concrete_targets = [
 profile = "broad"
 if (
     task.get("complexity", "moderate") == "simple"
-    and not required_context
+    and not broad_required_context
     and concrete_targets
     and not requires_project_docs
 ):
@@ -1099,6 +1109,130 @@ enforce_prompt_budget() {
     clip_chars "$max_chars"
 }
 
+build_required_context_content() {
+    local context_files="${1:-}"
+    local context_content=""
+
+    if [ -n "$context_files" ]; then
+        local ctx_file
+        for ctx_file in $context_files; do
+            if [ -f "$ctx_file" ]; then
+                context_content="${context_content}
+## File: $ctx_file
+$(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
+"
+            fi
+        done
+    fi
+
+    printf '%s' "$context_content"
+}
+
+build_coder_prompt() {
+    local task_json="$1"
+    local coder_role_file="$2"
+    local coder_role_content="$3"
+    local coder_prompt_profile_name="$4"
+    local coder_prompt_targets="$5"
+    local context_content="$6"
+    local relevant_context="$7"
+    local project_agents="$8"
+    local project_architecture="$9"
+    local project_memory_system="${10}"
+    local memory_core="${11}"
+    local memory_recent="${12}"
+    local fix_instructions="${13:-}"
+    local human_comment="${14:-}"
+    local coder_prompt=""
+
+    if [ "$coder_prompt_profile_name" = "narrow" ]; then
+        coder_prompt="Read ${coder_role_file} first. Use AGENTS.md only if repository conventions become ambiguous. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
+Run only targeted tests for the exact files you changed (e.g. pytest tests/test_targetfile.py). Run full make test only if you have evidence of broader breakage.
+
+## Role Instructions (${coder_role_file})
+${coder_role_content:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
+
+## Exact Task Targets
+${coder_prompt_targets:-No explicit concrete target paths detected.}
+
+## Required Context Files
+${context_content:-No specific files required.}
+
+## Relevant Source Snippets
+${relevant_context:-No keyword-matched source snippets found.}
+
+## Your Task
+$task_json"
+    else
+        coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${coder_role_file} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
+Run make test to verify current state.
+
+## Architecture Doc
+${project_architecture:-No ARCHITECTURE.md provided. Use AGENTS.md and the repository structure.}
+
+## AGENTS.md Context
+${project_agents:-No AGENTS.md provided.}
+
+## Memory System Doc
+${project_memory_system:-No MEMORY_SYSTEM.md provided. Use AGENTS.md and .ralph/memory/.}
+
+## Role Instructions (${coder_role_file})
+${coder_role_content:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
+
+## Project Context (from memory)
+${memory_core:-No core context yet. Read ARCHITECTURE.md and AGENTS.md for project info.}
+
+## Recent Tasks (what was done before you)
+${memory_recent:-No recent tasks yet. This may be the first task.}
+
+## Required Context Files
+${context_content:-No specific files required.}
+
+## Relevant Source Snippets
+${relevant_context:-No keyword-matched source snippets found.}
+
+## Your Task
+$task_json"
+    fi
+
+    if [ -n "$fix_instructions" ]; then
+        coder_prompt="$coder_prompt
+
+## Fix Instructions from Tech Lead (MUST address)
+$fix_instructions"
+    fi
+
+    if [ -n "$human_comment" ]; then
+        coder_prompt="$coder_prompt
+
+## Human Comment (from project owner via Telegram)
+$human_comment"
+    fi
+
+    coder_prompt="$coder_prompt
+
+## Rules
+- **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
+- Implement ONLY this task
+- Follow acceptance_criteria exactly
+- make test must pass
+- Do NOT modify tasks.json or progress.md
+- Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits
+- If fix instructions mention runtime-owned bookkeeping, address only the real implementation gap
+
+Expected response structure:
+<thinking>
+1. Need to modify app.py to add login route.
+2. Will use flask-login library.
+3. Need to update requirements.txt first.
+</thinking>
+\`\`\`python
+... code ...
+\`\`\`"
+
+    printf '%s' "$coder_prompt"
+}
+
 extract_task_keywords() {
     python3 -c "
 import json
@@ -1879,87 +2013,23 @@ run_coder_agent() {
     prompt_profile_json=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
     coder_prompt_profile_name=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
     coder_prompt_targets=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
-
-    if [ -n "${TASK_CONTEXT_FILES:-}" ]; then
-        local ctx_file
-        for ctx_file in $TASK_CONTEXT_FILES; do
-            if [ -f "$ctx_file" ]; then
-                context_content="${context_content}
-## File: $ctx_file
-$(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
-"
-            fi
-        done
-    fi
-
-    if [ "$coder_prompt_profile_name" = "narrow" ]; then
-        coder_prompt="Read ${CODER_ROLE_FILE} first. Use AGENTS.md only if repository conventions become ambiguous. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
-Run make test to verify current state.
-
-## Role Instructions (${CODER_ROLE_FILE})
-${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
-
-## Exact Task Targets
-${coder_prompt_targets:-No explicit concrete target paths detected.}
-
-## Relevant Source Snippets
-${relevant_context:-No keyword-matched source snippets found.}
-
-## Your Task
-$TASK_JSON
-
-## Rules
-- **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
-- Implement ONLY this task
-- make test must pass
-- Do NOT modify tasks.json or progress.md
-- Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits"
-    else
-        coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
-Run make test to verify current state.
-
-## Architecture Doc
-${project_architecture:-No ARCHITECTURE.md provided. Use AGENTS.md and the repository structure.}
-
-## AGENTS.md Context
-${project_agents:-No AGENTS.md provided.}
-
-## Memory System Doc
-${project_memory_system:-No MEMORY_SYSTEM.md provided. Use AGENTS.md and .ralph/memory/.}
-
-## Role Instructions (${CODER_ROLE_FILE})
-${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
-
-## Project Context (from memory)
-${memory_core:-No core context yet. Read ARCHITECTURE.md and AGENTS.md for project info.}
-
-## Recent Tasks (what was done before you)
-${memory_recent:-No recent tasks yet. This may be the first task.}
-
-## Required Context Files
-${context_content:-No specific files required.}
-
-## Relevant Source Snippets
-${relevant_context:-No keyword-matched source snippets found.}
-
-## Your Task
-$TASK_JSON
-
-## Rules
-- **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
-- Implement ONLY this task
-- make test must pass
-- Do NOT modify tasks.json or progress.md
-- Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits"
-    fi
-
     human_comment=$(get_human_comment)
-    if [ -n "$human_comment" ]; then
-        coder_prompt="$coder_prompt
-
-## Human Comment (from project owner via Telegram)
-$human_comment"
-    fi
+    context_content=$(build_required_context_content "${TASK_CONTEXT_FILES:-}")
+    coder_prompt=$(build_coder_prompt \
+        "$TASK_JSON" \
+        "$CODER_ROLE_FILE" \
+        "$CODER_ROLE_CONTENT" \
+        "$coder_prompt_profile_name" \
+        "$coder_prompt_targets" \
+        "$context_content" \
+        "$relevant_context" \
+        "$project_agents" \
+        "$project_architecture" \
+        "$project_memory_system" \
+        "$memory_core" \
+        "$memory_recent" \
+        "" \
+        "$human_comment")
 
     coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
     coder_output="/tmp/ralph_coder_$$.txt"
@@ -2429,101 +2499,23 @@ print(task.get('role', 'coder'))
             CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
             CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
 
-            # Read required_context files
-            CONTEXT_CONTENT=""
-            if [ -n "$TASK_CONTEXT_FILES" ]; then
-                for ctx_file in $TASK_CONTEXT_FILES; do
-                    if [ -f "$ctx_file" ]; then
-                        CONTEXT_CONTENT="${CONTEXT_CONTENT}
-## File: $ctx_file
-$(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
-"
-                    fi
-                done
-            fi
-
-            if [ "$CODER_PROMPT_PROFILE_NAME" = "narrow" ]; then
-                CODER_PROMPT="Read ${CODER_ROLE_FILE} first. Use AGENTS.md only if repository conventions become ambiguous. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
-Run make test to verify current state.
-
-## Role Instructions (${CODER_ROLE_FILE})
-${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
-
-## Exact Task Targets
-${CODER_PROMPT_TARGETS:-No explicit concrete target paths detected.}
-
-## Relevant Source Snippets
-${RELEVANT_CONTEXT:-No keyword-matched source snippets found.}
-
-## Your Task
-$TASK_JSON"
-            else
-                CODER_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${CODER_ROLE_FILE} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
-Run make test to verify current state.
-
-## Architecture Doc
-${PROJECT_ARCHITECTURE:-No ARCHITECTURE.md provided. Use AGENTS.md and the repository structure.}
-
-## AGENTS.md Context
-${PROJECT_AGENTS:-No AGENTS.md provided.}
-
-## Memory System Doc
-${PROJECT_MEMORY_SYSTEM:-No MEMORY_SYSTEM.md provided. Use AGENTS.md and .ralph/memory/.}
-
-## Role Instructions (${CODER_ROLE_FILE})
-${CODER_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
-
-## Project Context (from memory)
-${MEMORY_CORE:-No core context yet. Read ARCHITECTURE.md and AGENTS.md for project info.}
-
-## Recent Tasks (what was done before you)
-${MEMORY_RECENT:-No recent tasks yet. This may be the first task.}
-
-## Required Context Files
-${CONTEXT_CONTENT:-No specific files required.}
-
-## Relevant Source Snippets
-${RELEVANT_CONTEXT:-No keyword-matched source snippets found.}
-
-## Your Task
-$TASK_JSON"
-            fi
-
-            if [ -n "$FIX_INSTRUCTIONS" ]; then
-                CODER_PROMPT="$CODER_PROMPT
-
-## Fix Instructions from Tech Lead (MUST address)
-$FIX_INSTRUCTIONS"
-            fi
-
+            CONTEXT_CONTENT=$(build_required_context_content "$TASK_CONTEXT_FILES")
             HUMAN_COMMENT=$(get_human_comment)
-            if [ -n "$HUMAN_COMMENT" ]; then
-                CODER_PROMPT="$CODER_PROMPT
-
-## Human Comment (from project owner via Telegram)
-$HUMAN_COMMENT"
-            fi
-
-            CODER_PROMPT="$CODER_PROMPT
-
-## Rules
-- **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
-- Implement ONLY this task
-- Follow acceptance_criteria exactly
-- make test must pass
-- Do NOT modify tasks.json or progress.md
-- Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits
-- If fix instructions mention runtime-owned bookkeeping, address only the real implementation gap
-
-Expected response structure:
-<thinking>
-1. Need to modify app.py to add login route.
-2. Will use flask-login library.
-3. Need to update requirements.txt first.
-</thinking>
-\`\`\`python
-... code ...
-\`\`\`"
+            CODER_PROMPT=$(build_coder_prompt \
+                "$TASK_JSON" \
+                "$CODER_ROLE_FILE" \
+                "$CODER_ROLE_CONTENT" \
+                "$CODER_PROMPT_PROFILE_NAME" \
+                "$CODER_PROMPT_TARGETS" \
+                "$CONTEXT_CONTENT" \
+                "$RELEVANT_CONTEXT" \
+                "$PROJECT_AGENTS" \
+                "$PROJECT_ARCHITECTURE" \
+                "$PROJECT_MEMORY_SYSTEM" \
+                "$MEMORY_CORE" \
+                "$MEMORY_RECENT" \
+                "$FIX_INSTRUCTIONS" \
+                "$HUMAN_COMMENT")
             CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
 
             set +e

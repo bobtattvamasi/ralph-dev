@@ -416,6 +416,89 @@ def test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run(tmp_path: Path
     assert "## Project Context (from memory)" not in prompt
     assert "## Recent Tasks (what was done before you)" not in prompt
     assert "Ralph runtime owns final task bookkeeping" in prompt
+    assert "Run make test to verify current state" not in prompt
+
+
+def test_ralph_keeps_narrow_prompt_with_targeted_required_context(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Simple exact-task script update with local context"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py and use scripts/helper.py as the only required context."
+    tasks["tasks"][0]["complexity"] = "simple"
+    tasks["tasks"][0]["required_context"] = ["scripts/helper.py"]
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/narrow_target.py is updated",
+        "scripts/helper.py is treated as high-signal local context",
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    (project_dir / "scripts" / "helper.py").write_text("HELPER_FLAG = True\n", encoding="utf-8")
+    prompt_file = tmp_path / "coder_prompt_narrow_with_context.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Exact Task Targets" in prompt
+    assert "scripts/narrow_target.py" in prompt
+    assert "## Required Context Files" in prompt
+    assert "## File: scripts/helper.py" in prompt
+    assert "HELPER_FLAG = True" in prompt
+    assert "## Architecture Doc" not in prompt
+    assert "## Memory System Doc" not in prompt
+    assert "## Project Context (from memory)" not in prompt
+    assert "## Recent Tasks (what was done before you)" not in prompt
+
+
+def test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_docs(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Simple exact-task script update requiring architecture context"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py but read ARCHITECTURE.md first."
+    tasks["tasks"][0]["complexity"] = "simple"
+    tasks["tasks"][0]["required_context"] = ["ARCHITECTURE.md"]
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/narrow_target.py is updated",
+        "ARCHITECTURE.md is included because the task explicitly requires project-wide docs",
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    prompt_file = tmp_path / "coder_prompt_broad_for_required_docs.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Architecture Doc" in prompt
+    assert "## Memory System Doc" in prompt
+    assert "## Project Context (from memory)" in prompt
+    assert "## Recent Tasks (what was done before you)" in prompt
+    assert "## Exact Task Targets" not in prompt
+    assert "## File: ARCHITECTURE.md" in prompt
 
 
 def test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion(tmp_path: Path) -> None:
