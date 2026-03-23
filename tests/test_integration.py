@@ -32,6 +32,18 @@ def read_latest_ralph_log(project_dir: Path) -> str:
     return logs[-1].read_text(encoding="utf-8")
 
 
+def write_test_logging_makefile(project_dir: Path, log_name: str = "make_test.log") -> Path:
+    log_path = project_dir / log_name
+    (project_dir / "Makefile").write_text(
+        ".PHONY: test\n\n"
+        "test:\n"
+        f"\t@python3 -c \"from pathlib import Path; log_path = Path({log_name!r}); phase = 'post' if Path('coder_started').exists() else 'pre'; "
+        "fh = log_path.open('a', encoding='utf-8'); fh.write(phase + '\\\\n'); fh.close()\"\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
 def make_fake_binaries(bin_dir: Path) -> None:
     write_executable(
         bin_dir / "codex",
@@ -426,6 +438,109 @@ def test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run(tmp_path: Path
     assert "## Recent Tasks (what was done before you)" not in prompt
     assert "Ralph runtime owns final task bookkeeping" in prompt
     assert "Run make test to verify current state" not in prompt
+
+
+def test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    make_log = write_test_logging_makefile(project_dir)
+    env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert make_log.read_text(encoding="utf-8").splitlines() == ["post"]
+    assert "Pre-task check: fast Python validation" in read_latest_ralph_log(project_dir)
+
+
+def test_ralph_auto_mode_runs_preflight_make_test_before_task_execution(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    make_log = write_test_logging_makefile(project_dir)
+    env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "auto"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert make_log.read_text(encoding="utf-8").splitlines() == ["pre", "post"]
+    assert "Pre-task check: make test" in read_latest_ralph_log(project_dir)
+
+
+def test_ralph_task_mode_can_force_preflight_make_test_explicitly(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    make_log = write_test_logging_makefile(project_dir)
+    env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
+    env["RALPH_PRETASK_FULL_TEST"] = "1"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert make_log.read_text(encoding="utf-8").splitlines() == ["pre", "post"]
+    assert "Pre-task check: make test" in read_latest_ralph_log(project_dir)
+
+
+def test_ralph_phase_mode_uses_fast_pre_task_check_without_preflight_make_test(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    make_log = write_test_logging_makefile(project_dir)
+    env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "phase", "R1"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert make_log.read_text(encoding="utf-8").splitlines() == ["post"]
+    assert "Pre-task check: fast Python validation" in read_latest_ralph_log(project_dir)
+
+
+def test_ralph_fast_pre_task_check_catches_missing_python_imports(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    make_log = write_test_logging_makefile(project_dir)
+    (project_dir / "scripts").mkdir()
+    (project_dir / "scripts" / "broken_import.py").write_text("import missing_dependency_xyz\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode != 0, combined_output
+    assert "missing import 'missing_dependency_xyz' in scripts/broken_import.py" in combined_output
+    assert "Pre-task check: fast Python validation" in read_latest_ralph_log(project_dir)
+    assert not make_log.exists()
 
 
 def test_ralph_keeps_narrow_prompt_with_targeted_required_context(tmp_path: Path) -> None:

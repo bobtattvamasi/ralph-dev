@@ -2208,21 +2208,30 @@ run_coder_agent() {
 }
 
 self_heal_environment() {
-    log '🩹 Tests broken before start. Attempting self-heal...'
-    notify '🩹 Tests broken before start. Ralph will try to fix automatically.'
+    local check_scope="${PRETASK_CHECK_SCOPE:-pre-task validation}"
+    local heal_description="${PRETASK_HEAL_DESCRIPTION:-Before starting the task queue, pre-task validation is failing. Find the root cause and fix it without changing tasks.json or progress.md. Do NOT add new features.}"
+
+    log "🩹 $check_scope broken before start. Attempting self-heal..."
+    notify "🩹 $check_scope broken before start. Ralph will try to fix automatically."
 
     local HEAL_TASK_JSON
-    HEAL_TASK_JSON='{
-      "id": "ENV-FIX",
-      "phase": "R0",
-      "title": "Fix broken tests",
-      "description": "Before starting the task queue, make test is failing. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features.",
-      "status": "pending",
-      "priority": "critical",
-      "complexity": "moderate",
-      "timeout": 900,
-      "required_context": []
-    }'
+    HEAL_TASK_JSON=$(python3 - <<PY
+import json
+
+payload = {
+  "id": "ENV-FIX",
+  "phase": "R0",
+  "title": "Fix broken pre-task validation",
+  "description": """$heal_description""",
+  "status": "pending",
+  "priority": "critical",
+  "complexity": "moderate",
+  "timeout": 900,
+  "required_context": [],
+}
+print(json.dumps(payload))
+PY
+)
 
     local OLD_TASK_JSON OLD_TASK_ID OLD_TASK_TITLE OLD_TASK_TIMEOUT OLD_TASK_LEAD_TIMEOUT
     local OLD_TASK_COMPLEXITY OLD_TASK_CONTEXT_FILES OLD_TASK_RISK OLD_TASK_ROLE
@@ -2238,7 +2247,7 @@ self_heal_environment() {
 
     TASK_JSON="$HEAL_TASK_JSON"
     TASK_ID="ENV-FIX"
-    TASK_TITLE="Fix broken tests"
+    TASK_TITLE="Fix broken pre-task validation"
     TASK_TIMEOUT=900
     TASK_LEAD_TIMEOUT=120
     TASK_COMPLEXITY="moderate"
@@ -2263,15 +2272,157 @@ self_heal_environment() {
         log '❌ Self-heal failed. Coder run did not complete cleanly.'
     fi
 
-    if make test > /tmp/ralph_heal_verify.log 2>&1; then
-        log '✅ Self-heal succeeded! Tests are green. Continuing queue.'
+    if run_pre_task_check /tmp/ralph_heal_verify.log; then
+        log "✅ Self-heal succeeded! $check_scope is green. Continuing queue."
         notify '✅ Self-heal succeeded! Continuing task queue.'
         return 0
     else
-        log '❌ Self-heal failed. Tests still broken.'
-        notify '🚨 Self-heal failed. Tests still broken. Manual fix needed.'
-        write_state "blocked" "" "self_heal_failed" "Self-heal failed: tests still broken after ENV-FIX attempt"
+        log "❌ Self-heal failed. $check_scope is still broken."
+        notify "🚨 Self-heal failed. $check_scope is still broken. Manual fix needed."
+        write_state "blocked" "" "self_heal_failed" "Self-heal failed: ${check_scope} still broken after ENV-FIX attempt"
         return 1
+    fi
+}
+
+should_run_full_pre_task_suite() {
+    [ "$MODE" = "auto" ] || [ "${RALPH_PRETASK_FULL_TEST:-0}" = "1" ]
+}
+
+run_fast_python_validation() {
+    local log_file="$1"
+    python3 - "$PROJECT_DIR" >"$log_file" 2>&1 <<'PY'
+from __future__ import annotations
+
+import ast
+import importlib.util
+import py_compile
+import sys
+from pathlib import Path
+
+project_dir = Path(sys.argv[1]).resolve()
+ignored_names = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    ".idea",
+    ".vscode",
+    "__pycache__",
+    "build",
+    "dist",
+    "htmlcov",
+    "logs",
+    "node_modules",
+    "site-packages",
+    "venv",
+}
+
+
+def is_ignored(path: Path) -> bool:
+    return any(part in ignored_names for part in path.relative_to(project_dir).parts)
+
+
+def discover_python_files() -> list[Path]:
+    return sorted(
+        path for path in project_dir.rglob("*.py")
+        if path.is_file() and not is_ignored(path)
+    )
+
+
+def package_parts_for(path: Path) -> list[str]:
+    rel = path.relative_to(project_dir)
+    parts = list(rel.with_suffix("").parts)
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    package_parts = parts[:-1] if path.name != "__init__.py" else parts
+    while package_parts:
+        init_path = project_dir.joinpath(*package_parts, "__init__.py")
+        if init_path.exists():
+            return package_parts
+        package_parts.pop(0)
+    return []
+
+
+def module_exists(module_name: str) -> bool:
+    if not module_name:
+        return False
+    parts = module_name.split(".")
+    module_path = project_dir.joinpath(*parts)
+    return module_path.with_suffix(".py").exists() or (module_path / "__init__.py").exists()
+
+
+def module_resolves(module_name: str) -> bool:
+    if module_exists(module_name):
+        return True
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+def resolve_from_module(path: Path, node: ast.ImportFrom) -> str:
+    current_package = package_parts_for(path)
+    if node.level:
+        if node.level > len(current_package) + 1:
+            raise ValueError("relative import escapes package root")
+        base_parts = current_package[: len(current_package) - node.level + 1]
+    else:
+        base_parts = []
+    if node.module:
+        base_parts.extend(node.module.split("."))
+    return ".".join(base_parts)
+
+
+errors: list[str] = []
+python_files = discover_python_files()
+for file_path in python_files:
+    try:
+        py_compile.compile(str(file_path), doraise=True)
+    except py_compile.PyCompileError as exc:
+        errors.append(f"syntax error in {file_path.relative_to(project_dir)}: {exc.msg}")
+        continue
+
+    tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if not module_resolves(alias.name):
+                    errors.append(f"missing import '{alias.name}' in {file_path.relative_to(project_dir)}")
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "__future__":
+                continue
+            try:
+                module_name = resolve_from_module(file_path, node)
+            except ValueError as exc:
+                errors.append(f"invalid relative import in {file_path.relative_to(project_dir)}: {exc}")
+                continue
+            if module_name and not module_resolves(module_name):
+                errors.append(f"missing import '{module_name}' in {file_path.relative_to(project_dir)}")
+
+if errors:
+    for entry in errors:
+        print(entry)
+    raise SystemExit(1)
+
+print(f"validated {len(python_files)} Python files")
+PY
+}
+
+run_pre_task_check() {
+    local log_file="${1:-/tmp/ralph_test.log}"
+
+    if should_run_full_pre_task_suite; then
+        PRETASK_CHECK_SCOPE="full test suite"
+        PRETASK_HEAL_DESCRIPTION="Before starting the task queue, make test is failing. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features."
+        make test >"$log_file" 2>&1
+    else
+        PRETASK_CHECK_SCOPE="fast Python validation"
+        PRETASK_HEAL_DESCRIPTION="Before starting the task queue, fast Python validation is failing. Fix Python syntax errors and unresolved imports without changing tasks.json or progress.md. Do NOT add new features."
+        run_fast_python_validation "$log_file"
     fi
 }
 
@@ -2359,13 +2510,17 @@ fi
 # ─── Smoke test ───
 check_and_recover_state
 
-log "🔍 Smoke test..."
-if ! make test > /tmp/ralph_test.log 2>&1; then
-    log "❌ Tests failing!"
+if should_run_full_pre_task_suite; then
+    log "🔍 Pre-task check: make test"
+else
+    log "🔍 Pre-task check: fast Python validation"
+fi
+if ! run_pre_task_check /tmp/ralph_test.log; then
+    log "❌ Pre-task check failed!"
     tail -20 /tmp/ralph_test.log
     self_heal_environment || exit 1
 fi
-log "✅ Tests pass"
+log "✅ Pre-task check passed"
 if [ "$RECOVERY_MODE" -eq 1 ]; then
     write_state "running" "" "recovery" "Recovered from previous non-idle state ($PREV_STATUS)"
 else

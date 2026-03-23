@@ -2538,7 +2538,21 @@
         "full suite only before ./ralph.sh auto or explicitly",
         "fast check: python syntax + import validation"
       ],
-      "revision_notes": "smoke test = make test = 5min before EVERY task"
+      "revision_notes": "acceptance_criteria",
+      "completed_at": null
+    },
+    {
+      "id": "JOUR-01",
+      "phase": "JOUR",
+      "title": "Publish INTERVIEW_PREP.md as structured article in docs/articles/",
+      "status": "pending",
+      "complexity": "simple",
+      "category": "content",
+      "priority": "low",
+      "acceptance_criteria": [
+        "docs/articles/interview_prep.md exists",
+        "INTERVIEW_PREP.md moved or symlinked"
+      ]
     }
   ]
 }
