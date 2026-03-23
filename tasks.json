@@ -2482,7 +2482,7 @@
       "id": "OPS-02",
       "phase": "OPS",
       "title": "Fix: skip or limit make test inside codex runs — use fast check instead",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "fix",
       "priority": "critical",
@@ -2491,7 +2491,8 @@
         "fast check (syntax/import) runs in < 30s",
         "full suite only on complex/critical tasks"
       ],
-      "revision_notes": "codex spends 5min on tests, gets killed by 300s timeout"
+      "revision_notes": "codex spends 5min on tests, gets killed by 300s timeout",
+      "completed_at": "2026-03-23T12:00:09.819308+00:00"
     },
     {
       "id": "OPS-03",
