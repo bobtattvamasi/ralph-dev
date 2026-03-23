@@ -2434,9 +2434,9 @@
         "Regression tests cover that the narrow prompt path no longer embeds the duplicate full-test instruction while existing task-mode behavior stays green"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "--status",
       "completed_at": null,
-      "revision_notes": "",
+      "revision_notes": "verified_done",
       "timeout": 300,
       "role": "coder"
     },
