@@ -2461,6 +2461,81 @@
       "revision_notes": "verified_done",
       "timeout": 300,
       "role": "coder"
+    },
+    {
+      "id": "OPS-01",
+      "phase": "OPS",
+      "title": "Fix: codex timeout too short — increase to 900s for all complexities",
+      "status": "pending",
+      "complexity": "simple",
+      "category": "fix",
+      "priority": "critical",
+      "acceptance_criteria": [
+        "simple timeout >= 600s",
+        "moderate timeout >= 900s",
+        "no more timeout retries on docs tasks"
+      ],
+      "revision_notes": "codex runs make test internally (~5min), 300s is not enough"
+    },
+    {
+      "id": "OPS-02",
+      "phase": "OPS",
+      "title": "Fix: skip or limit make test inside codex runs — use fast check instead",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "fix",
+      "priority": "critical",
+      "acceptance_criteria": [
+        "codex does not run full make test for docs/simple tasks",
+        "fast check (syntax/import) runs in < 30s",
+        "full suite only on complex/critical tasks"
+      ],
+      "revision_notes": "codex spends 5min on tests, gets killed by 300s timeout"
+    },
+    {
+      "id": "OPS-03",
+      "phase": "OPS",
+      "title": "Observability: stream codex output to ralph log in real time",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "feature",
+      "priority": "high",
+      "acceptance_criteria": [
+        "ralph log shows [CODEX] prefixed lines during run",
+        "no gap between 'Attempt 1...' and TIMEOUT in log",
+        "on failure: codex output saved to logs/codex_TASKID_N.txt"
+      ],
+      "revision_notes": "blind spot: ralph has no visibility into what codex does"
+    },
+    {
+      "id": "OPS-04",
+      "phase": "OPS",
+      "title": "Cleanup: remove orphan /tmp/ralph_coder_*.txt files on startup and after run",
+      "status": "pending",
+      "complexity": "simple",
+      "category": "fix",
+      "priority": "medium",
+      "acceptance_criteria": [
+        "cleanup() removes /tmp/ralph_coder_PID.txt after each run",
+        "startup cleans files older than 1 hour",
+        "400+ orphan files in /tmp eliminated"
+      ],
+      "revision_notes": "400+ orphan tmp files found, cleanup not running on timeout path"
+    },
+    {
+      "id": "OPS-05",
+      "phase": "OPS",
+      "title": "Fix: smoke test before every task is too slow — 5min for 140 tests",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "fix",
+      "priority": "high",
+      "acceptance_criteria": [
+        "pre-task check runs in < 30s",
+        "full suite only before ./ralph.sh auto or explicitly",
+        "fast check: python syntax + import validation"
+      ],
+      "revision_notes": "smoke test = make test = 5min before EVERY task"
     }
   ]
 }
