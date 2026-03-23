@@ -32,3 +32,8 @@ Expected response structure:
 ## When Stuck
 - Leave `# TODO(ralph): problem` comments
 - Let Tech Lead decide next steps
+
+## Test execution
+- Do NOT run `make test` or `pytest` — Ralph runs tests separately after your changes
+- Only run targeted tests if you need to verify a specific function you changed
+- Assume the baseline is green (Ralph verified before calling you)

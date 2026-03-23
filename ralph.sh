@@ -156,6 +156,27 @@ is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
 }
 
+detect_runtime_task_class() {
+    printf '%s' "${TASK_JSON:-null}" | python3 - "$RALPH_DIR" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ralph_dir = Path(sys.argv[1])
+sys.path.insert(0, str(ralph_dir / "scripts"))
+
+from verify_task_closure import detect_task_class, extract_command_tokens, extract_expected_test_names, extract_path_candidates  # type: ignore
+
+task = json.load(sys.stdin)
+expected_paths = extract_path_candidates(task)
+command_tokens = extract_command_tokens(task)
+expected_tests = extract_expected_test_names(task)
+print(detect_task_class(task, expected_paths, command_tokens, expected_tests))
+PY
+}
+
 coder_prompt_profile() {
     python3 - "$RALPH_DIR" "$1" <<'PY'
 from __future__ import annotations
@@ -1655,6 +1676,12 @@ run_codex() {
     local retry=0
     local exit_code=0
     local watchdog_timeout="${RALPH_WATCHDOG_TIMEOUT:-300}"
+    local task_class
+    task_class=$(detect_runtime_task_class 2>/dev/null || echo "implementation")
+    local allow_timeout_retries=1
+    if [ "$task_class" = "docs-only" ]; then
+        allow_timeout_retries=0
+    fi
 
     while [ $retry -le $MAX_CODEX_RETRIES ]; do
         : > "$output_file"
@@ -1747,6 +1774,10 @@ PY
         # Watchdog timeout - retry with backoff like other recoverable errors.
         if [ "$watchdog_fired" -eq 1 ]; then
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            if [ "$allow_timeout_retries" -eq 0 ]; then
+                log "❌ Watchdog timeout on docs-only task; timeout retries disabled"
+                return 1
+            fi
             if [ $retry -lt $MAX_CODEX_RETRIES ]; then
                 local wd_delay=${CODEX_RETRY_DELAYS[$retry]}
                 log "⚠️ Watchdog triggered. Retry $((retry+1))/$MAX_CODEX_RETRIES in ${wd_delay}s..."
@@ -1770,6 +1801,11 @@ PY
             log "⏰ TIMEOUT: codex exceeded ${timeout}s"
             notify "⏰ Codex timeout on ${TASK_ID:-unknown}. Cleaning up process tree."
             terminate_codex_run "$codex_pid" "$codex_pgid"
+            if [ "$allow_timeout_retries" -eq 0 ]; then
+                log "❌ Codex timed out on docs-only task; timeout retries disabled"
+                CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+                return 124
+            fi
             if [ $retry -lt $MAX_CODEX_RETRIES ]; then
                 local timeout_delay=${CODEX_RETRY_DELAYS[$retry]}
                 log "⚠️ Timeout cleanup complete. Retry $((retry+1))/$MAX_CODEX_RETRIES in ${timeout_delay}s..."
@@ -2066,7 +2102,7 @@ self_heal_environment() {
       "status": "pending",
       "priority": "critical",
       "complexity": "moderate",
-      "timeout": 300,
+      "timeout": 900,
       "required_context": []
     }'
 
@@ -2085,7 +2121,7 @@ self_heal_environment() {
     TASK_JSON="$HEAL_TASK_JSON"
     TASK_ID="ENV-FIX"
     TASK_TITLE="Fix broken tests"
-    TASK_TIMEOUT=300
+    TASK_TIMEOUT=900
     TASK_LEAD_TIMEOUT=120
     TASK_COMPLEXITY="moderate"
     TASK_CONTEXT_FILES=""
@@ -2279,10 +2315,10 @@ while true; do
 import sys, json
 task = json.load(sys.stdin)
 complexity = task.get('complexity', 'moderate')
-defaults = {'simple': 180, 'moderate': 420, 'complex': 600, 'critical': 600}
-default_timeout = defaults.get(complexity, 420)
+defaults = {'simple': 900, 'moderate': 900, 'complex': 900, 'critical': 900}
+default_timeout = defaults.get(complexity, 900)
 print(task.get('timeout', default_timeout))
-" 2>/dev/null || echo "180")
+" 2>/dev/null || echo "900")
 
     # Extract lead timeout with a higher default for heavier review tasks.
     TASK_LEAD_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
