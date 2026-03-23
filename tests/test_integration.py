@@ -26,6 +26,12 @@ def write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
+def read_latest_ralph_log(project_dir: Path) -> str:
+    logs = sorted((project_dir / "logs").glob("ralph_*.log"))
+    assert logs, "expected at least one Ralph log file"
+    return logs[-1].read_text(encoding="utf-8")
+
+
 def make_fake_binaries(bin_dir: Path) -> None:
     write_executable(
         bin_dir / "codex",
@@ -147,8 +153,11 @@ else:
             ],
         }
         Path("assets_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    if mode == "stream_then_timeout":
+        print("streamed progress before timeout", flush=True)
+        time.sleep(30)
     if mode == "always_fail":
-        print("fatal codex failure")
+        print("fatal codex failure", flush=True)
         sys.exit(1)
     if mode == "rate_limit_once":
         marker = Path(marker_file) if marker_file else None
@@ -1282,7 +1291,38 @@ def test_ralph_uses_complexity_default_timeout_when_timeout_missing(tmp_path: Pa
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "Timeout: coder=600s lead=300s" in result.stdout
+    assert "Timeout: coder=900s lead=300s" in result.stdout
+
+
+def test_ralph_uses_900s_default_timeout_for_simple_tasks(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks_path = project_dir / "tasks.json"
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks["tasks"][0].pop("timeout", None)
+    tasks["tasks"][0]["complexity"] = "simple"
+    tasks_path.write_text(json.dumps(tasks, indent=2), encoding="utf-8")
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Timeout: coder=900s lead=300s" in result.stdout
+
+
+def test_ralph_timeout_fallback_is_900_in_runtime_and_packaged_shell() -> None:
+    runtime_shell = RALPH_SH.read_text(encoding="utf-8")
+    packaged_shell = (REPO_ROOT / "src/ralph/resources/ralph.sh").read_text(encoding="utf-8")
+
+    assert '2>/dev/null || echo "900")' in runtime_shell
+    assert '2>/dev/null || echo "900")' in packaged_shell
+    assert '2>/dev/null || echo "600")' not in runtime_shell
+    assert '2>/dev/null || echo "600")' not in packaged_shell
 
 
 def test_ralph_retries_after_fix_and_then_marks_done(tmp_path: Path) -> None:
@@ -1745,6 +1785,85 @@ def test_ralph_timeout_cleans_up_orphan_children(tmp_path: Path) -> None:
     assert "TIMEOUT: codex exceeded 1s" in result.stdout
     assert "Codex timed out after 3 retries" in result.stdout
     assert not process_is_alive(child_pid)
+
+
+def test_ralph_does_not_retry_timeout_for_docs_only_tasks(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_SLEEP"] = "3"
+    env["RALPH_CODEX_RETRY_DELAYS"] = "0 0 0"
+
+    tasks_path = project_dir / "tasks.json"
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks["tasks"][0]["title"] = "Update docs/TRUST_LAYER.md timeout notes"
+    tasks["tasks"][0]["description"] = "Update docs/TRUST_LAYER.md with timeout guidance."
+    tasks["tasks"][0]["acceptance_criteria"] = ["docs/TRUST_LAYER.md exists"]
+    tasks["tasks"][0]["timeout"] = 1
+    tasks_path.write_text(json.dumps(tasks, indent=2), encoding="utf-8")
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert result.stdout.count("TIMEOUT: codex exceeded 1s") == 1
+    assert "Timeout cleanup complete. Retry" not in result.stdout
+    assert "Codex timed out on docs-only task; timeout retries disabled" in result.stdout
+
+
+def test_ralph_streams_codex_output_into_main_log_before_timeout(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "stream_then_timeout"
+    env["RALPH_CODEX_RETRY_DELAYS"] = "0 0 0"
+
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Update docs/TRUST_LAYER.md timeout notes"
+    tasks["tasks"][0]["description"] = "Update docs/TRUST_LAYER.md with timeout guidance."
+    tasks["tasks"][0]["acceptance_criteria"] = ["docs/TRUST_LAYER.md exists"]
+    tasks["tasks"][0]["timeout"] = 1
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    log_text = read_latest_ralph_log(project_dir)
+    codex_line = "[CODEX] streamed progress before timeout"
+    timeout_line = "TIMEOUT: codex exceeded 1s"
+    assert codex_line in log_text
+    assert timeout_line in log_text
+    assert log_text.index(codex_line) < log_text.index(timeout_line)
+
+
+def test_ralph_saves_codex_output_snapshot_on_failure(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "always_fail"
+    env["RALPH_CODEX_RETRY_DELAYS"] = "0 0 0"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    archived_outputs = sorted((project_dir / "logs").glob("codex_T01_*.txt"))
+    assert archived_outputs
+    assert "fatal codex failure" in archived_outputs[0].read_text(encoding="utf-8")
+    assert "[CODEX] fatal codex failure" in read_latest_ralph_log(project_dir)
 
 
 def test_ralph_waits_for_assets_and_resumes_when_files_arrive(tmp_path: Path) -> None:

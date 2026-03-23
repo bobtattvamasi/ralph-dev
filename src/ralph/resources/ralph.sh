@@ -458,6 +458,17 @@ log() {
     echo "$msg" >> "$RALPH_LOG"
 }
 
+archive_codex_output() {
+    local output_file="$1"
+    local attempt_index="$2"
+    local task_id="${TASK_ID:-unknown}"
+    local archive_file="$LOG_DIR/codex_${task_id}_${attempt_index}.txt"
+
+    [ -f "$output_file" ] || return 0
+    cp "$output_file" "$archive_file" 2>/dev/null || cat "$output_file" > "$archive_file" 2>/dev/null || true
+    echo "$archive_file"
+}
+
 extract_tokens() {
     local output_file="$1"
     local tokens
@@ -1194,7 +1205,7 @@ build_coder_prompt() {
 
     if [ "$coder_prompt_profile_name" = "narrow" ]; then
         coder_prompt="Read ${coder_role_file} first. Use AGENTS.md only if repository conventions become ambiguous. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
-Run make test to verify current state.
+Run only targeted tests for the exact files you changed (e.g. pytest tests/test_targetfile.py). Run full make test only if you have evidence of broader breakage.
 
 ## Role Instructions (${coder_role_file})
 ${coder_role_content:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
@@ -1713,7 +1724,17 @@ run_codex() {
         : > "$output_file"
         local watchdog_flag
         watchdog_flag="/tmp/ralph_watchdog_${$}_${retry}.flag"
+        local stream_fifo="/tmp/ralph_codex_stream_${$}_${retry}.fifo"
+        local stream_logger_pid=""
         rm -f "$watchdog_flag"
+        rm -f "$stream_fifo"
+        mkfifo "$stream_fifo"
+        (
+            while IFS= read -r stream_line || [ -n "$stream_line" ]; do
+                log "[CODEX] $stream_line"
+            done < "$stream_fifo"
+        ) &
+        stream_logger_pid=$!
         set +e
         local codex_cmd=(codex exec -s danger-full-access)
         if [ -n "$model" ]; then
@@ -1733,16 +1754,21 @@ run_codex() {
         GIT_TERMINAL_PROMPT=0 \
         GIT_AUTHOR_NAME='Ralph Coder' \
         GIT_AUTHOR_EMAIL='ralph@dev' \
-        python3 - "$output_file" "$launcher_meta" "${runner[@]}" <<'PY' &
+        python3 - "$output_file" "$launcher_meta" "$stream_fifo" "${runner[@]}" <<'PY' &
 import os
 import subprocess
 import sys
+import threading
+import time
 
 output_file = sys.argv[1]
 meta_file = sys.argv[2]
-cmd = sys.argv[3:]
+stream_file = sys.argv[3]
+cmd = sys.argv[4:]
 
-with open(output_file, "wb") as out:
+with open(output_file, "w", encoding="utf-8", errors="replace") as out, open(
+    stream_file, "w", encoding="utf-8", errors="replace", buffering=1
+) as stream:
     proc = subprocess.Popen(
         cmd,
         stdout=out,
@@ -1753,7 +1779,37 @@ with open(output_file, "wb") as out:
     with open(meta_file, "w", encoding="utf-8") as meta:
         meta.write(f"{proc.pid}\n")
         meta.write(f"{os.getpgid(proc.pid)}\n")
-    sys.exit(proc.wait())
+
+    def pump_stream() -> None:
+        pos = 0
+        pending = ""
+        idle_loops = 0
+        while True:
+            with open(output_file, "r", encoding="utf-8", errors="replace") as reader:
+                reader.seek(pos)
+                chunk = reader.read()
+                pos = reader.tell()
+            if chunk:
+                idle_loops = 0
+                pending += chunk
+                while "\n" in pending:
+                    line, pending = pending.split("\n", 1)
+                    stream.write(line + "\n")
+                    stream.flush()
+            else:
+                idle_loops += 1
+            if proc.poll() is not None and idle_loops >= 3:
+                break
+            time.sleep(0.1)
+        if pending:
+            stream.write(pending + "\n")
+            stream.flush()
+
+    pump_thread = threading.Thread(target=pump_stream, daemon=True)
+    pump_thread.start()
+    exit_code = proc.wait()
+    pump_thread.join(timeout=1)
+    sys.exit(exit_code)
 PY
         local launcher_pid=$!
         local codex_pid="$launcher_pid"
@@ -1784,9 +1840,11 @@ PY
         done
         kill "$watchdog_pid" 2>/dev/null || true
         wait "$watchdog_pid" 2>/dev/null || true
+        wait "$stream_logger_pid" 2>/dev/null || true
         set -e
 
         local watchdog_fired=0
+        local archived_output=""
         if [ -f "$watchdog_flag" ]; then
             watchdog_fired=1
         fi
@@ -1795,10 +1853,13 @@ PY
         rm -f "$PROJECT_DIR/ralph_codex.pid"
         rm -f "$PROJECT_DIR/ralph_codex.pgid"
         rm -f "$launcher_meta"
+        rm -f "$stream_fifo"
         pkill -P "$$" 2>/dev/null || true
 
         # Watchdog timeout - retry with backoff like other recoverable errors.
         if [ "$watchdog_fired" -eq 1 ]; then
+            archived_output=$(archive_codex_output "$output_file" "$((retry + 1))")
+            [ -n "$archived_output" ] && log "📝 Saved codex output: $archived_output"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             if [ "$allow_timeout_retries" -eq 0 ]; then
                 log "❌ Watchdog timeout on docs-only task; timeout retries disabled"
@@ -1821,6 +1882,9 @@ PY
             CONSECUTIVE_FAILURES=0
             return 0
         fi
+
+        archived_output=$(archive_codex_output "$output_file" "$((retry + 1))")
+        [ -n "$archived_output" ] && log "📝 Saved codex output: $archived_output"
 
         # Timeout (124) - clean up aggressively, then retry with backoff.
         if [ $exit_code -eq 124 ]; then
