@@ -469,6 +469,29 @@ archive_codex_output() {
     echo "$archive_file"
 }
 
+finalize_codex_stream_logger() {
+    local stream_logger_pid="${1:-}"
+    local stream_fifo="${2:-}"
+
+    [ -n "$stream_logger_pid" ] || return 0
+
+    if kill -0 "$stream_logger_pid" 2>/dev/null && [ -p "$stream_fifo" ]; then
+        python3 - "$stream_fifo" <<'PY' 2>/dev/null || true
+from __future__ import annotations
+
+import sys
+
+try:
+    with open(sys.argv[1], "w", encoding="utf-8", errors="replace"):
+        pass
+except OSError:
+    pass
+PY
+    fi
+
+    wait "$stream_logger_pid" 2>/dev/null || true
+}
+
 extract_tokens() {
     local output_file="$1"
     local tokens
@@ -1840,7 +1863,6 @@ PY
         done
         kill "$watchdog_pid" 2>/dev/null || true
         wait "$watchdog_pid" 2>/dev/null || true
-        wait "$stream_logger_pid" 2>/dev/null || true
         set -e
 
         local watchdog_fired=0
@@ -1858,6 +1880,7 @@ PY
 
         # Watchdog timeout - retry with backoff like other recoverable errors.
         if [ "$watchdog_fired" -eq 1 ]; then
+            finalize_codex_stream_logger "$stream_logger_pid" "$stream_fifo"
             archived_output=$(archive_codex_output "$output_file" "$((retry + 1))")
             [ -n "$archived_output" ] && log "📝 Saved codex output: $archived_output"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
@@ -1879,18 +1902,19 @@ PY
 
         # Success
         if [ $exit_code -eq 0 ]; then
+            finalize_codex_stream_logger "$stream_logger_pid" "$stream_fifo"
             CONSECUTIVE_FAILURES=0
             return 0
         fi
 
-        archived_output=$(archive_codex_output "$output_file" "$((retry + 1))")
-        [ -n "$archived_output" ] && log "📝 Saved codex output: $archived_output"
-
         # Timeout (124) - clean up aggressively, then retry with backoff.
         if [ $exit_code -eq 124 ]; then
+            terminate_codex_run "$codex_pid" "$codex_pgid"
+            finalize_codex_stream_logger "$stream_logger_pid" "$stream_fifo"
+            archived_output=$(archive_codex_output "$output_file" "$((retry + 1))")
+            [ -n "$archived_output" ] && log "📝 Saved codex output: $archived_output"
             log "⏰ TIMEOUT: codex exceeded ${timeout}s"
             notify "⏰ Codex timeout on ${TASK_ID:-unknown}. Cleaning up process tree."
-            terminate_codex_run "$codex_pid" "$codex_pgid"
             if [ "$allow_timeout_retries" -eq 0 ]; then
                 log "❌ Codex timed out on docs-only task; timeout retries disabled"
                 CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
@@ -1907,6 +1931,10 @@ PY
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             return 124
         fi
+
+        finalize_codex_stream_logger "$stream_logger_pid" "$stream_fifo"
+        archived_output=$(archive_codex_output "$output_file" "$((retry + 1))")
+        [ -n "$archived_output" ] && log "📝 Saved codex output: $archived_output"
 
         # Check for rate limit in output
         if grep -qi 'rate.limit\|429\|throttl\|too many requests\|capacity' "$output_file" 2>/dev/null; then

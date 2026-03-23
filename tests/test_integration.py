@@ -1845,6 +1845,37 @@ def test_ralph_streams_codex_output_into_main_log_before_timeout(tmp_path: Path)
     assert log_text.index(codex_line) < log_text.index(timeout_line)
 
 
+def test_ralph_archives_timeout_output_after_stream_flush(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    env["MOCK_CODEX_MODE"] = "stream_then_timeout"
+    env["RALPH_CODEX_RETRY_DELAYS"] = "0 0 0"
+
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Update docs/TRUST_LAYER.md timeout notes"
+    tasks["tasks"][0]["description"] = "Update docs/TRUST_LAYER.md with timeout guidance."
+    tasks["tasks"][0]["acceptance_criteria"] = ["docs/TRUST_LAYER.md exists"]
+    tasks["tasks"][0]["timeout"] = 1
+    write_tasks(project_dir, tasks)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    archived_outputs = sorted((project_dir / "logs").glob("codex_T01_*.txt"))
+    assert archived_outputs
+    archived_text = archived_outputs[0].read_text(encoding="utf-8")
+    assert "streamed progress before timeout" in archived_text
+    log_text = read_latest_ralph_log(project_dir)
+    assert "Saved codex output:" in log_text
+    assert log_text.index("[CODEX] streamed progress before timeout") < log_text.index("TIMEOUT: codex exceeded 1s")
+
+
 def test_ralph_saves_codex_output_snapshot_on_failure(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     env["MOCK_CODEX_MODE"] = "always_fail"
