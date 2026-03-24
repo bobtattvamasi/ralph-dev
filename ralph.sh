@@ -2300,6 +2300,8 @@ import sys
 from pathlib import Path
 
 project_dir = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(project_dir / "scripts"))
+sys.path.insert(0, str(project_dir / "src" / "ralph" / "resources" / "scripts"))
 ignored_names = {
     ".git",
     ".hg",
