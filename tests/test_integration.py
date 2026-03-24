@@ -1931,6 +1931,48 @@ def test_ralph_timeout_cleans_up_orphan_children(tmp_path: Path) -> None:
     assert not process_is_alive(child_pid)
 
 
+def test_ralph_cleanup_removes_current_coder_tmp_file_after_run(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    before = {path.name for path in Path("/tmp").glob("ralph_coder_*.txt")}
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    after = {path.name for path in Path("/tmp").glob("ralph_coder_*.txt")}
+    assert after <= before
+
+
+def test_ralph_startup_cleans_old_orphan_coder_tmp_files(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    old_tmp = Path(f"/tmp/ralph_coder_old_{tmp_path.name}.txt")
+    recent_tmp = Path(f"/tmp/ralph_coder_recent_{tmp_path.name}.txt")
+    old_tmp.write_text("old orphan\n", encoding="utf-8")
+    recent_tmp.write_text("recent orphan\n", encoding="utf-8")
+    old_age = time.time() - 3700
+    os.utime(old_tmp, (old_age, old_age))
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not old_tmp.exists()
+    assert recent_tmp.exists()
+    recent_tmp.unlink()
+
+
 def test_ralph_does_not_retry_timeout_for_docs_only_tasks(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     env["MOCK_CODEX_SLEEP"] = "3"

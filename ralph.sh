@@ -72,6 +72,23 @@ kill_process_group() {
 
 CLEANUP_RUNNING=0
 OWNS_MAIN_PID=0
+cleanup_orphan_coder_outputs() {
+    python3 - <<'PY' 2>/dev/null || true
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+deadline = time.time() - 3600
+for path in Path("/tmp").glob("ralph_coder_*.txt"):
+    try:
+        if path.is_file() and path.stat().st_mtime < deadline:
+            path.unlink()
+    except OSError:
+        pass
+PY
+}
+
 cleanup() {
     # Prevent recursive cleanup (explicit call + trap).
     if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
@@ -116,6 +133,7 @@ cleanup() {
     if [ "$OWNS_MAIN_PID" -eq 1 ]; then
         rm -f "$PROJECT_DIR/ralph_main.pid"
     fi
+    rm -f "/tmp/ralph_coder_$$.txt"
 }
 handle_interrupt() {
     log "⛔ Interrupt signal received, stopping Ralph..."
@@ -151,6 +169,7 @@ FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
 QUEUE_EXIT_LOG="🎉 All tasks complete!"
 REASON=""
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
+cleanup_orphan_coder_outputs
 
 is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
