@@ -281,7 +281,7 @@
       "category": "feature",
       "priority": "medium",
       "title": "Bot: /tail live codex output",
-      "description": "Add /tail command that sends last 20 lines of /tmp/ralph_coder_*.txt or /tmp/ralph_lead_*.txt \u2014 whichever was modified most recently.",
+      "description": "Add /tail command that sends last 20 lines of /tmp/ralph_coder_*.txt or /tmp/ralph_lead_*.txt — whichever was modified most recently.",
       "acceptance_criteria": [
         "/tail command exists",
         "Reads most recent /tmp/ralph_coder_*.txt or /tmp/ralph_lead_*.txt",
@@ -1209,17 +1209,17 @@
       "id": "R4-09",
       "phase": "R4",
       "title": "Alert-to-defer: task failures skip instead of stop",
-      "description": "\u0412 ralph.sh \u0437\u0430\u043c\u0435\u043d\u0438\u0442\u044c alert_human() + break \u043d\u0430 defer_blocked_task() + continue \u0432 \u0442\u0440\u0451\u0445 \u0442\u043e\u0447\u043a\u0430\u0445: \u0432\u0435\u0442\u043a\u0430 alert) \u043e\u0442 Tech Lead (~\u0441\u0442\u0440\u043e\u043a\u0430 1541), \u0432\u0435\u0442\u043a\u0430 unknown decision (~1555), \u0438 if TASK_DONE=false \u043f\u043e\u0441\u043b\u0435 max retries (~1571). alert_human() \u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u0422\u041e\u041b\u042c\u041a\u041e \u0434\u043b\u044f risk=high \u0438 circuit breaker. \u041f\u043e\u0441\u043b\u0435 \u0437\u0430\u043c\u0435\u043d\u044b \u0437\u0430\u0434\u0430\u0447\u0430 \u043f\u043e\u043c\u0435\u0447\u0430\u0435\u0442\u0441\u044f blocked, \u0441\u043a\u0440\u0438\u043f\u0442 \u0431\u0435\u0440\u0435\u0442 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0443\u044e pending \u0437\u0430\u0434\u0430\u0447\u0443.",
+      "description": "В ralph.sh заменить alert_human() + break на defer_blocked_task() + continue в трёх точках: ветка alert) от Tech Lead (~строка 1541), ветка unknown decision (~1555), и if TASK_DONE=false после max retries (~1571). alert_human() оставить ТОЛЬКО для risk=high и circuit breaker. После замены задача помечается blocked, скрипт берет следующую pending задачу.",
       "status": "done",
       "priority": "critical",
       "complexity": "moderate",
       "risk": "medium",
       "acceptance_criteria": [
-        "\u041a\u043e\u0433\u0434\u0430 Tech Lead \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 alert \u0434\u043b\u044f low/medium risk \u0437\u0430\u0434\u0430\u0447\u0438 - \u0420\u0430\u043b\u044c\u0444 \u043f\u043e\u043c\u0435\u0447\u0430\u0435\u0442 \u0435\u0451 blocked \u0438 \u0431\u0435\u0440\u0451\u0442 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0443\u044e",
-        "\u041a\u043e\u0433\u0434\u0430 decision \u043d\u0435\u0432\u0430\u043b\u0438\u0434\u043d\u044b\u0439 - \u0434\u0435\u043b\u0430\u0435\u0442 \u0435\u0449\u0451 \u043e\u0434\u043d\u0443 \u043f\u043e\u043f\u044b\u0442\u043a\u0443 fix, \u043d\u0435 \u0437\u043e\u0432\u0451\u0442 \u0447\u0435\u043b\u043e\u0432\u0435\u043a\u0430",
-        "\u041a\u043e\u0433\u0434\u0430 \u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d\u044b retries - \u0437\u0430\u0434\u0430\u0447\u0430 blocked, \u0430\u0432\u0442\u043e\u043f\u0438\u043b\u043e\u0442 \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0430\u0435\u0442",
-        "alert_human \u0432\u044b\u0437\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u0442\u043e\u043b\u044c\u043a\u043e \u043f\u0440\u0438 risk=high",
-        "bash -n ralph.sh \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u0442"
+        "Когда Tech Lead возвращает alert для low/medium risk задачи - Ральф помечает её blocked и берёт следующую",
+        "Когда decision невалидный - делает ещё одну попытку fix, не зовёт человека",
+        "Когда исчерпаны retries - задача blocked, автопилот продолжает",
+        "alert_human вызывается только при risk=high",
+        "bash -n ralph.sh проходит"
       ],
       "revision_notes": "Redo via Telegram",
       "completed_at": "2026-03-13T07:32:59.170464+00:00"
@@ -1228,7 +1228,7 @@
       "id": "R4-10",
       "phase": "R4",
       "title": "Invalid JSON decision: fallback to fix instead of alert",
-      "description": "\u0412 ralph.sh \u043f\u043e\u0441\u043b\u0435 extract_json.py \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c validate_lead_review_json(): \u0435\u0441\u043b\u0438 \u043f\u043e\u043b\u0435 decision \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u0438\u043b\u0438 \u043d\u0435 \u0432\u0445\u043e\u0434\u0438\u0442 \u0432 {approve, fix, alert} - \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u043f\u043e\u0434\u0441\u0442\u0430\u0432\u043b\u044f\u0442\u044c decision=fix, fix_instructions=Invalid JSON structure from Tech Lead. \u042d\u0442\u043e \u0443\u0441\u0442\u0440\u0430\u043d\u044f\u0435\u0442 human stop \u043f\u0440\u0438 \u0433\u0430\u043b\u043b\u044e\u0446\u0438\u043d\u0430\u0446\u0438\u0438 \u043c\u043e\u0434\u0435\u043b\u0438.",
+      "description": "В ralph.sh после extract_json.py добавить validate_lead_review_json(): если поле decision отсутствует или не входит в {approve, fix, alert} - автоматически подставлять decision=fix, fix_instructions=Invalid JSON structure from Tech Lead. Это устраняет human stop при галлюцинации модели.",
       "status": "done",
       "priority": "critical",
       "complexity": "simple",
@@ -1237,10 +1237,10 @@
         "R4-09"
       ],
       "acceptance_criteria": [
-        "\u0415\u0441\u043b\u0438 REVIEW_JSON={} - decision \u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u0441\u044f fix, \u043d\u0435 alert",
-        "\u0415\u0441\u043b\u0438 decision=null \u0438\u043b\u0438 decision=gibberish - \u0442\u043e \u0436\u0435 \u0441\u0430\u043c\u043e\u0435",
-        "\u041d\u043e\u0432\u0430\u044f \u0438\u0442\u0435\u0440\u0430\u0446\u0438\u044f \u041a\u043e\u0434\u0435\u0440\u0430 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442\u0441\u044f \u0441 \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0435\u0439 \u043f\u043e\u0447\u0438\u043d\u0438\u0442\u044c JSON \u0444\u043e\u0440\u043c\u0430\u0442 \u043e\u0442\u0432\u0435\u0442\u0430",
-        "bash -n ralph.sh \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u0442"
+        "Если REVIEW_JSON={} - decision становится fix, не alert",
+        "Если decision=null или decision=gibberish - то же самое",
+        "Новая итерация Кодера запускается с инструкцией починить JSON формат ответа",
+        "bash -n ralph.sh проходит"
       ],
       "completed_at": "2026-03-13T07:40:45.197744+00:00"
     },
@@ -1248,7 +1248,7 @@
       "id": "R4-11",
       "phase": "R4",
       "title": "Preflight self-heal: broken tests before start",
-      "description": "\u0412 ralph.sh \u0437\u0430\u043c\u0435\u043d\u0438\u0442\u044c alert_human(Tests broken before start) \u043d\u0430 self_heal_environment(): \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0441\u0438\u043d\u0442\u0435\u0442\u0438\u0447\u0435\u0441\u043a\u0443\u044e \u0437\u0430\u0434\u0430\u0447\u0443 ENV-FIX \u0441 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435\u043c Make tests green, \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0447\u0435\u0440\u0435\u0437 \u043e\u0431\u044b\u0447\u043d\u044b\u0439 coder->lead flow, \u043c\u0430\u043a\u0441\u0438\u043c\u0443\u043c 1 \u043f\u043e\u043f\u044b\u0442\u043a\u0430 (SELF_HEAL_ATTEMPTS). \u0415\u0441\u043b\u0438 \u043f\u043e\u0447\u0438\u043d\u0438\u043b - \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u043e\u0441\u043d\u043e\u0432\u043d\u0443\u044e \u043e\u0447\u0435\u0440\u0435\u0434\u044c. \u0415\u0441\u043b\u0438 \u043d\u0435 \u043f\u043e\u0447\u0438\u043d\u0438\u043b - \u0442\u043e\u043b\u044c\u043a\u043e \u0442\u043e\u0433\u0434\u0430 alert_human \u0441 \u043f\u043e\u043c\u0435\u0442\u043a\u043e\u0439 self-heal failed.",
+      "description": "В ralph.sh заменить alert_human(Tests broken before start) на self_heal_environment(): создать синтетическую задачу ENV-FIX с описанием Make tests green, запустить через обычный coder->lead flow, максимум 1 попытка (SELF_HEAL_ATTEMPTS). Если починил - продолжить основную очередь. Если не починил - только тогда alert_human с пометкой self-heal failed.",
       "status": "done",
       "priority": "high",
       "complexity": "moderate",
@@ -1257,10 +1257,10 @@
         "R4-09"
       ],
       "acceptance_criteria": [
-        "\u041f\u0440\u0438 \u0441\u043b\u043e\u043c\u0430\u043d\u043d\u044b\u0445 \u0442\u0435\u0441\u0442\u0430\u0445 \u0420\u0430\u043b\u044c\u0444 \u043f\u0440\u043e\u0431\u0443\u0435\u0442 \u043f\u043e\u0447\u0438\u043d\u0438\u0442\u044c \u0438\u0445 \u0441\u0430\u043c \u043f\u0435\u0440\u0435\u0434 \u0441\u0442\u0430\u0440\u0442\u043e\u043c \u043e\u0447\u0435\u0440\u0435\u0434\u0438",
-        "\u0423\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435 \u0432 Telegram: Tests broken, attempting self-heal",
-        "\u0422\u043e\u043b\u044c\u043a\u043e 1 \u043f\u043e\u043f\u044b\u0442\u043a\u0430 self-heal, \u043f\u043e\u0442\u043e\u043c alert \u0435\u0441\u043b\u0438 \u043d\u0435 \u043f\u043e\u043c\u043e\u0433\u043b\u043e",
-        "bash -n ralph.sh \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u0442"
+        "При сломанных тестах Ральф пробует починить их сам перед стартом очереди",
+        "Уведомление в Telegram: Tests broken, attempting self-heal",
+        "Только 1 попытка self-heal, потом alert если не помогло",
+        "bash -n ralph.sh проходит"
       ],
       "revision_notes": "Redo via Telegram",
       "completed_at": "2026-03-13T07:48:57.437794+00:00"
@@ -1269,16 +1269,16 @@
       "id": "R4-12",
       "phase": "R4",
       "title": "State reconciliation: auto-reset stale waiting_human",
-      "description": "\u0412 ralph.sh \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c reconcile_state() \u043a\u043e\u0442\u043e\u0440\u0430\u044f \u0432\u044b\u0437\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u043f\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435 auto \u0440\u0435\u0436\u0438\u043c\u0430: \u0447\u0438\u0442\u0430\u0435\u0442 ralph_state.json, \u0435\u0441\u043b\u0438 status=waiting_human/running \u0438 last_update \u0441\u0442\u0430\u0440\u0448\u0435 5 \u043c\u0438\u043d\u0443\u0442 \u0418 \u043d\u0435\u0442 \u0436\u0438\u0432\u043e\u0433\u043e ralph-\u043f\u0440\u043e\u0446\u0435\u0441\u0441\u0430 - \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u0441\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0432 idle. \u0412 ralph_bot.py \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c auto_reconcile_idle_if_stale() \u0432 \u043d\u0430\u0447\u0430\u043b\u043e \u043a\u0430\u0436\u0434\u043e\u0439 \u0438\u0442\u0435\u0440\u0430\u0446\u0438\u0438 watch_state().",
+      "description": "В ralph.sh добавить reconcile_state() которая вызывается при старте auto режима: читает ralph_state.json, если status=waiting_human/running и last_update старше 5 минут И нет живого ralph-процесса - автоматически сбросить в idle. В ralph_bot.py добавить auto_reconcile_idle_if_stale() в начало каждой итерации watch_state().",
       "status": "done",
       "priority": "high",
       "complexity": "simple",
       "risk": "low",
       "acceptance_criteria": [
-        "\u041f\u043e\u0441\u043b\u0435 \u043a\u0440\u0430\u0448\u0430 \u0438 \u0440\u0435\u0441\u0442\u0430\u0440\u0442\u0430 /auto \u043d\u0435 \u0437\u0430\u0441\u0442\u0440\u0435\u0432\u0430\u0435\u0442 \u0432 \u0441\u0442\u0430\u0440\u043e\u043c waiting_human",
-        "Stale state \u0441\u0442\u0430\u0440\u0448\u0435 5 \u043c\u0438\u043d\u0443\u0442 \u0441\u0431\u0440\u0430\u0441\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438",
-        "\u0412 \u043b\u043e\u0433\u0435 \u043f\u043e\u044f\u0432\u043b\u044f\u0435\u0442\u0441\u044f: Auto-reconciled stale state",
-        "bash -n ralph.sh \u0438 ast.parse \u043f\u0440\u043e\u0445\u043e\u0434\u044f\u0442"
+        "После краша и рестарта /auto не застревает в старом waiting_human",
+        "Stale state старше 5 минут сбрасывается автоматически",
+        "В логе появляется: Auto-reconciled stale state",
+        "bash -n ralph.sh и ast.parse проходят"
       ],
       "completed_at": "2026-03-13T07:52:17.117777+00:00"
     },
@@ -1286,16 +1286,16 @@
       "id": "R4-13",
       "phase": "R4",
       "title": "next_task: distinguish done vs dependency-deadlocked",
-      "description": "\u0412 scripts/next_task.py \u0438\u0437\u043c\u0435\u043d\u0438\u0442\u044c return None \u043d\u0430 return \u0441 \u043f\u0440\u0438\u0447\u0438\u043d\u043e\u0439: all_done \u0435\u0441\u043b\u0438 \u0432\u0441\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 done/skipped, deadlocked \u0435\u0441\u043b\u0438 \u043e\u0441\u0442\u0430\u043b\u0438\u0441\u044c pending \u043d\u043e \u0438\u0445 dependencies \u0432 blocked. \u0412 ralph.sh \u043f\u0440\u0438 \u043f\u043e\u043b\u0443\u0447\u0435\u043d\u0438\u0438 null \u043e\u0442 next_task \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0442\u044c \u043f\u0440\u0438\u0447\u0438\u043d\u0443: \u0435\u0441\u043b\u0438 deadlocked - \u043b\u043e\u0433\u0438\u0440\u043e\u0432\u0430\u0442\u044c blocked_by_dependencies \u0438 \u0441\u043b\u0430\u0442\u044c \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435 \u0432 Telegram \u0441 \u043a\u043e\u043d\u043a\u0440\u0435\u0442\u043d\u044b\u043c\u0438 \u0437\u0430\u0434\u0430\u0447\u0430\u043c\u0438, \u043d\u0435 \u043c\u0430\u0441\u043a\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043f\u043e\u0434 \u0443\u0441\u043f\u0435\u0445.",
+      "description": "В scripts/next_task.py изменить return None на return с причиной: all_done если все задачи в done/skipped, deadlocked если остались pending но их dependencies в blocked. В ralph.sh при получении null от next_task проверять причину: если deadlocked - логировать blocked_by_dependencies и слать уведомление в Telegram с конкретными задачами, не маскировать под успех.",
       "status": "done",
       "priority": "medium",
       "complexity": "simple",
       "risk": "low",
       "acceptance_criteria": [
-        "\u041a\u043e\u0433\u0434\u0430 R3-02 \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u0430 \u0438\u0437-\u0437\u0430 blocked R3-01 - \u0420\u0430\u043b\u044c\u0444 \u043f\u0438\u0448\u0435\u0442 \u0432 \u043b\u043e\u0433: Queue deadlocked, blocked tasks: R3-01",
-        "Telegram \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435: Pipeline blocked by: R3-01 (needs manual resolution)",
-        "\u041a\u043e\u0433\u0434\u0430 \u0432\u0441\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 done - \u043f\u0438\u0448\u0435\u0442: All tasks completed",
-        "python3 -m pytest tests/ \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u0442"
+        "Когда R3-02 заблокирована из-за blocked R3-01 - Ральф пишет в лог: Queue deadlocked, blocked tasks: R3-01",
+        "Telegram уведомление: Pipeline blocked by: R3-01 (needs manual resolution)",
+        "Когда все задачи done - пишет: All tasks completed",
+        "python3 -m pytest tests/ проходит"
       ],
       "completed_at": "2026-03-13T09:54:47.904764+00:00"
     },
@@ -1303,7 +1303,7 @@
       "id": "R4-14",
       "phase": "R4",
       "title": "Tests: autonomy hardening coverage",
-      "description": "\u041d\u0430\u043f\u0438\u0441\u0430\u0442\u044c \u0430\u0432\u0442\u043e\u0442\u0435\u0441\u0442\u044b \u0432 tests/test_autonomy.py \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u043f\u043e\u043a\u0440\u044b\u0432\u0430\u044e\u0442 \u0432\u0441\u0435 5 \u0442\u043e\u0447\u0435\u043a \u043e\u0442\u043a\u0430\u0437\u0430 \u0438\u0437 R4-09..R4-13. \u0418\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u044c pytest + unittest.mock. \u0422\u0435\u0441\u0442\u044b \u041d\u0415 \u0434\u043e\u043b\u0436\u043d\u044b \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0442\u044c \u0440\u0435\u0430\u043b\u044c\u043d\u044b\u0439 codex \u0438\u043b\u0438 \u043f\u0438\u0441\u0430\u0442\u044c \u0432 \u0440\u0435\u0430\u043b\u044c\u043d\u044b\u0439 ralph_state.json.\n\n\u0422\u0435\u0441\u0442\u044b:\n1. test_alert_to_defer: \u0437\u0430\u043c\u043e\u043a\u0430\u0442\u044c run_task_loop, \u043f\u0435\u0440\u0435\u0434\u0430\u0442\u044c review \u0441 decision=alert \u0438 risk=medium, \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0447\u0442\u043e \u0437\u0430\u0434\u0430\u0447\u0430 \u0441\u0442\u0430\u043b\u0430 blocked \u0430 \u043d\u0435 waiting_human\n2. test_invalid_json_fallback: \u043f\u0435\u0440\u0435\u0434\u0430\u0442\u044c REVIEW_JSON={} \u0432 validate_lead_review_json (\u0438\u043b\u0438 \u0430\u043d\u0430\u043b\u043e\u0433), \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0447\u0442\u043e decision=fix \u0430 \u043d\u0435 alert\n3. test_stale_state_reconciliation: \u0437\u0430\u043f\u0438\u0441\u0430\u0442\u044c ralph_state.json \u0441\u043e \u0441\u0442\u0430\u0442\u0443\u0441\u043e\u043c waiting_human \u0438 last_update=10 \u043c\u0438\u043d\u0443\u0442 \u043d\u0430\u0437\u0430\u0434, \u0432\u044b\u0437\u0432\u0430\u0442\u044c reconcile_state(), \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0447\u0442\u043e \u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0442\u0430\u043b idle\n4. test_next_task_deadlock_detection: \u0441\u043e\u0437\u0434\u0430\u0442\u044c tasks.json \u0433\u0434\u0435 pending \u0437\u0430\u0434\u0430\u0447\u0430 \u0437\u0430\u0432\u0438\u0441\u0438\u0442 \u043e\u0442 blocked \u0437\u0430\u0434\u0430\u0447\u0438, \u0432\u044b\u0437\u0432\u0430\u0442\u044c next_task, \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0447\u0442\u043e \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f \u043f\u0440\u0438\u0447\u0438\u043d\u0430 deadlocked \u0430 \u043d\u0435 \u043f\u0440\u043e\u0441\u0442\u043e None\n5. test_next_task_all_done: \u0432\u0441\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u0432 done, \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0447\u0442\u043e \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f all_done",
+      "description": "Написать автотесты в tests/test_autonomy.py которые покрывают все 5 точек отказа из R4-09..R4-13. Использовать pytest + unittest.mock. Тесты НЕ должны запускать реальный codex или писать в реальный ralph_state.json.\n\nТесты:\n1. test_alert_to_defer: замокать run_task_loop, передать review с decision=alert и risk=medium, проверить что задача стала blocked а не waiting_human\n2. test_invalid_json_fallback: передать REVIEW_JSON={} в validate_lead_review_json (или аналог), проверить что decision=fix а не alert\n3. test_stale_state_reconciliation: записать ralph_state.json со статусом waiting_human и last_update=10 минут назад, вызвать reconcile_state(), проверить что статус стал idle\n4. test_next_task_deadlock_detection: создать tasks.json где pending задача зависит от blocked задачи, вызвать next_task, проверить что возвращается причина deadlocked а не просто None\n5. test_next_task_all_done: все задачи в done, проверить что возвращается all_done",
       "status": "done",
       "priority": "high",
       "complexity": "moderate",
@@ -1314,10 +1314,10 @@
         "R4-13"
       ],
       "acceptance_criteria": [
-        "tests/test_autonomy.py \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442",
-        "python3 -m pytest tests/test_autonomy.py \u2014 \u0432\u0441\u0435 \u0442\u0435\u0441\u0442\u044b \u0437\u0435\u043b\u0435\u043d\u044b\u0435",
-        "\u0442\u0435\u0441\u0442\u044b \u043d\u0435 \u0434\u0435\u043b\u0430\u044e\u0442 \u0440\u0435\u0430\u043b\u044c\u043d\u044b\u0445 HTTP \u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u0438 \u043d\u0435 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u044e\u0442 codex",
-        "\u043f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 \u0432\u0441\u0435\u0445 5 \u0441\u0446\u0435\u043d\u0430\u0440\u0438\u0435\u0432 \u0438\u0437 R4-09..R4-13"
+        "tests/test_autonomy.py существует",
+        "python3 -m pytest tests/test_autonomy.py — все тесты зеленые",
+        "тесты не делают реальных HTTP запросов и не запускают codex",
+        "покрытие всех 5 сценариев из R4-09..R4-13"
       ],
       "completed_at": "2026-03-13T09:59:46.340423+00:00"
     },
@@ -1336,7 +1336,7 @@
         "all 8 cases pass"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: false_positive \u2014 Expected script is missing: scripts/run_eval.py"
+      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: false_positive — Expected script is missing: scripts/run_eval.py"
     },
     {
       "id": "R5-02",
@@ -1353,7 +1353,7 @@
         "runs/ added to .gitignore"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: false_positive \u2014 Expected test files or named tests are missing."
+      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: false_positive — Expected test files or named tests are missing."
     },
     {
       "id": "R5-03",
@@ -1370,7 +1370,7 @@
         "make test passes"
       ],
       "completed_at": "2026-03-16T00:00:00+07:00",
-      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: verified_done \u2014 Expected script paths exist in repository."
+      "revision_notes": "Re-audit 2026-03-19T06:39:17.863499+00:00: verified_done — Expected script paths exist in repository."
     },
     {
       "id": "R5-04",
@@ -1410,16 +1410,16 @@
       "priority": "high",
       "complexity": "moderate",
       "status": "false_positive",
-      "title": "Bot: /ask \u043a\u043e\u043c\u0430\u043d\u0434\u0430 \u2014 \u0431\u044b\u0441\u0442\u0440\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 Ralph",
-      "description": "\u041a\u043e\u043c\u0430\u043d\u0434\u0430 /ask <\u0432\u043e\u043f\u0440\u043e\u0441> \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442 \u0432\u043e\u043f\u0440\u043e\u0441 \u0432 codex \u0441 \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442\u043e\u043c: ralph_state.json + \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 20 \u0441\u0442\u0440\u043e\u043a \u043b\u043e\u0433\u0430 + \u0441\u043f\u0438\u0441\u043e\u043a \u0444\u0430\u0439\u043b\u043e\u0432 \u043f\u0440\u043e\u0435\u043a\u0442\u0430. \u041e\u0442\u0432\u0435\u0442 \u0432 Telegram. \u0411\u0435\u0437 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f \u0438\u0441\u0442\u043e\u0440\u0438\u0438. Timeout 60s.",
+      "title": "Bot: /ask команда — быстрый вопрос Ralph",
+      "description": "Команда /ask <вопрос> отправляет вопрос в codex с контекстом: ralph_state.json + последние 20 строк лога + список файлов проекта. Ответ в Telegram. Без сохранения истории. Timeout 60s.",
       "acceptance_criteria": [
-        "/ask \u043f\u043e\u0447\u0435\u043c\u0443 \u0443\u043f\u0430\u043b\u0430 R4-07 \u2192 \u0447\u0438\u0442\u0430\u0435\u0442 \u043b\u043e\u0433 \u0438 \u043e\u0442\u0432\u0435\u0447\u0430\u0435\u0442",
-        "/ask \u0447\u0442\u043e \u0441\u0435\u0439\u0447\u0430\u0441 pending \u2192 \u0447\u0438\u0442\u0430\u0435\u0442 tasks.json \u0438 \u043e\u0442\u0432\u0435\u0447\u0430\u0435\u0442",
-        "Timeout 60s \u0441 graceful error",
+        "/ask почему упала R4-07 → читает лог и отвечает",
+        "/ask что сейчас pending → читает tasks.json и отвечает",
+        "Timeout 60s с graceful error",
         "make test passes"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive \u2014 Command implementation missing: /ask."
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /ask."
     },
     {
       "id": "R6-02",
@@ -1430,16 +1430,16 @@
       "dependencies": [
         "R6-01"
       ],
-      "title": "Bot: /chat \u043a\u043e\u043c\u0430\u043d\u0434\u0430 \u2014 multi-turn \u0434\u0438\u0430\u043b\u043e\u0433 \u0441 Ralph",
-      "description": "\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u0442 \u0438\u0441\u0442\u043e\u0440\u0438\u044e \u0432 .ralph/chat_history.md (max 10 turns). \u041a\u0430\u0436\u0434\u043e\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0432\u043a\u043b\u044e\u0447\u0430\u0435\u0442 \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0445. /chat reset \u043e\u0447\u0438\u0449\u0430\u0435\u0442 \u0438\u0441\u0442\u043e\u0440\u0438\u044e. Ralph \u043f\u043e\u043d\u0438\u043c\u0430\u0435\u0442 \u043d\u0435\u0444\u043e\u0440\u043c\u0430\u043b\u044c\u043d\u044b\u0439 \u0442\u0435\u043a\u0441\u0442.",
+      "title": "Bot: /chat команда — multi-turn диалог с Ralph",
+      "description": "Сохраняет историю в .ralph/chat_history.md (max 10 turns). Каждое сообщение включает контекст предыдущих. /chat reset очищает историю. Ralph понимает неформальный текст.",
       "acceptance_criteria": [
-        "/chat \u043f\u043e\u043c\u043d\u0438\u0442 \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u0432 \u0441\u0435\u0441\u0441\u0438\u0438",
-        "/chat reset \u043e\u0447\u0438\u0449\u0430\u0435\u0442 \u0438\u0441\u0442\u043e\u0440\u0438\u044e",
-        "chat_history.md \u043d\u0435 \u0440\u0430\u0441\u0442\u0451\u0442 \u0431\u0435\u0441\u043a\u043e\u043d\u0435\u0447\u043d\u043e (max 10 turns)",
+        "/chat помнит предыдущий вопрос в сессии",
+        "/chat reset очищает историю",
+        "chat_history.md не растёт бесконечно (max 10 turns)",
         "make test passes"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive \u2014 Command implementation missing: /chat, /chat_history."
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /chat, /chat_history."
     },
     {
       "id": "R6-03",
@@ -1450,12 +1450,12 @@
       "dependencies": [
         "R6-02"
       ],
-      "title": "Chat: \u0430\u0432\u0442\u043e-\u0447\u0442\u0435\u043d\u0438\u0435 \u0444\u0430\u0439\u043b\u043e\u0432 \u043f\u043e \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442\u0443 \u0432\u043e\u043f\u0440\u043e\u0441\u0430",
-      "description": "\u0415\u0441\u043b\u0438 \u0432 \u0432\u043e\u043f\u0440\u043e\u0441\u0435 \u0443\u043f\u043e\u043c\u0438\u043d\u0430\u0435\u0442\u0441\u044f \u0437\u0430\u0434\u0430\u0447\u0430 (R4-07), \u0444\u0430\u0439\u043b (ralph.sh), \u043b\u043e\u0433, \u043e\u0448\u0438\u0431\u043a\u0430 \u2014 Ralph \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u0447\u0438\u0442\u0430\u0435\u0442 \u043d\u0443\u0436\u043d\u044b\u0439 \u0444\u0430\u0439\u043b \u0438 \u0432\u043a\u043b\u044e\u0447\u0430\u0435\u0442 \u0432 \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u043e\u0442\u0432\u0435\u0442\u0430.",
+      "title": "Chat: авто-чтение файлов по контексту вопроса",
+      "description": "Если в вопросе упоминается задача (R4-07), файл (ralph.sh), лог, ошибка — Ralph автоматически читает нужный файл и включает в контекст ответа.",
       "acceptance_criteria": [
-        "\u0447\u0442\u043e \u0432 \u0437\u0430\u0434\u0430\u0447\u0435 R4-07 \u2192 \u043d\u0430\u0445\u043e\u0434\u0438\u0442 \u0438 \u0447\u0438\u0442\u0430\u0435\u0442 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438\u0437 tasks.json",
-        "\u043f\u043e\u043a\u0430\u0436\u0438 \u043b\u043e\u0433 \u2192 \u0447\u0438\u0442\u0430\u0435\u0442 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 30 \u0441\u0442\u0440\u043e\u043a \u043b\u043e\u0433\u0430",
-        "\u043f\u043e\u0447\u0435\u043c\u0443 \u0443\u043f\u0430\u043b\u043e \u2192 \u0447\u0438\u0442\u0430\u0435\u0442 \u043b\u043e\u0433 + state + \u043e\u0431\u044a\u044f\u0441\u043d\u044f\u0435\u0442",
+        "что в задаче R4-07 → находит и читает задачу из tasks.json",
+        "покажи лог → читает последние 30 строк лога",
+        "почему упало → читает лог + state + объясняет",
         "make test passes"
       ],
       "completed_at": "2026-03-16T10:00:59.463235+00:00"
@@ -1466,16 +1466,16 @@
       "priority": "high",
       "complexity": "moderate",
       "status": "false_positive",
-      "title": "scripts/ralph_reflect.py \u2014 \u0430\u043d\u0430\u043b\u0438\u0437 metrics.csv \u2192 proposals.json",
-      "description": "\u0427\u0438\u0442\u0430\u0435\u0442 logs/metrics.csv \u0437\u0430 7 \u0434\u043d\u0435\u0439. \u041d\u0430\u0445\u043e\u0434\u0438\u0442 \u043f\u0430\u0442\u0442\u0435\u0440\u043d\u044b: \u0437\u0430\u0434\u0430\u0447\u0438 \u0441 >1 retry, \u0442\u0430\u0439\u043c\u0430\u0443\u0442\u044b, fix loops, \u043d\u0438\u0437\u043a\u0438\u0439 quality_score. \u0413\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u0442 proposals.json: [{id, problem, proposed_task_title, proposed_task_description, priority}]. Max 5 proposals.",
+      "title": "scripts/ralph_reflect.py — анализ metrics.csv → proposals.json",
+      "description": "Читает logs/metrics.csv за 7 дней. Находит паттерны: задачи с >1 retry, таймауты, fix loops, низкий quality_score. Генерирует proposals.json: [{id, problem, proposed_task_title, proposed_task_description, priority}]. Max 5 proposals.",
       "acceptance_criteria": [
-        "scripts/ralph_reflect.py \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442 \u0438 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442\u0441\u044f",
-        "proposals.json \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044f \u0441 \u0432\u0430\u043b\u0438\u0434\u043d\u044b\u043c JSON",
-        "\u041d\u0430\u0445\u043e\u0434\u0438\u0442 \u043c\u0438\u043d\u0438\u043c\u0443\u043c 1 \u043f\u0430\u0442\u0442\u0435\u0440\u043d \u043d\u0430 \u0442\u0435\u0441\u0442\u043e\u0432\u044b\u0445 \u0434\u0430\u043d\u043d\u044b\u0445 \u0438\u0437 metrics.csv",
-        "Graceful \u0435\u0441\u043b\u0438 metrics.csv \u043f\u0443\u0441\u0442\u043e\u0439 \u0438\u043b\u0438 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442"
+        "scripts/ralph_reflect.py существует и запускается",
+        "proposals.json генерируется с валидным JSON",
+        "Находит минимум 1 паттерн на тестовых данных из metrics.csv",
+        "Graceful если metrics.csv пустой или отсутствует"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive \u2014 Expected script is missing: scripts/ralph_reflect.py"
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Expected script is missing: scripts/ralph_reflect.py"
     },
     {
       "id": "R7-02",
@@ -1486,16 +1486,16 @@
       "dependencies": [
         "R7-01"
       ],
-      "title": "Bot: /reflect \u2014 \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 proposals \u0438\u0437 proposals.json",
-      "description": "\u0427\u0438\u0442\u0430\u0435\u0442 proposals.json \u0438 \u0432\u044b\u0432\u043e\u0434\u0438\u0442 \u043a\u0430\u0436\u0434\u044b\u0439 proposal \u0441 ID, \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435\u043c \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u044b \u0438 \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0435\u0439: /approve ID, /reject ID, /refine ID <\u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439>. \u0415\u0441\u043b\u0438 proposals.json \u043f\u0443\u0441\u0442\u043e\u0439 \u2014 \u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u0435\u0442 \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c reflect \u0432\u0440\u0443\u0447\u043d\u0443\u044e.",
+      "title": "Bot: /reflect — показывает proposals из proposals.json",
+      "description": "Читает proposals.json и выводит каждый proposal с ID, описанием проблемы и инструкцией: /approve ID, /reject ID, /refine ID <комментарий>. Если proposals.json пустой — предлагает запустить reflect вручную.",
       "acceptance_criteria": [
-        "/reflect \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u0441\u043f\u0438\u0441\u043e\u043a proposals \u0441 ID",
-        "\u041a\u0430\u0436\u0434\u044b\u0439 proposal \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 problem + proposed_task",
-        "\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438 \u043f\u043e \u043a\u043e\u043c\u0430\u043d\u0434\u0430\u043c \u0432 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0438",
-        "Graceful \u0435\u0441\u043b\u0438 proposals.json \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442"
+        "/reflect показывает список proposals с ID",
+        "Каждый proposal содержит problem + proposed_task",
+        "Инструкции по командам в сообщении",
+        "Graceful если proposals.json отсутствует"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive \u2014 Command implementation missing: /reflect, /approve, /reject, /refine."
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /reflect, /approve, /reject, /refine."
     },
     {
       "id": "R7-03",
@@ -1506,16 +1506,16 @@
       "dependencies": [
         "R7-02"
       ],
-      "title": "Bot: /approve /reject /refine \u0434\u043b\u044f proposals",
-      "description": "/approve ID \u2192 \u0434\u043e\u0431\u0430\u0432\u043b\u044f\u0435\u0442 proposal \u043a\u0430\u043a \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 tasks.json (status=pending, phase=R7). /reject ID \u2192 \u043f\u043e\u043c\u0435\u0447\u0430\u0435\u0442 rejected. /refine ID \u0442\u0435\u043a\u0441\u0442 \u2192 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442 ralph_reflect.py \u0441 \u043a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0435\u043c \u0434\u043b\u044f \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0438 proposal, \u043e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u0442 proposals.json.",
+      "title": "Bot: /approve /reject /refine для proposals",
+      "description": "/approve ID → добавляет proposal как задачу в tasks.json (status=pending, phase=R7). /reject ID → помечает rejected. /refine ID текст → запускает ralph_reflect.py с комментарием для доработки proposal, обновляет proposals.json.",
       "acceptance_criteria": [
-        "/approve ID \u0434\u043e\u0431\u0430\u0432\u043b\u044f\u0435\u0442 \u0437\u0430\u0434\u0430\u0447\u0443 \u0432 tasks.json",
-        "/reject ID \u043f\u043e\u043c\u0435\u0447\u0430\u0435\u0442 proposal \u043a\u0430\u043a rejected \u0432 proposals.json",
-        "/refine ID \u0442\u0435\u043a\u0441\u0442 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442 \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0443 \u0438 \u043e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u0442 proposals.json",
+        "/approve ID добавляет задачу в tasks.json",
+        "/reject ID помечает proposal как rejected в proposals.json",
+        "/refine ID текст запускает доработку и обновляет proposals.json",
         "make test passes"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive \u2014 Command implementation missing: /approve, /reject, /refine."
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: false_positive — Command implementation missing: /approve, /reject, /refine."
     },
     {
       "id": "R7-04",
@@ -1526,12 +1526,12 @@
       "dependencies": [
         "R7-01"
       ],
-      "title": "Scheduler: ralph_reflect.py \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442\u0441\u044f \u0440\u0430\u0437 \u0432 \u0434\u0435\u043d\u044c",
-      "description": "\u0412 ralph_bot.py \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c asyncio scheduler. \u0412\u0440\u0435\u043c\u044f \u043d\u0430\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0447\u0435\u0440\u0435\u0437 REFLECT_TIME=HH:MM \u0432 env (default 09:00). \u041f\u043e\u0441\u043b\u0435 \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 proposals \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435: \ud83d\udca1 Ralph has N new proposals. /reflect to review.",
+      "title": "Scheduler: ralph_reflect.py запускается раз в день",
+      "description": "В ralph_bot.py добавить asyncio scheduler. Время настраивается через REFLECT_TIME=HH:MM в env (default 09:00). После генерации proposals отправляет уведомление: 💡 Ralph has N new proposals. /reflect to review.",
       "acceptance_criteria": [
-        "Scheduler \u0441\u0442\u0430\u0440\u0442\u0443\u0435\u0442 \u0432\u043c\u0435\u0441\u0442\u0435 \u0441 \u0431\u043e\u0442\u043e\u043c",
-        "REFLECT_TIME=HH:MM \u0447\u0438\u0442\u0430\u0435\u0442\u0441\u044f \u0438\u0437 env",
-        "\u041f\u043e\u0441\u043b\u0435 \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 proposals \u0431\u043e\u0442 \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435",
+        "Scheduler стартует вместе с ботом",
+        "REFLECT_TIME=HH:MM читается из env",
+        "После генерации proposals бот отправляет уведомление",
         "make test passes"
       ],
       "completed_at": "2026-03-16T11:15:57.214583+00:00"
@@ -1542,16 +1542,16 @@
       "priority": "high",
       "complexity": "simple",
       "status": "false_positive",
-      "title": "scripts/fetch_channel.py \u2014 \u0447\u0438\u0442\u0430\u0435\u0442 Telegram \u043a\u0430\u043d\u0430\u043b \u2192 channel_context.md",
-      "description": "\u0421\u043a\u0440\u0438\u043f\u0442 \u043f\u0440\u0438\u043d\u0438\u043c\u0430\u0435\u0442 TELEGRAM_TOKEN \u0438 CHANNEL_ID (\u0438\u0437 env \u0438\u043b\u0438 \u0430\u0440\u0433\u0443\u043c\u0435\u043d\u0442\u043e\u0432). \u0427\u0438\u0442\u0430\u0435\u0442 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 5 \u043f\u043e\u0441\u0442\u043e\u0432 \u0447\u0435\u0440\u0435\u0437 Telegram Bot API (getUpdates \u0438\u043b\u0438 forwardMessage). \u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u0442 \u0442\u0435\u043a\u0441\u0442 \u0432 .ralph/channel_context.md \u0441 \u043d\u043e\u043c\u0435\u0440\u0430\u043c\u0438 \u043f\u043e\u0441\u0442\u043e\u0432. Graceful fallback \u0435\u0441\u043b\u0438 \u043a\u0430\u043d\u0430\u043b \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d.",
+      "title": "scripts/fetch_channel.py — читает Telegram канал → channel_context.md",
+      "description": "Скрипт принимает TELEGRAM_TOKEN и CHANNEL_ID (из env или аргументов). Читает последние 5 постов через Telegram Bot API (getUpdates или forwardMessage). Сохраняет текст в .ralph/channel_context.md с номерами постов. Graceful fallback если канал недоступен.",
       "acceptance_criteria": [
-        "scripts/fetch_channel.py \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442",
-        ".ralph/channel_context.md \u0441\u043e\u0437\u0434\u0430\u0451\u0442\u0441\u044f \u0441 \u0442\u0435\u043a\u0441\u0442\u043e\u043c \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0445 \u043f\u043e\u0441\u0442\u043e\u0432",
-        "\u0418\u0437\u0432\u043b\u0435\u043a\u0430\u0435\u0442 \u043d\u043e\u043c\u0435\u0440 build log \u0438\u0437 \u0442\u0435\u043a\u0441\u0442\u0430 \u043f\u043e\u0441\u0442\u043e\u0432 (build log #N)",
-        "Graceful fallback \u0441 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435\u043c \u0435\u0441\u043b\u0438 \u043a\u0430\u043d\u0430\u043b \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d"
+        "scripts/fetch_channel.py существует",
+        ".ralph/channel_context.md создаётся с текстом последних постов",
+        "Извлекает номер build log из текста постов (build log #N)",
+        "Graceful fallback с предупреждением если канал недоступен"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected script is missing: scripts/fetch_channel.py"
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected script is missing: scripts/fetch_channel.py"
     },
     {
       "id": "R8-02",
@@ -1562,16 +1562,16 @@
       "dependencies": [
         "R8-01"
       ],
-      "title": "ralph.sh: \u0438\u043d\u0436\u0435\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c channel_context \u0434\u043b\u044f role=journalist",
-      "description": "\u041a\u043e\u0433\u0434\u0430 TASK_ROLE=journalist, ralph.sh \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442 scripts/fetch_channel.py \u043f\u0435\u0440\u0435\u0434 \u043a\u043e\u0434\u0435\u0440\u043e\u043c. \u0421\u043e\u0434\u0435\u0440\u0436\u0438\u043c\u043e\u0435 .ralph/channel_context.md \u0434\u043e\u0431\u0430\u0432\u043b\u044f\u0435\u0442\u0441\u044f \u0432 \u043f\u0440\u043e\u043c\u0442 \u043a\u0430\u043a \u0441\u0435\u043a\u0446\u0438\u044f ## Channel Context. \u0411\u0435\u0437 \u0444\u0430\u0439\u043b\u0430 \u2014 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435 \u0432 \u043b\u043e\u0433, \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0430\u0435\u0442 \u0431\u0435\u0437 \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442\u0430.",
+      "title": "ralph.sh: инжектировать channel_context для role=journalist",
+      "description": "Когда TASK_ROLE=journalist, ralph.sh запускает scripts/fetch_channel.py перед кодером. Содержимое .ralph/channel_context.md добавляется в промт как секция ## Channel Context. Без файла — предупреждение в лог, продолжает без контекста.",
       "acceptance_criteria": [
-        "ralph.sh \u0432\u044b\u0437\u044b\u0432\u0430\u0435\u0442 fetch_channel.py \u0434\u043b\u044f journalist \u0437\u0430\u0434\u0430\u0447",
-        "channel_context.md \u0438\u043d\u0436\u0435\u043a\u0442\u0438\u0440\u0443\u0435\u0442\u0441\u044f \u0432 \u043f\u0440\u043e\u043c\u0442 \u043a\u0430\u043a \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u0430\u044f \u0441\u0435\u043a\u0446\u0438\u044f",
-        "bash -n ralph.sh \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u0442",
-        "\u0411\u0435\u0437 channel_context.md \u2014 \u0442\u043e\u043b\u044c\u043a\u043e warning \u0432 \u043b\u043e\u0433"
+        "ralph.sh вызывает fetch_channel.py для journalist задач",
+        "channel_context.md инжектируется в промт как отдельная секция",
+        "bash -n ralph.sh проходит",
+        "Без channel_context.md — только warning в лог"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected script is missing: scripts/fetch_channel.py"
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected script is missing: scripts/fetch_channel.py"
     },
     {
       "id": "R8-03",
@@ -1582,12 +1582,12 @@
       "dependencies": [
         "R8-01"
       ],
-      "title": "ralph.sh: \u0441\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c last_blog_number \u043f\u043e\u0441\u043b\u0435 journalist \u0437\u0430\u0434\u0430\u0447\u0438",
-      "description": "\u041f\u043e\u0441\u043b\u0435 \u0443\u0441\u043f\u0435\u0448\u043d\u043e\u0433\u043e \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0438\u044f journalist \u0437\u0430\u0434\u0430\u0447\u0438 ralph.sh \u0438\u0437\u0432\u043b\u0435\u043a\u0430\u0435\u0442 \u043d\u043e\u043c\u0435\u0440 \u043f\u043e\u0441\u0442\u0430 \u0438\u0437 output (\u043f\u0430\u0442\u0442\u0435\u0440\u043d build log #N) \u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u0442 \u0432 .ralph/memory/blog_state.json: {last_number: N, last_date: ISO}. fetch_channel.py \u0442\u043e\u0436\u0435 \u043e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u0442 \u044d\u0442\u043e\u0442 \u0444\u0430\u0439\u043b.",
+      "title": "ralph.sh: сохранять last_blog_number после journalist задачи",
+      "description": "После успешного завершения journalist задачи ralph.sh извлекает номер поста из output (паттерн build log #N) и сохраняет в .ralph/memory/blog_state.json: {last_number: N, last_date: ISO}. fetch_channel.py тоже обновляет этот файл.",
       "acceptance_criteria": [
-        ".ralph/memory/blog_state.json \u0441\u043e\u0437\u0434\u0430\u0451\u0442\u0441\u044f \u043f\u043e\u0441\u043b\u0435 journalist \u0437\u0430\u0434\u0430\u0447\u0438",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 last_number \u0438 last_date",
-        "fetch_channel.py \u043e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u0442 blog_state.json \u0435\u0441\u043b\u0438 \u043d\u0430\u0445\u043e\u0434\u0438\u0442 \u043d\u043e\u043c\u0435\u0440 \u0432 \u043f\u043e\u0441\u0442\u0430\u0445"
+        ".ralph/memory/blog_state.json создаётся после journalist задачи",
+        "Содержит last_number и last_date",
+        "fetch_channel.py обновляет blog_state.json если находит номер в постах"
       ],
       "completed_at": "2026-03-16T11:21:32.383490+00:00"
     },
@@ -1601,13 +1601,13 @@
         "R8-02",
         "R8-03"
       ],
-      "title": "AGENTS_JOURNALIST.md v2: \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u043a\u0430\u043d\u0430\u043b\u0430 + \u043f\u0440\u0438\u043c\u0435\u0440 \u043f\u043e\u0441\u0442\u0430 + \u043f\u0440\u0430\u0432\u0438\u043b\u0430 \u0433\u043e\u043b\u043e\u0441\u0430",
-      "description": "\u041f\u0435\u0440\u0435\u043f\u0438\u0441\u0430\u0442\u044c templates/AGENTS_JOURNALIST.md. \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c: 1) \u0447\u0438\u0442\u0430\u0439 ## Channel Context \u0438\u0437 \u043f\u0440\u043e\u043c\u0442\u0430 \u0447\u0442\u043e\u0431\u044b \u0437\u043d\u0430\u0442\u044c \u0441\u0442\u0438\u043b\u044c \u0438 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0439 \u043d\u043e\u043c\u0435\u0440 2) \u0447\u0438\u0442\u0430\u0439 blog_state.json \u0434\u043b\u044f \u043d\u043e\u043c\u0435\u0440\u0430 3) \u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0430 \u043f\u043e\u0441\u0442\u0430: \u0437\u0430\u0446\u0435\u043f\u043a\u0430 (1 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435) \u2192 \u0447\u0442\u043e \u0441\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u2192 \u043f\u043e\u0447\u0435\u043c\u0443 \u0432\u0430\u0436\u043d\u043e \u2192 \u0432\u043e\u043f\u0440\u043e\u0441 \u0438\u043b\u0438 \u0432\u044b\u0432\u043e\u0434 4) \u043f\u0440\u0438\u043c\u0435\u0440 \u0445\u043e\u0440\u043e\u0448\u0435\u0433\u043e \u043f\u043e\u0441\u0442\u0430 5) \u043f\u0440\u0438\u043c\u0435\u0440 \u043f\u043b\u043e\u0445\u043e\u0433\u043e \u043f\u043e\u0441\u0442\u0430 (\u0441\u0443\u0445\u043e\u0439 changelog) \u0441 \u043e\u0431\u044a\u044f\u0441\u043d\u0435\u043d\u0438\u0435\u043c \u043f\u043e\u0447\u0435\u043c\u0443 \u043f\u043b\u043e\u0445\u043e.",
+      "title": "AGENTS_JOURNALIST.md v2: контекст канала + пример поста + правила голоса",
+      "description": "Переписать templates/AGENTS_JOURNALIST.md. Добавить: 1) читай ## Channel Context из промта чтобы знать стиль и последний номер 2) читай blog_state.json для номера 3) структура поста: зацепка (1 предложение) → что случилось → почему важно → вопрос или вывод 4) пример хорошего поста 5) пример плохого поста (сухой changelog) с объяснением почему плохо.",
       "acceptance_criteria": [
-        "AGENTS_JOURNALIST.md \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0441\u0435\u043a\u0446\u0438\u044e \u0441 \u043f\u0440\u0438\u043c\u0435\u0440\u043e\u043c \u0445\u043e\u0440\u043e\u0448\u0435\u0433\u043e \u043f\u043e\u0441\u0442\u0430",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0441\u0435\u043a\u0446\u0438\u044e \u0441 \u043f\u0440\u0438\u043c\u0435\u0440\u043e\u043c \u043f\u043b\u043e\u0445\u043e\u0433\u043e \u043f\u043e\u0441\u0442\u0430",
-        "\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f \u0447\u0438\u0442\u0430\u0442\u044c Channel Context \u0438\u0437 \u043f\u0440\u043e\u043c\u0442\u0430",
-        "\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f \u0447\u0438\u0442\u0430\u0442\u044c blog_state.json \u0434\u043b\u044f \u043d\u043e\u043c\u0435\u0440\u0430"
+        "AGENTS_JOURNALIST.md содержит секцию с примером хорошего поста",
+        "Содержит секцию с примером плохого поста",
+        "Инструкция читать Channel Context из промта",
+        "Инструкция читать blog_state.json для номера"
       ],
       "completed_at": null,
       "revision_notes": "Historical aggregate task no longer used as a live execution candidate: dependency truth is non-runnable and current repo truth is partial. Replace with narrower R12 tasks for journalist template completion and context pipeline pieces."
@@ -1618,15 +1618,15 @@
       "priority": "medium",
       "complexity": "simple",
       "status": "false_positive",
-      "title": "templates/AGENTS_COORDINATOR.md \u2014 \u0440\u043e\u043b\u044c \u043a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0442\u043e\u0440\u0430 \u0434\u043b\u044f \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432",
-      "description": "\u0421\u043e\u0437\u0434\u0430\u0442\u044c templates/AGENTS_COORDINATOR.md. \u0420\u043e\u043b\u044c: \u043f\u0440\u0438\u043d\u0438\u043c\u0430\u0435\u0442 \u0438\u0434\u0435\u044e \u043f\u0440\u043e\u0435\u043a\u0442\u0430, \u0437\u0430\u0434\u0430\u0451\u0442 3-5 \u0443\u0442\u043e\u0447\u043d\u044f\u044e\u0449\u0438\u0445 \u0432\u043e\u043f\u0440\u043e\u0441\u043e\u0432, \u0441\u043e\u0431\u0438\u0440\u0430\u0435\u0442 brief. Output: structured brief \u0432 docs/PROJECT_BRIEF.md. \u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438: \u0437\u0430\u0434\u0430\u0432\u0430\u0439 \u0432\u043e\u043f\u0440\u043e\u0441\u044b \u043f\u043e \u043e\u0434\u043d\u043e\u043c\u0443, \u0436\u0434\u0438 \u043e\u0442\u0432\u0435\u0442\u0430, \u043d\u0435 \u043f\u0440\u0438\u0434\u0443\u043c\u044b\u0432\u0430\u0439 \u0434\u0435\u0442\u0430\u043b\u0438.",
+      "title": "templates/AGENTS_COORDINATOR.md — роль координатора для проектов",
+      "description": "Создать templates/AGENTS_COORDINATOR.md. Роль: принимает идею проекта, задаёт 3-5 уточняющих вопросов, собирает brief. Output: structured brief в docs/PROJECT_BRIEF.md. Инструкции: задавай вопросы по одному, жди ответа, не придумывай детали.",
       "acceptance_criteria": [
-        "templates/AGENTS_COORDINATOR.md \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438 \u043f\u0440\u043e \u0443\u0442\u043e\u0447\u043d\u044f\u044e\u0449\u0438\u0435 \u0432\u043e\u043f\u0440\u043e\u0441\u044b",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0444\u043e\u0440\u043c\u0430\u0442 output: PROJECT_BRIEF.md"
+        "templates/AGENTS_COORDINATOR.md существует",
+        "Содержит инструкции про уточняющие вопросы",
+        "Содержит формат output: PROJECT_BRIEF.md"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected template is missing: templates/AGENTS_COORDINATOR.md"
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_COORDINATOR.md"
     },
     {
       "id": "R8-06",
@@ -1634,15 +1634,15 @@
       "priority": "medium",
       "complexity": "simple",
       "status": "false_positive",
-      "title": "templates/AGENTS_ARCHITECT.md \u2014 \u0440\u043e\u043b\u044c \u0430\u0440\u0445\u0438\u0442\u0435\u043a\u0442\u043e\u0440\u0430 \u0434\u043b\u044f \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432",
-      "description": "\u0421\u043e\u0437\u0434\u0430\u0442\u044c templates/AGENTS_ARCHITECT.md. \u0420\u043e\u043b\u044c: \u0447\u0438\u0442\u0430\u0435\u0442 PROJECT_BRIEF.md, \u0432\u044b\u0431\u0438\u0440\u0430\u0435\u0442 \u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u0441\u0442\u0435\u043a, \u043f\u0440\u043e\u0435\u043a\u0442\u0438\u0440\u0443\u0435\u0442 \u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0443 \u043f\u0430\u043f\u043e\u043a, \u043a\u043b\u044e\u0447\u0435\u0432\u044b\u0435 \u0440\u0435\u0448\u0435\u043d\u0438\u044f. Output: docs/ARCHITECTURE.md \u0441 \u0441\u0435\u043a\u0446\u0438\u044f\u043c\u0438: Stack, Structure, Key Decisions, Risks.",
+      "title": "templates/AGENTS_ARCHITECT.md — роль архитектора для проектов",
+      "description": "Создать templates/AGENTS_ARCHITECT.md. Роль: читает PROJECT_BRIEF.md, выбирает технический стек, проектирует структуру папок, ключевые решения. Output: docs/ARCHITECTURE.md с секциями: Stack, Structure, Key Decisions, Risks.",
       "acceptance_criteria": [
-        "templates/AGENTS_ARCHITECT.md \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438 \u043f\u043e \u0432\u044b\u0431\u043e\u0440\u0443 \u0441\u0442\u0435\u043a\u0430",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0444\u043e\u0440\u043c\u0430\u0442 output: ARCHITECTURE.md"
+        "templates/AGENTS_ARCHITECT.md существует",
+        "Содержит инструкции по выбору стека",
+        "Содержит формат output: ARCHITECTURE.md"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected template is missing: templates/AGENTS_ARCHITECT.md"
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_ARCHITECT.md"
     },
     {
       "id": "R8-07",
@@ -1650,15 +1650,15 @@
       "priority": "low",
       "complexity": "simple",
       "status": "false_positive",
-      "title": "templates/AGENTS_GAMEDESIGNER.md \u2014 \u0440\u043e\u043b\u044c \u0433\u0435\u0439\u043c\u0434\u0438\u0437\u0430\u0439\u043d\u0435\u0440\u0430",
-      "description": "\u0421\u043e\u0437\u0434\u0430\u0442\u044c templates/AGENTS_GAMEDESIGNER.md. \u0420\u043e\u043b\u044c: \u043f\u0438\u0448\u0435\u0442 GDD (game design document). \u0421\u0435\u043a\u0446\u0438\u0438: Core Loop, Mechanics, Retention, Monetization (\u0435\u0441\u043b\u0438 \u043d\u0443\u0436\u043d\u043e), Art Style Notes. Output: docs/GDD.md.",
+      "title": "templates/AGENTS_GAMEDESIGNER.md — роль геймдизайнера",
+      "description": "Создать templates/AGENTS_GAMEDESIGNER.md. Роль: пишет GDD (game design document). Секции: Core Loop, Mechanics, Retention, Monetization (если нужно), Art Style Notes. Output: docs/GDD.md.",
       "acceptance_criteria": [
-        "templates/AGENTS_GAMEDESIGNER.md \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0443 GDD",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438 \u043f\u043e retention \u043c\u0435\u0445\u0430\u043d\u0438\u043a\u0430\u043c"
+        "templates/AGENTS_GAMEDESIGNER.md существует",
+        "Содержит структуру GDD",
+        "Содержит инструкции по retention механикам"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected template is missing: templates/AGENTS_GAMEDESIGNER.md"
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_GAMEDESIGNER.md"
     },
     {
       "id": "R8-08",
@@ -1666,15 +1666,15 @@
       "priority": "low",
       "complexity": "simple",
       "status": "false_positive",
-      "title": "templates/AGENTS_CREATIVE.md \u2014 \u0440\u043e\u043b\u044c \u043a\u0440\u0435\u0430\u0442\u0438\u0432\u043d\u043e\u0433\u043e \u0434\u0438\u0440\u0435\u043a\u0442\u043e\u0440\u0430",
-      "description": "\u0421\u043e\u0437\u0434\u0430\u0442\u044c templates/AGENTS_CREATIVE.md. \u0420\u043e\u043b\u044c: \u0432\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u044b\u0439 \u0441\u0442\u0438\u043b\u044c, \u043f\u0430\u043b\u0438\u0442\u0440\u0430, \u0430\u0442\u043c\u043e\u0441\u0444\u0435\u0440\u0430 \u043f\u0440\u043e\u0435\u043a\u0442\u0430. Output: docs/VISUAL_BIBLE.md + \u0444\u0430\u0439\u043b assets/art_prompts.md \u0441 \u043f\u0440\u043e\u043c\u0442\u0430\u043c\u0438 \u0434\u043b\u044f \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 \u0430\u0440\u0442\u0430 (Midjourney/DALL-E \u0444\u043e\u0440\u043c\u0430\u0442).",
+      "title": "templates/AGENTS_CREATIVE.md — роль креативного директора",
+      "description": "Создать templates/AGENTS_CREATIVE.md. Роль: визуальный стиль, палитра, атмосфера проекта. Output: docs/VISUAL_BIBLE.md + файл assets/art_prompts.md с промтами для генерации арта (Midjourney/DALL-E формат).",
       "acceptance_criteria": [
-        "templates/AGENTS_CREATIVE.md \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u0438 \u043f\u043e \u0432\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u043e\u043c\u0443 \u0441\u0442\u0438\u043b\u044e",
-        "\u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0444\u043e\u0440\u043c\u0430\u0442 art_prompts.md \u0441 \u043a\u043e\u043d\u0432\u0435\u043d\u0446\u0438\u0435\u0439 \u0438\u043c\u0451\u043d \u0444\u0430\u0439\u043b\u043e\u0432"
+        "templates/AGENTS_CREATIVE.md существует",
+        "Содержит инструкции по визуальному стилю",
+        "Содержит формат art_prompts.md с конвенцией имён файлов"
       ],
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected template is missing: templates/AGENTS_CREATIVE.md"
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected template is missing: templates/AGENTS_CREATIVE.md"
     },
     {
       "id": "R9-01",
@@ -1683,24 +1683,24 @@
       "priority": "high",
       "complexity": "moderate",
       "risk": "low",
-      "title": "Bot: \u0437\u0430\u0449\u0438\u0442\u0430 \u043e\u0442 \u0434\u0432\u043e\u0439\u043d\u043e\u0433\u043e /auto",
-      "description": "\u0412 cmd_auto() \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0442\u044c \u0447\u0442\u043e ralph.sh \u0443\u0436\u0435 \u043d\u0435 \u0437\u0430\u043f\u0443\u0449\u0435\u043d \u043f\u0435\u0440\u0435\u0434 \u0441\u0442\u0430\u0440\u0442\u043e\u043c \u043d\u043e\u0432\u043e\u0433\u043e \u043f\u0440\u043e\u0446\u0435\u0441\u0441\u0430. \u0415\u0441\u043b\u0438 \u043f\u0440\u043e\u0446\u0435\u0441\u0441 \u0436\u0438\u0432\u043e\u0439 \u2014 \u043e\u0442\u0432\u0435\u0442\u0438\u0442\u044c \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044e \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435\u043c \u0438 \u041d\u0415 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0442\u044c \u0432\u0442\u043e\u0440\u043e\u0439 \u044d\u043a\u0437\u0435\u043c\u043f\u043b\u044f\u0440. \u0418\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u044c PID \u0444\u0430\u0439\u043b \u0438\u043b\u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 ps aux.",
+      "title": "Bot: защита от двойного /auto",
+      "description": "В cmd_auto() проверять что ralph.sh уже не запущен перед стартом нового процесса. Если процесс живой — ответить пользователю предупреждением и НЕ запускать второй экземпляр. Использовать PID файл или проверку ps aux.",
       "acceptance_criteria": [
-        "\u0415\u0441\u043b\u0438 /auto \u0432\u044b\u0437\u0432\u0430\u043d \u043f\u043e\u043a\u0430 ralph.sh \u0443\u0436\u0435 \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442 \u2014 \u0431\u043e\u0442 \u043e\u0442\u0432\u0435\u0447\u0430\u0435\u0442: \u26a0\ufe0f Ralph \u0443\u0436\u0435 \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442 (PID: XXXXX). \u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0439 /stop \u0441\u043d\u0430\u0447\u0430\u043b\u0430.",
-        "\u0412\u0442\u043e\u0440\u043e\u0439 \u043f\u0440\u043e\u0446\u0435\u0441\u0441 ralph.sh \u041d\u0415 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442\u0441\u044f",
-        "\u0415\u0441\u043b\u0438 \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0439 \u043f\u0440\u043e\u0446\u0435\u0441\u0441 \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0441\u044f \u2014 /auto \u0441\u0442\u0430\u0440\u0442\u0443\u0435\u0442 \u043d\u043e\u0440\u043c\u0430\u043b\u044c\u043d\u043e",
-        "PID \u0441\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u0442\u0441\u044f \u0432 ralph_control.json \u0438\u043b\u0438 \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u044b\u0439 .pid \u0444\u0430\u0439\u043b"
+        "Если /auto вызван пока ralph.sh уже работает — бот отвечает: ⚠️ Ralph уже работает (PID: XXXXX). Используй /stop сначала.",
+        "Второй процесс ralph.sh НЕ запускается",
+        "Если предыдущий процесс завершился — /auto стартует нормально",
+        "PID сохраняется в ralph_control.json или отдельный .pid файл"
       ],
       "test_steps": [
-        "\u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c /auto",
-        "\u0421\u0440\u0430\u0437\u0443 \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c /auto \u0441\u043d\u043e\u0432\u0430",
-        "\u0423\u0431\u0435\u0434\u0438\u0442\u044c\u0441\u044f \u0447\u0442\u043e \u0432\u0442\u043e\u0440\u043e\u0439 \u0432\u044b\u0437\u043e\u0432 \u0432\u0435\u0440\u043d\u0443\u043b \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435",
-        "ps aux | grep ralph.sh \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u0442\u043e\u043b\u044c\u043a\u043e \u043e\u0434\u0438\u043d \u043f\u0440\u043e\u0446\u0435\u0441\u0441"
+        "Запустить /auto",
+        "Сразу запустить /auto снова",
+        "Убедиться что второй вызов вернул предупреждение",
+        "ps aux | grep ralph.sh показывает только один процесс"
       ],
       "dependencies": [],
       "status": "verified_done",
       "completed_at": "2026-03-16T09:51:13.717203+00:00",
-      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: verified_done \u2014 Command routing, handler alias, help text, and test evidence exist.",
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: verified_done — Command routing, handler alias, help text, and test evidence exist.",
       "timeout": 600,
       "role": "coder"
     },
@@ -1711,15 +1711,15 @@
       "priority": "high",
       "complexity": "moderate",
       "risk": "low",
-      "title": "Tests: \u043f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 /ask \u0438 /chat \u043a\u043e\u043c\u0430\u043d\u0434",
-      "description": "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0442\u0435\u0441\u0442\u044b \u0432 tests/test_bot_commands.py \u0434\u043b\u044f \u043d\u043e\u0432\u044b\u0445 \u043a\u043e\u043c\u0430\u043d\u0434 R6: /ask \u0438 /chat. \u041c\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u0442\u044c codex subprocess. \u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c happy path, timeout, \u043f\u0443\u0441\u0442\u043e\u0439 \u043e\u0442\u0432\u0435\u0442, \u043c\u043d\u043e\u0433\u043e\u0441\u0442\u0440\u043e\u0447\u043d\u044b\u0439 \u0434\u0438\u0430\u043b\u043e\u0433.",
+      "title": "Tests: покрытие /ask и /chat команд",
+      "description": "Добавить тесты в tests/test_bot_commands.py для новых команд R6: /ask и /chat. Мокировать codex subprocess. Проверить happy path, timeout, пустой ответ, многострочный диалог.",
       "acceptance_criteria": [
-        "test_ask_command_basic \u2014 /ask \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043e\u0442\u0432\u0435\u0442 \u043e\u0442 codex",
-        "test_ask_command_timeout \u2014 /ask \u043f\u0440\u0438 \u0442\u0430\u0439\u043c\u0430\u0443\u0442\u0435 \u043e\u0442\u0432\u0435\u0447\u0430\u0435\u0442 \u043f\u043e\u043d\u044f\u0442\u043d\u043e\u0439 \u043e\u0448\u0438\u0431\u043a\u043e\u0439",
-        "test_chat_command_start \u2014 /chat \u043d\u0430\u0447\u0438\u043d\u0430\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u044e, \u0441\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u0442 \u0438\u0441\u0442\u043e\u0440\u0438\u044e",
-        "test_chat_command_followup \u2014 \u0432\u0442\u043e\u0440\u043e\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u043e\u043b\u0443\u0447\u0430\u0435\u0442 \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u043f\u0435\u0440\u0432\u043e\u0433\u043e",
-        "test_chat_command_exit \u2014 /chat exit \u0437\u0430\u0432\u0435\u0440\u0448\u0430\u0435\u0442 \u0441\u0435\u0441\u0441\u0438\u044e",
-        "make test \u0437\u0435\u043b\u0451\u043d\u044b\u0439"
+        "test_ask_command_basic — /ask возвращает ответ от codex",
+        "test_ask_command_timeout — /ask при таймауте отвечает понятной ошибкой",
+        "test_chat_command_start — /chat начинает сессию, сохраняет историю",
+        "test_chat_command_followup — второй вопрос получает контекст первого",
+        "test_chat_command_exit — /chat exit завершает сессию",
+        "make test зелёный"
       ],
       "test_steps": [
         "python3 -m pytest tests/test_bot_commands.py -k ask -v",
@@ -1743,15 +1743,15 @@
       "priority": "medium",
       "complexity": "moderate",
       "risk": "low",
-      "title": "Tests: \u043f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 ralph_reflect.py \u0438 /reflect \u043a\u043e\u043c\u0430\u043d\u0434",
-      "description": "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0442\u0435\u0441\u0442\u044b \u0434\u043b\u044f R7 \u0444\u0443\u043d\u043a\u0446\u0438\u043e\u043d\u0430\u043b\u0430: ralph_reflect.py \u0430\u043d\u0430\u043b\u0438\u0437\u0438\u0440\u0443\u0435\u0442 metrics.csv \u0438 \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u0442 proposals.json. \u0422\u0435\u0441\u0442\u044b \u0434\u043b\u044f /reflect, /approve, /reject, /refine \u043a\u043e\u043c\u0430\u043d\u0434 \u0431\u043e\u0442\u0430.",
+      "title": "Tests: покрытие ralph_reflect.py и /reflect команд",
+      "description": "Добавить тесты для R7 функционала: ralph_reflect.py анализирует metrics.csv и генерирует proposals.json. Тесты для /reflect, /approve, /reject, /refine команд бота.",
       "acceptance_criteria": [
-        "test_reflect_generates_proposals \u2014 ralph_reflect.py \u0441\u043e\u0437\u0434\u0430\u0451\u0442 proposals.json \u0438\u0437 metrics.csv",
-        "test_reflect_empty_metrics \u2014 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e \u043e\u0431\u0440\u0430\u0431\u0430\u0442\u044b\u0432\u0430\u0435\u0442 \u043f\u0443\u0441\u0442\u043e\u0439 metrics.csv",
-        "test_bot_reflect_command \u2014 /reflect \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 proposals",
-        "test_bot_approve_proposal \u2014 /approve N \u043c\u0435\u043d\u044f\u0435\u0442 \u0441\u0442\u0430\u0442\u0443\u0441 proposal",
-        "test_bot_reject_proposal \u2014 /reject N \u043c\u0435\u043d\u044f\u0435\u0442 \u0441\u0442\u0430\u0442\u0443\u0441 proposal",
-        "make test \u0437\u0435\u043b\u0451\u043d\u044b\u0439"
+        "test_reflect_generates_proposals — ralph_reflect.py создаёт proposals.json из metrics.csv",
+        "test_reflect_empty_metrics — корректно обрабатывает пустой metrics.csv",
+        "test_bot_reflect_command — /reflect показывает proposals",
+        "test_bot_approve_proposal — /approve N меняет статус proposal",
+        "test_bot_reject_proposal — /reject N меняет статус proposal",
+        "make test зелёный"
       ],
       "test_steps": [
         "python3 -m pytest tests/ -k reflect -v",
@@ -1765,7 +1765,7 @@
       ],
       "status": "false_positive",
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected test files or named tests are missing.",
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected test files or named tests are missing.",
       "timeout": 420,
       "role": "coder"
     },
@@ -1776,14 +1776,14 @@
       "priority": "medium",
       "complexity": "simple",
       "risk": "low",
-      "title": "Tests: \u043f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 fetch_channel.py",
-      "description": "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0442\u0435\u0441\u0442\u044b \u0434\u043b\u044f scripts/fetch_channel.py. \u041c\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u0442\u044c Telegram API. \u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u043f\u0430\u0440\u0441\u0438\u043d\u0433 \u043f\u043e\u0441\u0442\u043e\u0432, \u0437\u0430\u043f\u0438\u0441\u044c \u0432 channel_context.md, \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0443 \u043e\u0448\u0438\u0431\u043e\u043a \u0441\u0435\u0442\u0438.",
+      "title": "Tests: покрытие fetch_channel.py",
+      "description": "Добавить тесты для scripts/fetch_channel.py. Мокировать Telegram API. Проверить парсинг постов, запись в channel_context.md, обработку ошибок сети.",
       "acceptance_criteria": [
-        "test_fetch_channel_writes_context \u2014 fetch_channel.py \u0441\u043e\u0437\u0434\u0430\u0451\u0442 channel_context.md",
-        "test_fetch_channel_parses_posts \u2014 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e \u043f\u0430\u0440\u0441\u0438\u0442 \u0442\u0435\u043a\u0441\u0442 \u0438 \u0434\u0430\u0442\u0443 \u043f\u043e\u0441\u0442\u043e\u0432",
-        "test_fetch_channel_network_error \u2014 \u043f\u0440\u0438 \u043e\u0448\u0438\u0431\u043a\u0435 \u0441\u0435\u0442\u0438 \u043d\u0435 \u043f\u0430\u0434\u0430\u0435\u0442, \u043b\u043e\u0433\u0438\u0440\u0443\u0435\u0442",
-        "test_fetch_channel_empty_channel \u2014 \u043f\u0443\u0441\u0442\u043e\u0439 \u043a\u0430\u043d\u0430\u043b \u043d\u0435 \u0432\u044b\u0437\u044b\u0432\u0430\u0435\u0442 \u043e\u0448\u0438\u0431\u043a\u0443",
-        "make test \u0437\u0435\u043b\u0451\u043d\u044b\u0439"
+        "test_fetch_channel_writes_context — fetch_channel.py создаёт channel_context.md",
+        "test_fetch_channel_parses_posts — корректно парсит текст и дату постов",
+        "test_fetch_channel_network_error — при ошибке сети не падает, логирует",
+        "test_fetch_channel_empty_channel — пустой канал не вызывает ошибку",
+        "make test зелёный"
       ],
       "test_steps": [
         "python3 -m pytest tests/ -k fetch_channel -v",
@@ -1794,7 +1794,7 @@
       ],
       "status": "false_positive",
       "completed_at": null,
-      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive \u2014 Expected script is missing: scripts/fetch_channel.py",
+      "revision_notes": "Re-audit 2026-03-18T04:36:15.753154+00:00: false_positive — Expected script is missing: scripts/fetch_channel.py",
       "timeout": 300,
       "role": "coder"
     },
@@ -1805,14 +1805,14 @@
       "priority": "high",
       "complexity": "complex",
       "risk": "medium",
-      "title": "Tests: integration test \u043f\u043e\u043b\u043d\u043e\u0433\u043e \u0446\u0438\u043a\u043b\u0430 coder\u2192lead\u2192commit",
-      "description": "\u041d\u0430\u043f\u0438\u0441\u0430\u0442\u044c \u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0439 \u0442\u0435\u0441\u0442 \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u0442 \u043f\u043e\u043b\u043d\u044b\u0439 \u0446\u0438\u043a\u043b ralph.sh: \u0431\u0435\u0440\u0451\u0442 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438\u0437 tasks.json, \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442 \u043c\u043e\u043a-\u043a\u043e\u0434\u0435\u0440, \u043c\u043e\u043a-lead review \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 approve, \u0437\u0430\u0434\u0430\u0447\u0430 \u043f\u043e\u043c\u0435\u0447\u0430\u0435\u0442\u0441\u044f done, \u043a\u043e\u043c\u043c\u0438\u0442 \u0441\u043e\u0437\u0434\u0430\u0451\u0442\u0441\u044f. \u0411\u0435\u0437 \u0440\u0435\u0430\u043b\u044c\u043d\u043e\u0433\u043e codex \u2014 \u0432\u0441\u0451 \u0447\u0435\u0440\u0435\u0437 \u043c\u043e\u043a\u0438 subprocess.",
+      "title": "Tests: integration test полного цикла coder→lead→commit",
+      "description": "Написать интеграционный тест который проверяет полный цикл ralph.sh: берёт задачу из tasks.json, запускает мок-кодер, мок-lead review возвращает approve, задача помечается done, коммит создаётся. Без реального codex — всё через моки subprocess.",
       "acceptance_criteria": [
-        "test_full_cycle_approve \u2014 \u0437\u0430\u0434\u0430\u0447\u0430 \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u0442 coder\u2192lead\u2192done \u0437\u0430 \u043e\u0434\u0438\u043d \u0446\u0438\u043a\u043b",
-        "test_full_cycle_fix_then_approve \u2014 lead \u0433\u043e\u0432\u043e\u0440\u0438\u0442 fix, coder \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442, \u0437\u0430\u0442\u0435\u043c approve",
-        "test_full_cycle_alert \u2014 lead \u0433\u043e\u0432\u043e\u0440\u0438\u0442 alert, ralph \u043e\u0441\u0442\u0430\u043d\u0430\u0432\u043b\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0438 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u044f\u0435\u0442",
-        "test_full_cycle_timeout \u2014 coder \u043d\u0435 \u043e\u0442\u0432\u0435\u0447\u0430\u0435\u0442 \u0437\u0430 timeout, \u0437\u0430\u0434\u0430\u0447\u0430 \u043f\u043e\u043c\u0435\u0447\u0430\u0435\u0442\u0441\u044f failed",
-        "make test \u0437\u0435\u043b\u0451\u043d\u044b\u0439"
+        "test_full_cycle_approve — задача проходит coder→lead→done за один цикл",
+        "test_full_cycle_fix_then_approve — lead говорит fix, coder исправляет, затем approve",
+        "test_full_cycle_alert — lead говорит alert, ralph останавливается и уведомляет",
+        "test_full_cycle_timeout — coder не отвечает за timeout, задача помечается failed",
+        "make test зелёный"
       ],
       "test_steps": [
         "python3 -m pytest tests/test_integration.py -v",
@@ -1847,7 +1847,7 @@
       "dependencies": [],
       "status": "verified_done",
       "completed_at": "2026-03-17T00:00:00+07:00",
-      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: verified_done \u2014 Expected documentation exists and matches required content checks.",
+      "revision_notes": "Re-audit 2026-03-18T04:36:27.258662+00:00: verified_done — Expected documentation exists and matches required content checks.",
       "timeout": 300,
       "role": "coder"
     },
@@ -2465,7 +2465,7 @@
     {
       "id": "OPS-01",
       "phase": "OPS",
-      "title": "Fix: codex timeout too short \u2014 increase to 900s for all complexities",
+      "title": "Fix: codex timeout too short — increase to 900s for all complexities",
       "status": "verified_done",
       "complexity": "simple",
       "category": "fix",
@@ -2481,7 +2481,7 @@
     {
       "id": "OPS-02",
       "phase": "OPS",
-      "title": "Fix: skip or limit make test inside codex runs \u2014 use fast check instead",
+      "title": "Fix: skip or limit make test inside codex runs — use fast check instead",
       "status": "verified_done",
       "complexity": "moderate",
       "category": "fix",
@@ -2528,8 +2528,8 @@
     {
       "id": "OPS-05",
       "phase": "OPS",
-      "title": "Fix: smoke test before every task is too slow \u2014 5min for 140 tests",
-      "status": "blocked",
+      "title": "Fix: smoke test before every task is too slow — 5min for 140 tests",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "fix",
       "priority": "high",
@@ -2539,7 +2539,7 @@
         "fast check: python syntax + import validation"
       ],
       "revision_notes": "OPS-05 failed after 2 retries",
-      "completed_at": null
+      "completed_at": "2026-03-24T03:33:41.764929+00:00"
     },
     {
       "id": "JOUR-01",
@@ -2567,7 +2567,7 @@
         "ralph.sh checks git diff before applying changes",
         "run_codex output verified idempotent: second apply is no-op"
       ],
-      "revision_notes": "codex shows file update: diff N times for same patch \u2014 infinite verify loop, wastes tokens"
+      "revision_notes": "codex shows file update: diff N times for same patch — infinite verify loop, wastes tokens"
     }
   ]
 }
