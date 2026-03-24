@@ -1,5 +1,11 @@
 # Recent Task History
 
+### OPS-04: Cleanup: remove orphan /tmp/ralph_coder_*.txt files on startup and after run
+- Files: .ralph/audit/OPS-05.json,ralph.sh,src/ralph/resources/ralph.sh,system_promt.md,tests/test_integration.py
+- Result: approved
+- Notes: 
+- Time: 2026-03-24T17:47:31Z
+
 ### OPS-03: Observability: stream codex output to ralph log in real time
 - Files: ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-20T18:05:09Z
-
-### R11-04: Preserve clean final tail and truthful state after successful one-task completion
-- Files: .ralph/audit/R11-03.json,ralph.sh,src/ralph/resources/ralph.sh,tests/test_integration.py
-- Result: approved
-- Notes: 
-- Time: 2026-03-20T04:01:41Z

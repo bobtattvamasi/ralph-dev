@@ -93,3 +93,4 @@
 - **R12-04** (2026-03-21 17:15 UTC): Reviewed diff and test evidence: 137 passed, 1 skipped.
 - **R12-05** (2026-03-21 19:14 UTC): R12-05 is ready to land based on the provided diff and passing tests.
 - **OPS-03** (2026-03-23 16:16 UTC): OPS-03 observability criteria verified by the shell changes and integration coverage for streamed log lines, timeout ordering, and archived codex output.
+- **OPS-04** (2026-03-24 17:47 UTC): Добавлена очистка orphan tmp-файлов старше 1 часа при старте и удаление текущего coder tmp-файла при cleanup; полный прогон: 154 passed, 1 skipped.
