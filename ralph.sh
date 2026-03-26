@@ -1243,6 +1243,8 @@ build_coder_prompt() {
     local memory_recent="${12}"
     local fix_instructions="${13:-}"
     local human_comment="${14:-}"
+    local previous_landed_commit="${15:-}"
+    local previous_diff_bytes="${16:-0}"
     local coder_prompt=""
 
     if [ "$coder_prompt_profile_name" = "narrow" ]; then
@@ -1307,6 +1309,14 @@ $fix_instructions"
 
 ## Human Comment (from project owner via Telegram)
 $human_comment"
+    fi
+
+    if [ -n "$previous_landed_commit" ]; then
+        coder_prompt="$coder_prompt
+
+## Previous Attempt Context
+Previous landed commit hash: $previous_landed_commit
+Previous diff snapshot: ${previous_diff_bytes} bytes"
     fi
 
     coder_prompt="$coder_prompt
@@ -2682,6 +2692,8 @@ print(task.get('role', 'coder'))
     AUDIT_WRITTEN=false
     FIX_INSTRUCTIONS=""
     TASK_TOKENS=0
+    DIFF_SNAPSHOT_FILE="/tmp/ralph_diff_${TASK_ID}.txt"
+    rm -f "$DIFF_SNAPSHOT_FILE"
 
     while [ "$FIX_RETRY" -le "$MAX_FIX_RETRIES" ] && [ "$TASK_DONE" = false ]; do
         CONTROL_STATUS=0
@@ -2810,6 +2822,8 @@ print(task.get('role', 'coder'))
             PROMPT_PROFILE_JSON=""
             CODER_PROMPT_PROFILE_NAME="broad"
             CODER_PROMPT_TARGETS=""
+            PREVIOUS_LANDED_COMMIT=""
+            PREVIOUS_DIFF_BYTES="0"
             if [ -f "AGENTS.md" ]; then
                 PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
             fi
@@ -2829,6 +2843,11 @@ print(task.get('role', 'coder'))
             PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
             CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
             CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
+            if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
+                PREVIOUS_LANDED_COMMIT="$PRE_HASH"
+                PREVIOUS_DIFF_BYTES=$(wc -c < "$DIFF_SNAPSHOT_FILE" 2>/dev/null | tr -d ' ' || echo "0")
+                PREVIOUS_DIFF_BYTES="${PREVIOUS_DIFF_BYTES:-0}"
+            fi
 
             CONTEXT_CONTENT=$(build_required_context_content "$TASK_CONTEXT_FILES")
             HUMAN_COMMENT=$(get_human_comment)
@@ -2846,7 +2865,9 @@ print(task.get('role', 'coder'))
                 "$MEMORY_CORE" \
                 "$MEMORY_RECENT" \
                 "$FIX_INSTRUCTIONS" \
-                "$HUMAN_COMMENT")
+                "$HUMAN_COMMENT" \
+                "$PREVIOUS_LANDED_COMMIT" \
+                "$PREVIOUS_DIFF_BYTES")
             CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
 
             set +e
@@ -2872,6 +2893,24 @@ print(task.get('role', 'coder'))
             TASK_TOKENS=$((TASK_TOKENS + ${CODER_TOKENS:-0}))
             SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
             log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
+
+            CURRENT_ATTEMPT_DIFF=$(git diff HEAD 2>/dev/null || true)
+            if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
+                PRIOR_DIFF=$(cat "$DIFF_SNAPSHOT_FILE" 2>/dev/null || true)
+                if [ -z "$CURRENT_ATTEMPT_DIFF" ] || [ "$PRIOR_DIFF" = "$CURRENT_ATTEMPT_DIFF" ]; then
+                    REASON="Retry produced no new diff"
+                    TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                    log "⚠️ No new changes in this attempt; diff identical to prior review"
+                    write_state "blocked" "" "idempotent_retry" "Retry produced no new diff"
+                    log_metrics "failed" "true" "false"
+                    log "📋 TASK_FAIL task_id=$TASK_ID status=idempotent_retry runtime_success=true verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "true" "false" "$TASK_DURATION"
+                    AUDIT_WRITTEN=true
+                    defer_blocked_task "$REASON"
+                    TASK_BLOCKED=true
+                    break
+                fi
+            fi
 
             # Commit any unstaged changes the coder left behind
             if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
@@ -2907,6 +2946,10 @@ print(task.get('role', 'coder'))
         log "⏱️ Coder took ${CODER_DURATION}s"
 
         POST_HASH=$(git rev-parse HEAD)
+        CURRENT_DIFF=$(git diff "$PRE_HASH" "$POST_HASH" 2>/dev/null || true)
+        printf '%s' "$CURRENT_DIFF" > "$DIFF_SNAPSHOT_FILE"
+        DIFF_SNAPSHOT_BYTES=$(wc -c < "$DIFF_SNAPSHOT_FILE" 2>/dev/null | tr -d ' ' || echo "0")
+        DIFF_SNAPSHOT_BYTES="${DIFF_SNAPSHOT_BYTES:-0}"
         if [ "${REVIEW_BASE_HASH:-$PRE_HASH}" = "${REVIEW_TARGET_HASH:-$POST_HASH}" ]; then
             GIT_DIFF="(no changes committed)"
         else
@@ -2960,6 +3003,8 @@ ${LEAD_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_LE
 \`\`\`diff
 $GIT_DIFF
 \`\`\`
+
+Previous diff snapshot: ${DIFF_SNAPSHOT_BYTES:-0} bytes
 
 ## Tests
 \`\`\`
