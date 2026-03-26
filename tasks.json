@@ -2569,6 +2569,21 @@
         "run_codex output verified idempotent: second apply is no-op"
       ],
       "revision_notes": "codex shows file update: diff N times for same patch — infinite verify loop, wastes tokens"
+    },
+    {
+      "id": "OPS-07",
+      "phase": "OPS",
+      "title": "Fix: prevent repeated diff application across retry loop",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "fix",
+      "priority": "high",
+      "acceptance_criteria": [
+        "no new wip commit if diff is empty vs previous review target",
+        "coder prompt includes previous landed commit hash and diff summary",
+        "regression test: second apply of same patch is no-op"
+      ],
+      "revision_notes": "OPS-06 diagnosis: retry loop lacks idempotency guard; same patch can be reapplied"
     }
   ]
 }
