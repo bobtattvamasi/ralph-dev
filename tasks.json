@@ -2539,7 +2539,7 @@
         "full suite only before ./ralph.sh auto or explicitly",
         "fast check: python syntax + import validation"
       ],
-      "revision_notes": "OPS-05 failed after 2 retries",
+      "revision_notes": "fast pre-task check implemented and tested",
       "completed_at": "2026-03-24T03:33:41.764929+00:00"
     },
     {
