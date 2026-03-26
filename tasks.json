@@ -2559,7 +2559,7 @@
       "id": "OPS-06",
       "phase": "OPS",
       "title": "Fix: codex applies same diff multiple times in verification loop",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "fix",
       "priority": "high",
@@ -2568,7 +2568,8 @@
         "ralph.sh checks git diff before applying changes",
         "run_codex output verified idempotent: second apply is no-op"
       ],
-      "revision_notes": "codex shows file update: diff N times for same patch — infinite verify loop, wastes tokens"
+      "revision_notes": "codex shows file update: diff N times for same patch — infinite verify loop, wastes tokens",
+      "completed_at": "2026-03-26T12:24:29.001315+00:00"
     },
     {
       "id": "OPS-07",
