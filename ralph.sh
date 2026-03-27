@@ -1267,10 +1267,9 @@ import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
 match = re.search(r'(?m)^assistant\s*$', text)
+pattern = re.compile(r'(^|[^A-Za-z0-9_])(make test|pytest|python -m pytest)([^A-Za-z0-9_]|$)')
 if match:
     text = text[match.end():]
-
-    pattern = re.compile(r'(^|[^A-Za-z0-9_])(make test|pytest|python -m pytest)([^A-Za-z0-9_]|$)')
 sys.exit(0 if pattern.search(text) else 1)
 PY
 }

@@ -738,7 +738,7 @@ def test_ralph_caps_large_local_context_for_narrow_prompt(tmp_path: Path) -> Non
 
     (project_dir / "scripts").mkdir()
     (project_dir / "scripts" / "helper.py").write_text(
-        "HELPER_FLAG = True\n" + ("helper context line\n" * 5000),
+        "HELPER_FLAG = True\n" + ("# helper context line\n" * 5000),
         encoding="utf-8",
     )
     prompt_file = tmp_path / "coder_prompt_narrow_large_context.txt"
