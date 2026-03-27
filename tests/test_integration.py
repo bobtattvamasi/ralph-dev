@@ -32,6 +32,10 @@ def read_latest_ralph_log(project_dir: Path) -> str:
     return logs[-1].read_text(encoding="utf-8")
 
 
+def count_prompt_tokens(text: str) -> int:
+    return len(text.split())
+
+
 def write_test_logging_makefile(
     project_dir: Path,
     log_name: str = "make_test.log",
@@ -450,6 +454,54 @@ def test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run(tmp_path: Path
     assert "## Recent Tasks (what was done before you)" not in prompt
     assert "Ralph runtime owns final task bookkeeping" in prompt
     assert "Run make test to verify current state" not in prompt
+    assert "Do NOT run make test or pytest. Ralph runtime owns verification." in prompt
+    assert count_prompt_tokens(prompt) < 15000
+    log_text = read_latest_ralph_log(project_dir)
+    assert "🧮 Coder prompt tokens: profile=narrow" in log_text
+    assert "limit=15000" in log_text
+
+
+def test_ralph_uses_narrow_coder_prompt_for_moderate_exact_task_run(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Moderate exact-task script update"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py with a focused exact-task change and no project-wide docs."
+    tasks["tasks"][0]["complexity"] = "moderate"
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/narrow_target.py is updated",
+        "Exact-task prompts stay narrow even when task complexity is moderate",
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    prompt_file = tmp_path / "coder_prompt_narrow_moderate.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Exact Task Targets" in prompt
+    assert "scripts/narrow_target.py" in prompt
+    assert "## Architecture Doc" not in prompt
+    assert "## Memory System Doc" not in prompt
+    assert "## Project Context (from memory)" not in prompt
+    assert "## Recent Tasks (what was done before you)" not in prompt
+    assert "Do NOT run make test or pytest. Ralph runtime owns verification." in prompt
+    assert count_prompt_tokens(prompt) < 15000
+    log_text = read_latest_ralph_log(project_dir)
+    assert "🧮 Coder prompt tokens: profile=narrow" in log_text
+    assert "limit=15000" in log_text
 
 
 def test_ralph_rejects_oversized_prompt(tmp_path: Path) -> None:
@@ -668,6 +720,52 @@ def test_ralph_keeps_narrow_prompt_with_targeted_required_context(tmp_path: Path
     assert "## Memory System Doc" not in prompt
     assert "## Project Context (from memory)" not in prompt
     assert "## Recent Tasks (what was done before you)" not in prompt
+    assert count_prompt_tokens(prompt) < 15000
+
+
+def test_ralph_caps_large_local_context_for_narrow_prompt(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Simple exact-task script update with oversized local context"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py and use scripts/helper.py as the only required context."
+    tasks["tasks"][0]["complexity"] = "simple"
+    tasks["tasks"][0]["required_context"] = ["scripts/helper.py"]
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/narrow_target.py is updated",
+        "oversized local context is trimmed to keep the prompt narrow",
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    (project_dir / "scripts" / "helper.py").write_text(
+        "HELPER_FLAG = True\n" + ("helper context line\n" * 5000),
+        encoding="utf-8",
+    )
+    prompt_file = tmp_path / "coder_prompt_narrow_large_context.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Exact Task Targets" in prompt
+    assert "scripts/narrow_target.py" in prompt
+    assert "## File: scripts/helper.py" in prompt
+    assert "## Architecture Doc" not in prompt
+    assert "## Memory System Doc" not in prompt
+    assert "## Project Context (from memory)" not in prompt
+    assert "## Recent Tasks (what was done before you)" not in prompt
+    assert count_prompt_tokens(prompt) < 15000
 
 
 def test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_docs(tmp_path: Path) -> None:
@@ -707,6 +805,10 @@ def test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_doc
     assert "## Recent Tasks (what was done before you)" in prompt
     assert "## Exact Task Targets" not in prompt
     assert "## File: ARCHITECTURE.md" in prompt
+    assert count_prompt_tokens(prompt) < 25000
+    log_text = read_latest_ralph_log(project_dir)
+    assert "🧮 Coder prompt tokens: profile=broad" in log_text
+    assert "limit=25000" in log_text
 
 
 def test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion(tmp_path: Path) -> None:

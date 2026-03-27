@@ -1277,7 +1277,26 @@ PY
 
 build_required_context_content() {
     local context_files="${1:-}"
+    local prompt_profile="${2:-broad}"
     local context_content=""
+    local max_chars=""
+    local per_file_max_chars=""
+
+    if [ -n "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-}" ]; then
+        max_chars="${RALPH_REQUIRED_CONTEXT_MAX_CHARS}"
+    elif [ "$prompt_profile" = "narrow" ]; then
+        max_chars="${RALPH_REQUIRED_CONTEXT_MAX_CHARS_NARROW:-4000}"
+    else
+        max_chars="${RALPH_REQUIRED_CONTEXT_MAX_CHARS_BROAD:-6000}"
+    fi
+
+    if [ -n "${RALPH_REQUIRED_CONTEXT_PER_FILE_MAX_CHARS:-}" ]; then
+        per_file_max_chars="${RALPH_REQUIRED_CONTEXT_PER_FILE_MAX_CHARS}"
+    elif [ "$prompt_profile" = "narrow" ]; then
+        per_file_max_chars="${RALPH_REQUIRED_CONTEXT_PER_FILE_MAX_CHARS_NARROW:-2000}"
+    else
+        per_file_max_chars="${RALPH_REQUIRED_CONTEXT_PER_FILE_MAX_CHARS_BROAD:-3000}"
+    fi
 
     if [ -n "$context_files" ]; then
         local ctx_file
@@ -1285,13 +1304,16 @@ build_required_context_content() {
             if [ -f "$ctx_file" ]; then
                 context_content="${context_content}
 ## File: $ctx_file
-$(read_file_for_prompt "$ctx_file" "${RALPH_REQUIRED_CONTEXT_MAX_CHARS:-6000}")
+$(read_file_for_prompt "$ctx_file" "$per_file_max_chars")
 "
+                if [ "${#context_content}" -ge "$max_chars" ]; then
+                    break
+                fi
             fi
         done
     fi
 
-    printf '%s' "$context_content"
+    printf '%s' "$context_content" | clip_chars "$max_chars"
 }
 
 build_coder_prompt() {
@@ -1449,9 +1471,27 @@ for token in seen[:12]:
 
 build_relevant_context() {
     local task_json="$1"
-    local max_files="${RALPH_CONTEXT_MAX_FILES:-6}"
-    local max_chars="${RALPH_CONTEXT_MAX_CHARS:-12000}"
-    python3 - "$PROJECT_DIR" "$max_files" "$max_chars" "$task_json" <<'PY'
+    local prompt_profile="${2:-broad}"
+    local max_files=""
+    local max_chars=""
+
+    if [ -n "${RALPH_CONTEXT_MAX_FILES:-}" ]; then
+        max_files="${RALPH_CONTEXT_MAX_FILES}"
+    elif [ "$prompt_profile" = "narrow" ]; then
+        max_files="${RALPH_CONTEXT_MAX_FILES_NARROW:-3}"
+    else
+        max_files="${RALPH_CONTEXT_MAX_FILES_BROAD:-6}"
+    fi
+
+    if [ -n "${RALPH_CONTEXT_MAX_CHARS:-}" ]; then
+        max_chars="${RALPH_CONTEXT_MAX_CHARS}"
+    elif [ "$prompt_profile" = "narrow" ]; then
+        max_chars="${RALPH_CONTEXT_MAX_CHARS_NARROW:-4000}"
+    else
+        max_chars="${RALPH_CONTEXT_MAX_CHARS_BROAD:-12000}"
+    fi
+
+    python3 - "$PROJECT_DIR" "$max_files" "$max_chars" "$prompt_profile" "$task_json" <<'PY'
 from __future__ import annotations
 
 import json
@@ -1463,8 +1503,16 @@ import sys
 project_dir = pathlib.Path(sys.argv[1]).resolve()
 max_files = int(sys.argv[2])
 max_chars = int(sys.argv[3])
-task_payload = sys.argv[4]
-per_file_limit = max(800, max_chars // 2)
+prompt_profile = sys.argv[4]
+task_payload = sys.argv[5]
+if prompt_profile == "narrow":
+    per_file_limit = max(600, min(1600, max_chars // 2))
+    max_hit_lines = 4
+    max_hit_ranges = 2
+else:
+    per_file_limit = max(800, max_chars // 2)
+    max_hit_lines = 6
+    max_hit_ranges = 3
 
 try:
     task = json.loads(task_payload)
@@ -1592,11 +1640,11 @@ for path, _score in ranked_paths:
     for index, line in enumerate(lines, start=1):
         if any(regex.search(line) for regex in keyword_regexes):
             hit_lines.append(index)
-        if len(hit_lines) >= 6:
+        if len(hit_lines) >= max_hit_lines:
             break
 
     ranges: list[tuple[int, int]] = []
-    for hit_line in hit_lines[:3]:
+    for hit_line in hit_lines[:max_hit_ranges]:
         start = max(1, hit_line - 4)
         end = min(len(lines), hit_line + 4)
         if ranges and start <= ranges[-1][1] + 1:
@@ -2378,29 +2426,30 @@ run_coder_agent() {
 
     CODER_ROLE_FILE=$(resolve_agent_prompt_file "${TASK_ROLE:-coder}" "AGENTS_CODER.md")
     CODER_ROLE_CONTENT=$(read_file_for_prompt "$CODER_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
-
-    if [ -f "AGENTS.md" ]; then
-        project_agents=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
-    fi
-    if [ -f "ARCHITECTURE.md" ]; then
-        project_architecture=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
-    fi
-    if [ -f "MEMORY_SYSTEM.md" ]; then
-        project_memory_system=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
-    fi
-    if [ -f ".ralph/memory/core.md" ]; then
-        memory_core=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
-    fi
-    if [ -f ".ralph/memory/recent.md" ]; then
-        memory_recent=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
-    fi
-
-    relevant_context=$(build_relevant_context "$TASK_JSON" || true)
     prompt_profile_json=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
     coder_prompt_profile_name=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
     coder_prompt_targets=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
+    coder_prompt_budget=$(get_coder_prompt_token_budget "$coder_prompt_profile_name")
+
+    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f "AGENTS.md" ]; then
+        project_agents=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
+    fi
+    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f "ARCHITECTURE.md" ]; then
+        project_architecture=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
+    fi
+    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f "MEMORY_SYSTEM.md" ]; then
+        project_memory_system=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
+    fi
+    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f ".ralph/memory/core.md" ]; then
+        memory_core=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
+    fi
+    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f ".ralph/memory/recent.md" ]; then
+        memory_recent=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
+    fi
+
+    relevant_context=$(build_relevant_context "$TASK_JSON" "$coder_prompt_profile_name" || true)
     human_comment=$(get_human_comment)
-    context_content=$(build_required_context_content "${TASK_CONTEXT_FILES:-}")
+    context_content=$(build_required_context_content "${TASK_CONTEXT_FILES:-}" "$coder_prompt_profile_name")
     coder_prompt=$(build_coder_prompt \
         "$TASK_JSON" \
         "$CODER_ROLE_FILE" \
@@ -2417,9 +2466,47 @@ run_coder_agent() {
         "" \
         "$human_comment")
 
+    coder_prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+    if [ "$coder_prompt_tokens" -gt "$coder_prompt_budget" ] && [ "$coder_prompt_profile_name" = "narrow" ] && [ -n "$relevant_context" ]; then
+        relevant_context=$(printf '%s' "$relevant_context" | clip_chars "${RALPH_CONTEXT_MAX_CHARS_NARROW_FALLBACK:-2000}")
+        coder_prompt=$(build_coder_prompt \
+            "$TASK_JSON" \
+            "$CODER_ROLE_FILE" \
+            "$CODER_ROLE_CONTENT" \
+            "$coder_prompt_profile_name" \
+            "$coder_prompt_targets" \
+            "$context_content" \
+            "$relevant_context" \
+            "$project_agents" \
+            "$project_architecture" \
+            "$project_memory_system" \
+            "$memory_core" \
+            "$memory_recent" \
+            "" \
+            "$human_comment")
+        coder_prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+    fi
+    if [ "$coder_prompt_tokens" -gt "$coder_prompt_budget" ] && [ "$coder_prompt_profile_name" = "narrow" ] && [ -n "$context_content" ]; then
+        context_content=$(printf '%s' "$context_content" | clip_chars "${RALPH_REQUIRED_CONTEXT_MAX_CHARS_NARROW_FALLBACK:-2000}")
+        coder_prompt=$(build_coder_prompt \
+            "$TASK_JSON" \
+            "$CODER_ROLE_FILE" \
+            "$CODER_ROLE_CONTENT" \
+            "$coder_prompt_profile_name" \
+            "$coder_prompt_targets" \
+            "$context_content" \
+            "$relevant_context" \
+            "$project_agents" \
+            "$project_architecture" \
+            "$project_memory_system" \
+            "$memory_core" \
+            "$memory_recent" \
+            "" \
+            "$human_comment")
+    fi
+
     coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
     coder_prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
-    coder_prompt_budget=$(get_coder_prompt_token_budget "$coder_prompt_profile_name")
     log_coder_prompt_tokens "$coder_prompt_profile_name" "$coder_prompt_tokens" "$coder_prompt_budget"
     if ! check_prompt_budget "$coder_prompt" "$coder_prompt_budget" "Coder prompt" "$coder_prompt_tokens"; then
         write_state "blocked" "" "prompt_budget" "Coder prompt exceeded token budget"

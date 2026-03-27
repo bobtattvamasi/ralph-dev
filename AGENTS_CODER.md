@@ -44,3 +44,9 @@ Expected response structure:
 ## When Stuck
 - Leave `# TODO(ralph): problem` comments
 - Let Tech Lead decide next steps
+
+## Testing Policy
+- **You are NOT responsible for running tests.**
+- Testing is owned by the Tester agent role.
+- Do NOT run `make test`, `pytest`, or any test command.
+- Ralph runtime will run tests through the Tester agent after your code is approved.
