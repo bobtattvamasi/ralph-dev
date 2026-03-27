@@ -1243,8 +1243,9 @@ build_coder_prompt() {
     local memory_recent="${12}"
     local fix_instructions="${13:-}"
     local human_comment="${14:-}"
-    local previous_landed_commit="${15:-}"
+    local previous_review_target_hash="${15:-}"
     local previous_diff_bytes="${16:-0}"
+    local previous_diff_summary="${17:-}"
     local coder_prompt=""
 
     if [ "$coder_prompt_profile_name" = "narrow" ]; then
@@ -1311,11 +1312,12 @@ $fix_instructions"
 $human_comment"
     fi
 
-    if [ -n "$previous_landed_commit" ]; then
+    if [ -n "$previous_review_target_hash" ]; then
         coder_prompt="$coder_prompt
 
 ## Previous Attempt Context
-Previous landed commit hash: $previous_landed_commit
+Review target hash: $previous_review_target_hash
+Previous diff summary: ${previous_diff_summary:-unavailable}
 Previous diff snapshot: ${previous_diff_bytes} bytes"
     fi
 
@@ -2115,6 +2117,130 @@ print(json.dumps(result, ensure_ascii=False))
 PY
 }
 
+task_scoped_name_only_between_refs() {
+    local base_hash="$1"
+    local target_hash="$2"
+    git diff --name-only "$base_hash" "$target_hash" -- \
+        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
+        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
+        2>/dev/null || true
+}
+
+task_scoped_diff_between_refs() {
+    local base_hash="$1"
+    local target_hash="$2"
+    git diff "$base_hash" "$target_hash" -- \
+        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
+        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
+        2>/dev/null || true
+}
+
+task_scoped_cached_name_only_from_ref() {
+    local base_hash="$1"
+    git diff --cached --name-only "$base_hash" -- \
+        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
+        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
+        2>/dev/null || true
+}
+
+task_scoped_cached_diff_from_ref() {
+    local base_hash="$1"
+    git diff --cached "$base_hash" -- \
+        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
+        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
+        2>/dev/null || true
+}
+
+task_scoped_worktree_diff_from_ref() {
+    local base_hash="$1"
+    git diff "$base_hash" -- \
+        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
+        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
+        2>/dev/null || true
+}
+
+task_scoped_current_diff() {
+    local cached_diff=""
+    local worktree_diff=""
+    cached_diff=$(task_scoped_cached_diff_from_ref "HEAD")
+    worktree_diff=$(task_scoped_worktree_diff_from_ref "HEAD")
+    printf '%s%s' "$cached_diff" "$worktree_diff"
+}
+
+format_diff_summary() {
+    python3 -c '
+from __future__ import annotations
+
+import re
+import sys
+
+text = sys.stdin.read()
+if not text.strip():
+    print("0 file(s)")
+    raise SystemExit(0)
+
+results = []
+current_path = None
+current_ranges = []
+
+for line in text.splitlines():
+    if line.startswith("+++ b/"):
+        if current_path is not None:
+            results.append((current_path, current_ranges))
+        current_path = line[6:]
+        current_ranges = []
+        continue
+    if current_path is None:
+        continue
+    match = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
+    if not match:
+        continue
+    start = int(match.group(1))
+    length = int(match.group(2) or "1")
+    end = start if length <= 1 else start + length - 1
+    current_ranges.append(f"{start}" if start == end else f"{start}-{end}")
+
+if current_path is not None:
+    results.append((current_path, current_ranges))
+
+if not results:
+    print("0 file(s)")
+    raise SystemExit(0)
+
+print(f"{len(results)} file(s)")
+for path, ranges in results[:8]:
+    if ranges:
+        joined = ", ".join(ranges[:6])
+        print(f"- {path} (lines {joined})")
+    else:
+        print(f"- {path}")
+remaining = len(results) - 8
+if remaining > 0:
+    print(f"- +{remaining} more file(s)")
+'
+}
+
+summarize_diff_between_refs() {
+    local base_hash="$1"
+    local target_hash="$2"
+    task_scoped_diff_between_refs "$base_hash" "$target_hash" | format_diff_summary
+}
+
+summarize_cached_diff_from_ref() {
+    local base_hash="$1"
+    task_scoped_cached_diff_from_ref "$base_hash" | format_diff_summary
+}
+
+resolve_git_ref() {
+    local git_ref="$1"
+    git rev-parse "$git_ref" 2>/dev/null || printf '%s\n' "$git_ref"
+}
+
 run_task_closure_verification() {
     PRE_CLOSURE_CHANGED_FILES_JSON=$(collect_preclosure_changed_files_json)
     VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
@@ -2693,7 +2819,11 @@ print(task.get('role', 'coder'))
     FIX_INSTRUCTIONS=""
     TASK_TOKENS=0
     DIFF_SNAPSHOT_FILE="/tmp/ralph_diff_${TASK_ID}.txt"
+    DIFF_SUMMARY_FILE="/tmp/ralph_diff_summary_${TASK_ID}.txt"
+    REVIEW_TARGET_FILE="/tmp/ralph_review_target_${TASK_ID}.txt"
     rm -f "$DIFF_SNAPSHOT_FILE"
+    rm -f "$DIFF_SUMMARY_FILE"
+    rm -f "$REVIEW_TARGET_FILE"
 
     while [ "$FIX_RETRY" -le "$MAX_FIX_RETRIES" ] && [ "$TASK_DONE" = false ]; do
         CONTROL_STATUS=0
@@ -2762,7 +2892,7 @@ print(task.get('role', 'coder'))
                 fi
                 git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
                 SKIP_CODER_STAGE=1
-                REVIEW_TARGET_HASH="HEAD"
+                REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
             else
                 HANDOFF_REPO_COMMIT=$(handoff_latest_repo_candidate_commit "$TASK_JSON")
                 if [ -n "$HANDOFF_REPO_COMMIT" ]; then
@@ -2824,6 +2954,8 @@ print(task.get('role', 'coder'))
             CODER_PROMPT_TARGETS=""
             PREVIOUS_LANDED_COMMIT=""
             PREVIOUS_DIFF_BYTES="0"
+            PREVIOUS_DIFF_SUMMARY=""
+            HAS_PREVIOUS_REVIEW_TARGET=0
             if [ -f "AGENTS.md" ]; then
                 PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
             fi
@@ -2844,9 +2976,17 @@ print(task.get('role', 'coder'))
             CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
             CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
             if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
-                PREVIOUS_LANDED_COMMIT="$PRE_HASH"
+                if [ -f "$REVIEW_TARGET_FILE" ]; then
+                    PREVIOUS_LANDED_COMMIT=$(cat "$REVIEW_TARGET_FILE" 2>/dev/null || true)
+                    if [ -n "$PREVIOUS_LANDED_COMMIT" ]; then
+                        HAS_PREVIOUS_REVIEW_TARGET=1
+                    fi
+                fi
                 PREVIOUS_DIFF_BYTES=$(wc -c < "$DIFF_SNAPSHOT_FILE" 2>/dev/null | tr -d ' ' || echo "0")
                 PREVIOUS_DIFF_BYTES="${PREVIOUS_DIFF_BYTES:-0}"
+                if [ -f "$DIFF_SUMMARY_FILE" ]; then
+                    PREVIOUS_DIFF_SUMMARY=$(cat "$DIFF_SUMMARY_FILE" 2>/dev/null || true)
+                fi
             fi
 
             CONTEXT_CONTENT=$(build_required_context_content "$TASK_CONTEXT_FILES")
@@ -2867,7 +3007,8 @@ print(task.get('role', 'coder'))
                 "$FIX_INSTRUCTIONS" \
                 "$HUMAN_COMMENT" \
                 "$PREVIOUS_LANDED_COMMIT" \
-                "$PREVIOUS_DIFF_BYTES")
+                "$PREVIOUS_DIFF_BYTES" \
+                "$PREVIOUS_DIFF_SUMMARY")
             CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
 
             set +e
@@ -2894,8 +3035,8 @@ print(task.get('role', 'coder'))
             SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
             log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
 
-            CURRENT_ATTEMPT_DIFF=$(git diff HEAD 2>/dev/null || true)
-            if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
+            CURRENT_ATTEMPT_DIFF=$(task_scoped_current_diff)
+            if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && [ "$HAS_PREVIOUS_REVIEW_TARGET" -eq 1 ]; then
                 PRIOR_DIFF=$(cat "$DIFF_SNAPSHOT_FILE" 2>/dev/null || true)
                 if [ -z "$CURRENT_ATTEMPT_DIFF" ] || [ "$PRIOR_DIFF" = "$CURRENT_ATTEMPT_DIFF" ]; then
                     REASON="Retry produced no new diff"
@@ -2915,7 +3056,12 @@ print(task.get('role', 'coder'))
             # Commit any unstaged changes the coder left behind
             if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
                 git add -A
-                git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
+                if [ -n "$(task_scoped_cached_name_only_from_ref "HEAD")" ]; then
+                    git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
+                    REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
+                else
+                    git reset >/dev/null 2>&1 || true
+                fi
             fi
         fi
 
@@ -2946,14 +3092,28 @@ print(task.get('role', 'coder'))
         log "⏱️ Coder took ${CODER_DURATION}s"
 
         POST_HASH=$(git rev-parse HEAD)
-        CURRENT_DIFF=$(git diff "$PRE_HASH" "$POST_HASH" 2>/dev/null || true)
+        EFFECTIVE_REVIEW_BASE_HASH=$(resolve_git_ref "${REVIEW_BASE_HASH:-$PRE_HASH}")
+        EFFECTIVE_REVIEW_TARGET_HASH=$(resolve_git_ref "${REVIEW_TARGET_HASH:-$POST_HASH}")
+        if [ "$EFFECTIVE_REVIEW_BASE_HASH" = "$EFFECTIVE_REVIEW_TARGET_HASH" ] && [ -n "$(task_scoped_cached_name_only_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")" ]; then
+            CURRENT_DIFF=$(task_scoped_cached_diff_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")
+            CURRENT_DIFF_SUMMARY=$(summarize_cached_diff_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")
+        else
+            CURRENT_DIFF=$(task_scoped_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
+            CURRENT_DIFF_SUMMARY=$(summarize_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
+        fi
         printf '%s' "$CURRENT_DIFF" > "$DIFF_SNAPSHOT_FILE"
+        printf '%s' "$CURRENT_DIFF_SUMMARY" > "$DIFF_SUMMARY_FILE"
+        if [ -n "${REVIEW_TARGET_HASH:-}" ] && [ "$EFFECTIVE_REVIEW_BASE_HASH" != "$EFFECTIVE_REVIEW_TARGET_HASH" ]; then
+            printf '%s' "$EFFECTIVE_REVIEW_TARGET_HASH" > "$REVIEW_TARGET_FILE"
+        else
+            rm -f "$REVIEW_TARGET_FILE"
+        fi
         DIFF_SNAPSHOT_BYTES=$(wc -c < "$DIFF_SNAPSHOT_FILE" 2>/dev/null | tr -d ' ' || echo "0")
         DIFF_SNAPSHOT_BYTES="${DIFF_SNAPSHOT_BYTES:-0}"
         if [ "${REVIEW_BASE_HASH:-$PRE_HASH}" = "${REVIEW_TARGET_HASH:-$POST_HASH}" ]; then
             GIT_DIFF="(no changes committed)"
         else
-            GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph.sh' ':!.ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
+            GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
         TEST_OUTPUT=$(make test 2>&1 | tail -40 || echo "tests failed")
 

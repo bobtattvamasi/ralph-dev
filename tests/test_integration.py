@@ -1551,13 +1551,19 @@ def test_ralph_blocks_diff_only_fix_without_retry_loop(tmp_path: Path) -> None:
     assert result.stdout.count("🤖 CODER — Attempt") == 1
 
 
-def test_ralph_detects_repeated_diff_and_blocks_retry(tmp_path: Path) -> None:
+def test_ralph_coder_sees_previous_review_target_and_avoids_reediting(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
+    prompt_file = tmp_path / "coder_prompt_retry.txt"
     env["MOCK_CODEX_MODE"] = "lead_fix_once"
     env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_fix_once.marker")
-    env["MOCK_CODEX_WRITE_FILE"] = "src/generated_by_codex.ts"
-    env["MOCK_CODEX_WRITE_CONTENT"] = "export const generatedByCodex = true;\n"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "export function buildKeywordPrompt() {\n  return 'retry patch';\n}\n"
     env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
+    env["GIT_AUTHOR_NAME"] = "Test User"
+    env["GIT_AUTHOR_EMAIL"] = "test@example.com"
+    env["GIT_COMMITTER_NAME"] = "Test User"
+    env["GIT_COMMITTER_EMAIL"] = "test@example.com"
 
     result = subprocess.run(
         [str(RALPH_SH), "task", "T01"],
@@ -1573,6 +1579,31 @@ def test_ralph_detects_repeated_diff_and_blocks_retry(tmp_path: Path) -> None:
     assert "⚠️ No new changes in this attempt; diff identical to prior review" in result.stdout
     assert "status=idempotent_retry" in result.stdout
     assert result.stdout.count("🤖 CODER — Attempt") == 2
+    prompt = prompt_file.read_text(encoding="utf-8")
+    head_hash = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        .stdout.strip()
+    )
+    wip_commit_count = (
+        subprocess.run(
+            ["git", "log", "--format=%H", "--grep", "^wip(T01): coder changes$", "HEAD"],
+            cwd=project_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        .stdout.splitlines()
+    )
+    assert f"Review target hash: {head_hash}" in prompt
+    assert "Previous diff summary: 1 file(s)" in prompt
+    assert "- src/prompt_builder.ts (lines " in prompt
+    assert len(wip_commit_count) <= 1
 
 
 def test_ralph_sanitizes_noisy_fix_and_keeps_exact_feature_gap(tmp_path: Path) -> None:
