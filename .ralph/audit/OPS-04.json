@@ -1,0 +1,40 @@
+{
+  "task_id": "OPS-04",
+  "title": "Cleanup: remove orphan /tmp/ralph_coder_*.txt files on startup and after run",
+  "status": "done",
+  "verification": {
+    "result": "pass",
+    "reason": "Generic implementation verification passed.",
+    "task_class": "implementation",
+    "evidence_files": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "system_promt.md",
+      "tests/test_integration.py"
+    ]
+  },
+  "changes": {
+    "all": [
+      ".ralph/audit/OPS-05.json",
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "system_promt.md",
+      "tests/test_integration.py"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "system_promt.md",
+      "tests/test_integration.py"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"OPS-04\",\"summary\":\"Критерии OPS-04 выполнены: startup очищает устаревшие `/tmp/ralph_coder_*.txt`, `cleanup()` удаляет текущий `/tmp/ralph_coder_$$.txt`, тесты проходят.\",\"quality_score\":93,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"Добавлена очистка orphan tmp-файлов старше 1 часа при старте и удаление текущего coder tmp-файла при cleanup; полный прогон: 154 passed, 1 skipped.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 1,
+  "duration_sec": 1996,
+  "timestamp": "2026-03-24T17:47:31Z",
+  "runtime_success": true,
+  "verified_success": true
+}
