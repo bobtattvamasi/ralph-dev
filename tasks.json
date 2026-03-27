@@ -2603,6 +2603,88 @@
       ],
       "revision_notes": "From OPS-07 attempt: stronger review-target binding for retry loop awareness",
       "completed_at": "2026-03-27T11:12:30.173337+00:00"
+    },
+    {
+      "id": "OPS-09",
+      "phase": "OPS",
+      "title": "Narrow: reduce coder prompt to <15k tokens for narrow tasks",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "optimization",
+      "priority": "high",
+      "acceptance_criteria": [
+        "narrow task prompts are <15k tokens",
+        "broad task prompts are <25k tokens",
+        "measure token count in build_coder_prompt output"
+      ],
+      "revision_notes": "",
+      "completed_at": null
+    },
+    {
+      "id": "OPS-10",
+      "phase": "OPS",
+      "title": "Fail-fast: block retry if coder output is identical to prior attempt",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "fix",
+      "priority": "high",
+      "acceptance_criteria": [
+        "if attempt N produces same diff as attempt N-1, mark blocked immediately",
+        "regression test verifies no attempt 3 if attempt 2 is no-op"
+      ],
+      "revision_notes": "",
+      "completed_at": null
+    },
+    {
+      "id": "OPS-12",
+      "phase": "OPS",
+      "title": "Enforce: reject coder prompts larger than 25k tokens before sending",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "enforce",
+      "priority": "high",
+      "acceptance_criteria": [
+        "prompt budget check before run_codex call, reject if oversized",
+        "try to build oversized prompt, verify rejection with clear error"
+      ],
+      "revision_notes": "",
+      "completed_at": null
+    },
+    {
+      "id": "OPS-13",
+      "phase": "OPS",
+      "title": "Pass: include failed attempt context in retry prompt (lead feedback + test failures)",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "enhance",
+      "priority": "high",
+      "acceptance_criteria": [
+        "coder prompt on retry includes what changed in prior attempt (files/lines)",
+        "coder prompt on retry includes lead review feedback if rejected",
+        "coder prompt on retry includes which tests failed and why",
+        "coder prompt includes explicit instruction: 'Attempt N failed because X, try Y instead'",
+        "regression test verifies context is present in retry prompt"
+      ],
+      "revision_notes": "",
+      "completed_at": null
+    },
+    {
+      "id": "OPS-14",
+      "phase": "OPS",
+      "title": "Measure: benchmark auto vs manual execution time, target <5x gap",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "measure",
+      "priority": "high",
+      "acceptance_criteria": [
+        "run 3 simple tasks in auto mode, measure total time",
+        "compare to manual codex execution of same tasks",
+        "assert auto mode is <5x slower than manual",
+        "report detailed breakdown of where time is spent",
+        "integration test runs benchmark and reports metrics"
+      ],
+      "revision_notes": "",
+      "completed_at": null
     }
   ]
 }
