@@ -2647,7 +2647,7 @@
         "prompt budget check before run_codex call, reject if oversized",
         "try to build oversized prompt, verify rejection with clear error"
       ],
-      "revision_notes": "",
+      "revision_notes": "Manual fix: Codex violated FIRST RULE",
       "completed_at": null
     },
     {
