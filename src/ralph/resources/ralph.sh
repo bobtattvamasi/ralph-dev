@@ -1296,7 +1296,7 @@ ${relevant_context:-No keyword-matched source snippets found.}
 $task_json"
     else
         coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${coder_role_file} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
-Run make test to verify current state.
+Do NOT run make test or pytest. Ralph runtime owns verification.
 
 ## Architecture Doc
 ${project_architecture:-No ARCHITECTURE.md provided. Use AGENTS.md and the repository structure.}
