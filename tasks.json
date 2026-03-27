@@ -2586,6 +2586,22 @@
       ],
       "revision_notes": "OPS-06 diagnosis: retry loop lacks idempotency guard; same patch can be reapplied",
       "completed_at": "2026-03-27T11:02:54.357266+00:00"
+    },
+    {
+      "id": "OPS-08",
+      "phase": "OPS",
+      "title": "Enhance: coder prompt with previous review-target diff summary",
+      "status": "pending",
+      "complexity": "moderate",
+      "category": "enhance",
+      "priority": "high",
+      "acceptance_criteria": [
+        "coder prompt includes PREVIOUS_REVIEW_TARGET_HASH and PREVIOUS_DIFF_SUMMARY",
+        "diff summary shows which files/lines were already changed in prior attempt",
+        "guard compares against REVIEW_TARGET_HASH, not just worktree diff",
+        "regression test: coder sees previous review target and avoids re-editing same lines"
+      ],
+      "revision_notes": "From OPS-07 attempt: stronger review-target binding for retry loop awareness"
     }
   ]
 }
