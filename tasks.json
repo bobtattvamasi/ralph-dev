@@ -2648,7 +2648,7 @@
         "try to build oversized prompt, verify rejection with clear error"
       ],
       "revision_notes": "Manual fix: Codex violated FIRST RULE",
-      "completed_at": "2026-03-27T12:15:52.084487+00:00"
+      "completed_at": "2026-03-27T15:51:34.561301+00:00"
     },
     {
       "id": "OPS-13",
