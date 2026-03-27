@@ -267,8 +267,7 @@ concrete_targets = [
 
 profile = "broad"
 if (
-    task.get("complexity", "moderate") == "simple"
-    and not broad_required_context
+    not broad_required_context
     and concrete_targets
     and not requires_project_docs
 ):
@@ -1220,21 +1219,60 @@ print(len(tokens))
 '
 }
 
+get_coder_prompt_token_budget() {
+    local prompt_profile="${1:-broad}"
+
+    if [ -n "${RALPH_CODER_PROMPT_MAX_TOKENS:-}" ]; then
+        printf '%s' "${RALPH_CODER_PROMPT_MAX_TOKENS}"
+        return 0
+    fi
+
+    if [ "$prompt_profile" = "narrow" ]; then
+        printf '%s' "${RALPH_CODER_PROMPT_MAX_TOKENS_NARROW:-15000}"
+        return 0
+    fi
+
+    printf '%s' "${RALPH_CODER_PROMPT_MAX_TOKENS_BROAD:-25000}"
+}
+
 check_prompt_budget() {
     local prompt_text="$1"
-    local max_tokens="${2:-${RALPH_PROMPT_MAX_TOKENS:-25000}}"
-    local prompt_tokens
-    prompt_tokens=$(printf '%s' "$prompt_text" | count_prompt_tokens)
+    local max_tokens="$2"
+    local prompt_label="${3:-Prompt}"
+    local prompt_tokens="${4:-}"
+
+    if [ -z "$prompt_tokens" ]; then
+        prompt_tokens=$(printf '%s' "$prompt_text" | count_prompt_tokens)
+    fi
     if [ "${prompt_tokens:-0}" -gt "$max_tokens" ]; then
-        log "❌ Prompt budget exceeded: ${prompt_tokens} tokens > ${max_tokens}"
+        log "❌ Prompt budget exceeded for ${prompt_label}: ${prompt_tokens} tokens > ${max_tokens}"
         return 1
     fi
     return 0
 }
 
+log_coder_prompt_tokens() {
+    local prompt_profile="${1:-broad}"
+    local prompt_tokens="${2:-0}"
+    local prompt_budget="${3:-0}"
+    log "🧮 Coder prompt tokens: profile=${prompt_profile} tokens=${prompt_tokens} limit=${prompt_budget}"
+}
+
 coder_ran_full_test_suite() {
     local output_file="$1"
-    grep -Eqi '(^|[^[:alnum:]_])(make test|pytest|python -m pytest)([^[:alnum:]_]|$)' "$output_file" 2>/dev/null
+    python3 - "$output_file" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+match = re.search(r'(?m)^assistant\s*$', text)
+if match:
+    text = text[match.end():]
+
+    pattern = re.compile(r'(^|[^A-Za-z0-9_])(make test|pytest|python -m pytest)([^A-Za-z0-9_]|$)')
+sys.exit(0 if pattern.search(text) else 1)
+PY
 }
 
 build_required_context_content() {
@@ -1278,7 +1316,7 @@ build_coder_prompt() {
 
     if [ "$coder_prompt_profile_name" = "narrow" ]; then
         coder_prompt="Read ${coder_role_file} first. Use AGENTS.md only if repository conventions become ambiguous. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
-Run only targeted tests for the exact files you changed (e.g. pytest tests/test_targetfile.py). Run full make test only if you have evidence of broader breakage.
+Do NOT run make test or pytest. Ralph runtime owns verification.
 
 ## Role Instructions (${coder_role_file})
 ${coder_role_content:-No role-specific instructions found. Fall back to AGENTS_CODER.md conventions.}
@@ -1355,7 +1393,7 @@ Previous diff snapshot: ${previous_diff_bytes} bytes"
 - **Think before coding**: You MUST wrap your plan inside <thinking> tags before writing any code blocks. Briefly analyze the requirements and file structure there.
 - Implement ONLY this task
 - Follow acceptance_criteria exactly
-- make test must pass
+- Do NOT run make test or pytest. Ralph runtime owns verification.
 - Do NOT modify tasks.json or progress.md
 - Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits
 - If fix instructions mention runtime-owned bookkeeping, address only the real implementation gap
@@ -2335,6 +2373,8 @@ run_coder_agent() {
     local coder_output=""
     local pre_hash=""
     local codex_exit=0
+    local coder_prompt_tokens=0
+    local coder_prompt_budget=0
 
     CODER_ROLE_FILE=$(resolve_agent_prompt_file "${TASK_ROLE:-coder}" "AGENTS_CODER.md")
     CODER_ROLE_CONTENT=$(read_file_for_prompt "$CODER_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
@@ -2378,7 +2418,10 @@ run_coder_agent() {
         "$human_comment")
 
     coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
-    if ! check_prompt_budget "$coder_prompt" "${RALPH_CODER_PROMPT_MAX_TOKENS:-25000}"; then
+    coder_prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+    coder_prompt_budget=$(get_coder_prompt_token_budget "$coder_prompt_profile_name")
+    log_coder_prompt_tokens "$coder_prompt_profile_name" "$coder_prompt_tokens" "$coder_prompt_budget"
+    if ! check_prompt_budget "$coder_prompt" "$coder_prompt_budget" "Coder prompt" "$coder_prompt_tokens"; then
         write_state "blocked" "" "prompt_budget" "Coder prompt exceeded token budget"
         return 1
     fi
@@ -2999,6 +3042,8 @@ print(task.get('role', 'coder'))
             PROMPT_PROFILE_JSON=""
             CODER_PROMPT_PROFILE_NAME="broad"
             CODER_PROMPT_TARGETS=""
+            CODER_PROMPT_TOKENS=0
+            CODER_PROMPT_BUDGET=0
             PREVIOUS_LANDED_COMMIT=""
             PREVIOUS_DIFF_BYTES="0"
             PREVIOUS_DIFF_SUMMARY=""
@@ -3057,7 +3102,10 @@ print(task.get('role', 'coder'))
                 "$PREVIOUS_DIFF_BYTES" \
                 "$PREVIOUS_DIFF_SUMMARY")
             CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
-            if ! check_prompt_budget "$CODER_PROMPT" "${RALPH_CODER_PROMPT_MAX_TOKENS:-25000}"; then
+            CODER_PROMPT_TOKENS=$(printf '%s' "$CODER_PROMPT" | count_prompt_tokens)
+            CODER_PROMPT_BUDGET=$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")
+            log_coder_prompt_tokens "$CODER_PROMPT_PROFILE_NAME" "$CODER_PROMPT_TOKENS" "$CODER_PROMPT_BUDGET"
+            if ! check_prompt_budget "$CODER_PROMPT" "$CODER_PROMPT_BUDGET" "Coder prompt" "$CODER_PROMPT_TOKENS"; then
                 REASON="Coder prompt exceeded token budget"
                 TASK_DURATION=$(( $(date +%s) - TASK_START ))
                 write_state "blocked" "" "prompt_budget" "$REASON"
