@@ -5,6 +5,7 @@ You are a senior developer executing scoped tasks inside the current repository.
 ## FIRST RULE — DO NOT RUN FULL TEST SUITES
 - **DO NOT run `make test`, `pytest`, or any repo-wide/full test command.**
 - **Forbidden examples: `make test`, `pytest`, `python -m pytest tests/ -v`.**
+- **VIOLATION WILL CAUSE IMMEDIATE TASK FAILURE AND BLOCKING.**
 - Ralph runtime owns baseline verification and post-change verification.
 - Only run a narrowly targeted test if you need to verify the exact function or file you changed.
 

@@ -580,11 +580,12 @@ log_metrics() {
     local status="$1"
     local runtime_success="${2:-false}"
     local verified_success="${3:-false}"
+    local quality="${QUALITY:-0}"
     local end_time=$(date +%s)
     local duration=$((end_time - TASK_START))
     local files=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | wc -l | tr -d ' ')
     local cost=$(estimate_cost "$TASK_TOKENS")
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$QUALITY,$cost,$runtime_success,$verified_success" >> "$METRICS_FILE"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$quality,$cost,$runtime_success,$verified_success" >> "$METRICS_FILE"
 }
 
 write_task_audit_artifact() {
@@ -1209,6 +1210,33 @@ enforce_prompt_budget() {
     clip_chars "$max_chars"
 }
 
+count_prompt_tokens() {
+    python3 -c '
+import re
+import sys
+text = sys.stdin.read()
+tokens = re.findall(r"\S+", text)
+print(len(tokens))
+'
+}
+
+check_prompt_budget() {
+    local prompt_text="$1"
+    local max_tokens="${2:-${RALPH_PROMPT_MAX_TOKENS:-25000}}"
+    local prompt_tokens
+    prompt_tokens=$(printf '%s' "$prompt_text" | count_prompt_tokens)
+    if [ "${prompt_tokens:-0}" -gt "$max_tokens" ]; then
+        log "❌ Prompt budget exceeded: ${prompt_tokens} tokens > ${max_tokens}"
+        return 1
+    fi
+    return 0
+}
+
+coder_ran_full_test_suite() {
+    local output_file="$1"
+    grep -Eqi '(^|[^[:alnum:]_])(make test|pytest|python -m pytest)([^[:alnum:]_]|$)' "$output_file" 2>/dev/null
+}
+
 build_required_context_content() {
     local context_files="${1:-}"
     local context_content=""
@@ -1767,6 +1795,7 @@ run_codex() {
     local retry=0
     local exit_code=0
     local watchdog_timeout="${RALPH_WATCHDOG_TIMEOUT:-300}"
+    CODEX_POLICY_VIOLATION_REASON=""
     local task_class
     task_class=$(detect_runtime_task_class 2>/dev/null || echo "implementation")
     local allow_timeout_retries=1
@@ -1908,6 +1937,14 @@ PY
         rm -f "$launcher_meta"
         rm -f "$stream_fifo"
         pkill -P "$$" 2>/dev/null || true
+
+        if coder_ran_full_test_suite "$output_file"; then
+            finalize_codex_stream_logger "$stream_logger_pid" "$stream_fifo"
+            log "❌ CODER VIOLATION: ran full test suite"
+            write_state "blocked" "" "coder_violation" "Coder ran full test suite"
+            CODEX_POLICY_VIOLATION_REASON="Coder ran full test suite"
+            return 1
+        fi
 
         # Watchdog timeout - retry with backoff like other recoverable errors.
         if [ "$watchdog_fired" -eq 1 ]; then
@@ -2341,6 +2378,10 @@ run_coder_agent() {
         "$human_comment")
 
     coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
+    if ! check_prompt_budget "$coder_prompt" "${RALPH_CODER_PROMPT_MAX_TOKENS:-25000}"; then
+        write_state "blocked" "" "prompt_budget" "Coder prompt exceeded token budget"
+        return 1
+    fi
     coder_output="/tmp/ralph_coder_$$.txt"
     pre_hash=$(git rev-parse HEAD)
 
@@ -2412,6 +2453,7 @@ PY
 
     run_coder_agent
     local heal_exit=$?
+    local heal_violation_reason="${CODEX_POLICY_VIOLATION_REASON:-}"
 
     TASK_JSON="$OLD_TASK_JSON"
     TASK_ID="$OLD_TASK_ID"
@@ -2422,6 +2464,11 @@ PY
     TASK_CONTEXT_FILES="$OLD_TASK_CONTEXT_FILES"
     TASK_RISK="$OLD_TASK_RISK"
     TASK_ROLE="$OLD_TASK_ROLE"
+
+    if [ -n "$heal_violation_reason" ]; then
+        log "❌ Self-heal blocked by coder policy violation: $heal_violation_reason"
+        return 1
+    fi
 
     if [ $heal_exit -ne 0 ]; then
         log '❌ Self-heal failed. Coder run did not complete cleanly.'
@@ -3010,12 +3057,35 @@ print(task.get('role', 'coder'))
                 "$PREVIOUS_DIFF_BYTES" \
                 "$PREVIOUS_DIFF_SUMMARY")
             CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
+            if ! check_prompt_budget "$CODER_PROMPT" "${RALPH_CODER_PROMPT_MAX_TOKENS:-25000}"; then
+                REASON="Coder prompt exceeded token budget"
+                TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                write_state "blocked" "" "prompt_budget" "$REASON"
+                log_metrics "failed" "false" "false"
+                log "📋 TASK_FAIL task_id=$TASK_ID status=prompt_budget runtime_success=false verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+                AUDIT_WRITTEN=true
+                defer_blocked_task "$REASON"
+                TASK_BLOCKED=true
+                break
+            fi
 
             set +e
             # run_codex handles retries/backoff for codex execution
             run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
             CODEX_EXIT=$?
             set -e
+            if [ -n "${CODEX_POLICY_VIOLATION_REASON:-}" ]; then
+                REASON="$CODEX_POLICY_VIOLATION_REASON"
+                TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                log_metrics "failed" "false" "false"
+                log "📋 TASK_FAIL task_id=$TASK_ID status=coder_violation runtime_success=false verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+                AUDIT_WRITTEN=true
+                defer_blocked_task "$REASON"
+                TASK_BLOCKED=true
+                break
+            fi
             CONTROL_STATUS=0
             check_control || CONTROL_STATUS=$?
             if [ $CONTROL_STATUS -eq 1 ]; then
