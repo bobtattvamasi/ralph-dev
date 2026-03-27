@@ -2575,7 +2575,7 @@
       "id": "OPS-07",
       "phase": "OPS",
       "title": "Fix: prevent repeated diff application across retry loop",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "fix",
       "priority": "high",
@@ -2584,7 +2584,8 @@
         "coder prompt includes previous landed commit hash and diff summary",
         "regression test: second apply of same patch is no-op"
       ],
-      "revision_notes": "OPS-06 diagnosis: retry loop lacks idempotency guard; same patch can be reapplied"
+      "revision_notes": "OPS-06 diagnosis: retry loop lacks idempotency guard; same patch can be reapplied",
+      "completed_at": "2026-03-27T11:02:54.357266+00:00"
     }
   ]
 }
