@@ -2591,7 +2591,7 @@
       "id": "OPS-08",
       "phase": "OPS",
       "title": "Enhance: coder prompt with previous review-target diff summary",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "enhance",
       "priority": "high",
@@ -2601,7 +2601,8 @@
         "guard compares against REVIEW_TARGET_HASH, not just worktree diff",
         "regression test: coder sees previous review target and avoids re-editing same lines"
       ],
-      "revision_notes": "From OPS-07 attempt: stronger review-target binding for retry loop awareness"
+      "revision_notes": "From OPS-07 attempt: stronger review-target binding for retry loop awareness",
+      "completed_at": "2026-03-27T11:12:30.173337+00:00"
     }
   ]
 }
