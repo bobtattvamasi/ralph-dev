@@ -719,6 +719,9 @@ async def cmd_start_auto() -> None:
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
         return
+    if state.get("status") == "blocked":
+        await safe_send("⚠️ Ralph is blocked. Use /reset or /unblock first.")
+        return
     try:
         write_control("continue", "")
         try:
