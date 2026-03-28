@@ -139,15 +139,15 @@ def run_case(runner_path: Path, tmp_root: Path, profile: str) -> tuple[int, int]
         task = {
             "id": "T01",
             "phase": "OPS",
-            "title": "Simple exact-task script update",
-            "description": "Update scripts/narrow_target.py with the smallest exact-task change.",
+            "title": "Moderate exact-task script update",
+            "description": "Update scripts/narrow_target.py with a focused exact-task change and no project-wide docs.",
             "status": "pending",
-            "complexity": "simple",
+            "complexity": "moderate",
             "category": "optimization",
             "priority": "high",
             "acceptance_criteria": [
                 "scripts/narrow_target.py is updated",
-                "Simple exact-task path stays narrow by default",
+                "Exact-task prompts stay narrow even when task complexity is moderate",
             ],
         }
         expected_limit = 15000

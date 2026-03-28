@@ -234,18 +234,57 @@ explicit_project_docs = {
     ".ralph/memory/patterns.md",
     ".ralph/memory/decisions.md",
 }
+
+def mentions_project_docs(marker: str, *negative_markers: str) -> bool:
+    if marker not in combined:
+        return False
+    return not any(negative in combined for negative in negative_markers)
+
+
 requires_project_docs = any(path.lower() in explicit_project_docs for path in required_context) or any(
-    marker in combined
-    for marker in (
-        "agents.md",
-        "architecture.md",
-        "memory_system.md",
-        ".ralph/memory/",
-        "project-wide docs",
-        "project wide docs",
-        "project-wide doc",
-        "project wide doc",
+    (
+        mentions_project_docs("agents.md", "do not read agents.md", "don't read agents.md", "without agents.md")
+        or mentions_project_docs(
+            "architecture.md",
+            "do not read architecture.md",
+            "don't read architecture.md",
+            "without architecture.md",
+            "no architecture.md",
+        )
+        or mentions_project_docs(
+            "memory_system.md",
+            "do not read memory_system.md",
+            "don't read memory_system.md",
+            "without memory_system.md",
+            "no memory_system.md",
+        )
+        or mentions_project_docs(".ralph/memory/")
+        or mentions_project_docs(
+            "project-wide docs",
+            "no project-wide docs",
+            "without project-wide docs",
+            "avoid project-wide docs",
+        )
+        or mentions_project_docs(
+            "project wide docs",
+            "no project wide docs",
+            "without project wide docs",
+            "avoid project wide docs",
+        )
+        or mentions_project_docs(
+            "project-wide doc",
+            "no project-wide doc",
+            "without project-wide doc",
+            "avoid project-wide doc",
+        )
+        or mentions_project_docs(
+            "project wide doc",
+            "no project wide doc",
+            "without project wide doc",
+            "avoid project wide doc",
+        )
     )
+    for _ in [0]
 )
 
 def is_broad_required_context(path: str) -> bool:
