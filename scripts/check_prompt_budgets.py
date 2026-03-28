@@ -10,6 +10,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RALPH_SH = REPO_ROOT / "ralph.sh"
 
 
+def copy_repo_text_file(relative_path: str, project_dir: Path) -> None:
+    source = REPO_ROOT / relative_path
+    target = project_dir / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    target.chmod(0o644)
+
+
 def create_test_project(root: Path) -> Path:
     project_dir = root / "project"
     (project_dir / "logs").mkdir(parents=True)
@@ -42,10 +50,7 @@ def create_test_project(root: Path) -> Path:
         ".ralph/memory/core.md",
         ".ralph/memory/recent.md",
     ):
-        source = REPO_ROOT / relative_path
-        target = project_dir / relative_path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        copy_repo_text_file(relative_path, project_dir)
 
     return project_dir
 

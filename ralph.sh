@@ -2506,6 +2506,45 @@ print(json.dumps(result, ensure_ascii=False))
 PY
 }
 
+collect_changed_paths() {
+    python3 - <<'PY'
+import subprocess
+
+commands = [
+    ["git", "diff", "--name-only", "--cached"],
+    ["git", "diff", "--name-only"],
+    ["git", "ls-files", "--others", "--exclude-standard"],
+]
+seen = set()
+for cmd in commands:
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        continue
+    for line in proc.stdout.splitlines():
+        path = line.strip()
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        print(path)
+PY
+}
+
+stage_changed_paths() {
+    local changed_paths=""
+    local path=""
+
+    changed_paths=$(collect_changed_paths)
+    [ -n "$changed_paths" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if [ -e "$path" ] && [ ! -r "$path" ]; then
+            continue
+        fi
+        git add -A -- "$path"
+    done <<< "$changed_paths"
+}
+
 task_scoped_name_only_between_refs() {
     local base_hash="$1"
     local target_hash="$2"
@@ -2747,7 +2786,7 @@ run_coder_agent() {
     SESSION_TOKENS=$(( ${SESSION_TOKENS:-0} + ${CODER_TOKENS:-0} ))
 
     if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
-        git add -A
+        stage_changed_paths
         git commit -m "wip(${TASK_ID}): coder changes" 2>/dev/null || true
     fi
 
@@ -3458,7 +3497,7 @@ print(task.get('role', 'coder'))
 
             # Commit any unstaged changes the coder left behind
             if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
-                git add -A
+                stage_changed_paths
                 if [ -n "$(task_scoped_cached_name_only_from_ref "HEAD")" ]; then
                     git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
                     REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
@@ -3714,7 +3753,7 @@ except Exception:
                         fi
                     fi
                     persist_task_success_state
-                    git add -A
+                    stage_changed_paths
                     git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
                     log_metrics "success" "true" "true"
                     log "✅ $TASK_ID done"
