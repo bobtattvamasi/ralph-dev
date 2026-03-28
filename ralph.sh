@@ -1325,8 +1325,133 @@ $(read_file_for_prompt "$ctx_file" "$per_file_max_chars")
     printf '%s' "$context_content" | clip_chars "$max_chars"
 }
 
-build_coder_prompt() {
+load_coder_prompt_project_context() {
+    local prompt_profile="${1:-broad}"
+
+    CODER_PROMPT_PROJECT_AGENTS=""
+    CODER_PROMPT_PROJECT_ARCHITECTURE=""
+    CODER_PROMPT_PROJECT_MEMORY_SYSTEM=""
+    CODER_PROMPT_MEMORY_CORE=""
+    CODER_PROMPT_MEMORY_RECENT=""
+
+    if [ "$prompt_profile" = "narrow" ]; then
+        return 0
+    fi
+
+    if [ -f "AGENTS.md" ]; then
+        CODER_PROMPT_PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
+    fi
+    if [ -f "ARCHITECTURE.md" ]; then
+        CODER_PROMPT_PROJECT_ARCHITECTURE=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
+    fi
+    if [ -f "MEMORY_SYSTEM.md" ]; then
+        CODER_PROMPT_PROJECT_MEMORY_SYSTEM=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
+    fi
+    if [ -f ".ralph/memory/core.md" ]; then
+        CODER_PROMPT_MEMORY_CORE=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
+    fi
+    if [ -f ".ralph/memory/recent.md" ]; then
+        CODER_PROMPT_MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
+    fi
+}
+
+build_task_prompt_payload() {
     local task_json="$1"
+    local prompt_profile="${2:-broad}"
+
+    python3 - "$prompt_profile" "$task_json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+
+prompt_profile = sys.argv[1]
+task = json.loads(sys.argv[2])
+
+if prompt_profile == "narrow":
+    description_limit = 1200
+    criteria_limit = 8
+    criteria_chars = 2000
+    context_limit = 8
+    notes_limit = 800
+else:
+    description_limit = 2000
+    criteria_limit = 16
+    criteria_chars = 4000
+    context_limit = 12
+    notes_limit = 1200
+
+
+def compact(value: str, limit: int) -> str:
+    text = " ".join(str(value).split())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + " ... [truncated]"
+
+
+lines: list[str] = []
+for key, label in (
+    ("id", "ID"),
+    ("phase", "Phase"),
+    ("title", "Title"),
+    ("status", "Status"),
+    ("complexity", "Complexity"),
+    ("category", "Category"),
+    ("priority", "Priority"),
+):
+    value = task.get(key)
+    if value not in (None, ""):
+        lines.append(f"{label}: {value}")
+
+description = task.get("description")
+if description:
+    lines.append("")
+    lines.append("Description:")
+    lines.append(compact(description, description_limit))
+
+required_context = [str(item) for item in (task.get("required_context") or []) if str(item).strip()]
+if required_context:
+    lines.append("")
+    lines.append("Required Context:")
+    for item in required_context[:context_limit]:
+        lines.append(f"- {item}")
+    if len(required_context) > context_limit:
+        lines.append(f"- ... [{len(required_context) - context_limit} more entries truncated]")
+
+criteria = [compact(item, 240) for item in (task.get("acceptance_criteria") or []) if str(item).strip()]
+if criteria:
+    lines.append("")
+    lines.append("Acceptance Criteria:")
+    used_chars = 0
+    emitted = 0
+    for item in criteria:
+        projected = used_chars + len(item)
+        if emitted >= criteria_limit or projected > criteria_chars:
+            break
+        lines.append(f"- {item}")
+        emitted += 1
+        used_chars = projected
+    remaining = len(criteria) - emitted
+    if remaining > 0:
+        lines.append(f"- ... [{remaining} more criteria truncated]")
+
+revision_notes = task.get("revision_notes")
+if revision_notes not in (None, ""):
+    lines.append("")
+    lines.append("Revision Notes:")
+    lines.append(compact(revision_notes, notes_limit))
+
+completed_at = task.get("completed_at")
+if completed_at not in (None, ""):
+    lines.append("")
+    lines.append(f"Completed At: {completed_at}")
+
+print("\n".join(lines), end="")
+PY
+}
+
+build_coder_prompt() {
+    local task_prompt_payload="$1"
     local coder_role_file="$2"
     local coder_role_content="$3"
     local coder_prompt_profile_name="$4"
@@ -1362,7 +1487,7 @@ ${context_content:-No specific files required.}
 ${relevant_context:-No keyword-matched source snippets found.}
 
 ## Your Task
-$task_json"
+${task_prompt_payload:-No task payload provided.}"
     else
         coder_prompt="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${coder_role_file} first. Use progress.md only as lightweight narrative context if needed; do not treat it as task truth.
 Do NOT run make test or pytest. Ralph runtime owns verification.
@@ -1392,7 +1517,7 @@ ${context_content:-No specific files required.}
 ${relevant_context:-No keyword-matched source snippets found.}
 
 ## Your Task
-$task_json"
+${task_prompt_payload:-No task payload provided.}"
     fi
 
     if [ -n "$fix_instructions" ]; then
@@ -1464,13 +1589,15 @@ build_coder_prompt_with_budget() {
     local prompt_max_chars="${19:-${RALPH_CODER_PROMPT_MAX_CHARS:-40000}}"
     local coder_prompt=""
     local prompt_tokens=0
+    local task_prompt_payload=""
     local trim_plan=""
     local trim_step=""
     local trim_field=""
     local trim_limit=""
 
+    task_prompt_payload=$(build_task_prompt_payload "$task_json" "$coder_prompt_profile_name")
     coder_prompt=$(build_coder_prompt \
-        "$task_json" \
+        "$task_prompt_payload" \
         "$coder_role_file" \
         "$coder_role_content" \
         "$coder_prompt_profile_name" \
@@ -1496,6 +1623,7 @@ coder_role_content:${RALPH_ROLE_MAX_CHARS_NARROW_FALLBACK:-4000}"
     else
         trim_plan="relevant_context:${RALPH_CONTEXT_MAX_CHARS_BROAD_FALLBACK:-6000}
 context_content:${RALPH_REQUIRED_CONTEXT_MAX_CHARS_BROAD_FALLBACK:-3000}
+task_prompt_payload:${RALPH_TASK_PAYLOAD_MAX_CHARS_BROAD_FALLBACK:-5000}
 memory_recent:${RALPH_MEMORY_RECENT_MAX_CHARS_FALLBACK:-3000}
 memory_core:${RALPH_MEMORY_CORE_MAX_CHARS_FALLBACK:-4000}
 project_architecture:${RALPH_ARCHITECTURE_MAX_CHARS_FALLBACK:-4000}
@@ -1518,6 +1646,10 @@ coder_role_content:${RALPH_ROLE_MAX_CHARS_BROAD_FALLBACK:-5000}"
             context_content)
                 [ -n "$context_content" ] || continue
                 context_content=$(printf '%s' "$context_content" | clip_chars "$trim_limit")
+                ;;
+            task_prompt_payload)
+                [ -n "$task_prompt_payload" ] || continue
+                task_prompt_payload=$(printf '%s' "$task_prompt_payload" | clip_chars "$trim_limit")
                 ;;
             memory_recent)
                 [ -n "$memory_recent" ] || continue
@@ -1549,7 +1681,7 @@ coder_role_content:${RALPH_ROLE_MAX_CHARS_BROAD_FALLBACK:-5000}"
         esac
 
         coder_prompt=$(build_coder_prompt \
-            "$task_json" \
+            "$task_prompt_payload" \
             "$coder_role_file" \
             "$coder_role_content" \
             "$coder_prompt_profile_name" \
@@ -1571,10 +1703,6 @@ coder_role_content:${RALPH_ROLE_MAX_CHARS_BROAD_FALLBACK:-5000}"
 
     coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "$prompt_max_chars")
     prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
-    if [ "$prompt_tokens" -gt "$prompt_budget" ]; then
-        coder_prompt=$(printf '%s' "$coder_prompt" | clip_prompt_tokens "$prompt_budget")
-        prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
-    fi
 
     printf '__TOKENS__:%s\n' "$prompt_tokens"
     printf '%s' "$coder_prompt"
@@ -2568,22 +2696,12 @@ run_coder_agent() {
     coder_prompt_profile_name=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
     coder_prompt_targets=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
     coder_prompt_budget=$(get_coder_prompt_token_budget "$coder_prompt_profile_name")
-
-    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f "AGENTS.md" ]; then
-        project_agents=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
-    fi
-    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f "ARCHITECTURE.md" ]; then
-        project_architecture=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
-    fi
-    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f "MEMORY_SYSTEM.md" ]; then
-        project_memory_system=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
-    fi
-    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f ".ralph/memory/core.md" ]; then
-        memory_core=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
-    fi
-    if [ "$coder_prompt_profile_name" != "narrow" ] && [ -f ".ralph/memory/recent.md" ]; then
-        memory_recent=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
-    fi
+    load_coder_prompt_project_context "$coder_prompt_profile_name"
+    project_agents="$CODER_PROMPT_PROJECT_AGENTS"
+    project_architecture="$CODER_PROMPT_PROJECT_ARCHITECTURE"
+    project_memory_system="$CODER_PROMPT_PROJECT_MEMORY_SYSTEM"
+    memory_core="$CODER_PROMPT_MEMORY_CORE"
+    memory_recent="$CODER_PROMPT_MEMORY_RECENT"
 
     relevant_context=$(build_relevant_context "$TASK_JSON" "$coder_prompt_profile_name" || true)
     human_comment=$(get_human_comment)
@@ -3236,21 +3354,12 @@ print(task.get('role', 'coder'))
             PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
             CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
             CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
-            if [ "$CODER_PROMPT_PROFILE_NAME" != "narrow" ] && [ -f "AGENTS.md" ]; then
-                PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
-            fi
-            if [ "$CODER_PROMPT_PROFILE_NAME" != "narrow" ] && [ -f "ARCHITECTURE.md" ]; then
-                PROJECT_ARCHITECTURE=$(read_file_for_prompt "ARCHITECTURE.md" "${RALPH_ARCHITECTURE_MAX_CHARS:-10000}" || true)
-            fi
-            if [ "$CODER_PROMPT_PROFILE_NAME" != "narrow" ] && [ -f "MEMORY_SYSTEM.md" ]; then
-                PROJECT_MEMORY_SYSTEM=$(read_file_for_prompt "MEMORY_SYSTEM.md" "${RALPH_MEMORY_SYSTEM_MAX_CHARS:-8000}" || true)
-            fi
-            if [ "$CODER_PROMPT_PROFILE_NAME" != "narrow" ] && [ -f ".ralph/memory/core.md" ]; then
-                MEMORY_CORE=$(read_file_for_prompt ".ralph/memory/core.md" "${RALPH_MEMORY_CORE_MAX_CHARS:-8000}" || true)
-            fi
-            if [ "$CODER_PROMPT_PROFILE_NAME" != "narrow" ] && [ -f ".ralph/memory/recent.md" ]; then
-                MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
-            fi
+            load_coder_prompt_project_context "$CODER_PROMPT_PROFILE_NAME"
+            PROJECT_AGENTS="$CODER_PROMPT_PROJECT_AGENTS"
+            PROJECT_ARCHITECTURE="$CODER_PROMPT_PROJECT_ARCHITECTURE"
+            PROJECT_MEMORY_SYSTEM="$CODER_PROMPT_PROJECT_MEMORY_SYSTEM"
+            MEMORY_CORE="$CODER_PROMPT_MEMORY_CORE"
+            MEMORY_RECENT="$CODER_PROMPT_MEMORY_RECENT"
             RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" "$CODER_PROMPT_PROFILE_NAME" || true)
             if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
                 if [ -f "$REVIEW_TARGET_FILE" ]; then
