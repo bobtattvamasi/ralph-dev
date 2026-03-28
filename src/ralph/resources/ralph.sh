@@ -1219,6 +1219,32 @@ print(len(tokens))
 '
 }
 
+clip_prompt_tokens() {
+    local max_tokens="$1"
+    python3 - "$max_tokens" <<'PY'
+from __future__ import annotations
+
+import re
+import sys
+
+limit = int(sys.argv[1])
+text = sys.stdin.read()
+
+if limit <= 0:
+    print("... [truncated by token budget]", end="")
+    raise SystemExit(0)
+
+matches = list(re.finditer(r"\S+", text))
+if len(matches) <= limit:
+    print(text, end="")
+    raise SystemExit(0)
+
+cutoff = matches[limit - 1].end()
+trimmed = text[:cutoff].rstrip()
+print(f"{trimmed}\n... [truncated by token budget]", end="")
+PY
+}
+
 get_coder_prompt_token_budget() {
     local prompt_profile="${1:-broad}"
 
@@ -1256,22 +1282,6 @@ log_coder_prompt_tokens() {
     local prompt_tokens="${2:-0}"
     local prompt_budget="${3:-0}"
     log "🧮 Coder prompt tokens: profile=${prompt_profile} tokens=${prompt_tokens} limit=${prompt_budget}"
-}
-
-coder_ran_full_test_suite() {
-    local output_file="$1"
-    python3 - "$output_file" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-match = re.search(r'(?m)^assistant\s*$', text)
-pattern = re.compile(r'(^|[^A-Za-z0-9_])(make test|pytest|python -m pytest)([^A-Za-z0-9_]|$)')
-if match:
-    text = text[match.end():]
-sys.exit(0 if pattern.search(text) else 1)
-PY
 }
 
 build_required_context_content() {
@@ -1429,6 +1439,144 @@ Expected response structure:
 ... code ...
 \`\`\`"
 
+    printf '%s' "$coder_prompt"
+}
+
+build_coder_prompt_with_budget() {
+    local task_json="$1"
+    local coder_role_file="$2"
+    local coder_role_content="$3"
+    local coder_prompt_profile_name="$4"
+    local coder_prompt_targets="$5"
+    local context_content="$6"
+    local relevant_context="$7"
+    local project_agents="$8"
+    local project_architecture="$9"
+    local project_memory_system="${10}"
+    local memory_core="${11}"
+    local memory_recent="${12}"
+    local fix_instructions="${13:-}"
+    local human_comment="${14:-}"
+    local previous_review_target_hash="${15:-}"
+    local previous_diff_bytes="${16:-0}"
+    local previous_diff_summary="${17:-}"
+    local prompt_budget="${18:-0}"
+    local prompt_max_chars="${19:-${RALPH_CODER_PROMPT_MAX_CHARS:-40000}}"
+    local coder_prompt=""
+    local prompt_tokens=0
+    local trim_plan=""
+    local trim_step=""
+    local trim_field=""
+    local trim_limit=""
+
+    coder_prompt=$(build_coder_prompt \
+        "$task_json" \
+        "$coder_role_file" \
+        "$coder_role_content" \
+        "$coder_prompt_profile_name" \
+        "$coder_prompt_targets" \
+        "$context_content" \
+        "$relevant_context" \
+        "$project_agents" \
+        "$project_architecture" \
+        "$project_memory_system" \
+        "$memory_core" \
+        "$memory_recent" \
+        "$fix_instructions" \
+        "$human_comment" \
+        "$previous_review_target_hash" \
+        "$previous_diff_bytes" \
+        "$previous_diff_summary")
+    prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+
+    if [ "$coder_prompt_profile_name" = "narrow" ]; then
+        trim_plan="relevant_context:${RALPH_CONTEXT_MAX_CHARS_NARROW_FALLBACK:-2000}
+context_content:${RALPH_REQUIRED_CONTEXT_MAX_CHARS_NARROW_FALLBACK:-2000}
+coder_role_content:${RALPH_ROLE_MAX_CHARS_NARROW_FALLBACK:-4000}"
+    else
+        trim_plan="relevant_context:${RALPH_CONTEXT_MAX_CHARS_BROAD_FALLBACK:-6000}
+context_content:${RALPH_REQUIRED_CONTEXT_MAX_CHARS_BROAD_FALLBACK:-3000}
+memory_recent:${RALPH_MEMORY_RECENT_MAX_CHARS_FALLBACK:-3000}
+memory_core:${RALPH_MEMORY_CORE_MAX_CHARS_FALLBACK:-4000}
+project_architecture:${RALPH_ARCHITECTURE_MAX_CHARS_FALLBACK:-4000}
+project_agents:${RALPH_AGENTS_MAX_CHARS_FALLBACK:-3000}
+project_memory_system:${RALPH_MEMORY_SYSTEM_MAX_CHARS_FALLBACK:-3000}
+coder_role_content:${RALPH_ROLE_MAX_CHARS_BROAD_FALLBACK:-5000}"
+    fi
+
+    while IFS= read -r trim_step; do
+        [ -n "$trim_step" ] || continue
+        [ "$prompt_tokens" -le "$prompt_budget" ] && break
+        trim_field="${trim_step%%:*}"
+        trim_limit="${trim_step#*:}"
+
+        case "$trim_field" in
+            relevant_context)
+                [ -n "$relevant_context" ] || continue
+                relevant_context=$(printf '%s' "$relevant_context" | clip_chars "$trim_limit")
+                ;;
+            context_content)
+                [ -n "$context_content" ] || continue
+                context_content=$(printf '%s' "$context_content" | clip_chars "$trim_limit")
+                ;;
+            memory_recent)
+                [ -n "$memory_recent" ] || continue
+                memory_recent=$(printf '%s' "$memory_recent" | clip_chars "$trim_limit")
+                ;;
+            memory_core)
+                [ -n "$memory_core" ] || continue
+                memory_core=$(printf '%s' "$memory_core" | clip_chars "$trim_limit")
+                ;;
+            project_architecture)
+                [ -n "$project_architecture" ] || continue
+                project_architecture=$(printf '%s' "$project_architecture" | clip_chars "$trim_limit")
+                ;;
+            project_agents)
+                [ -n "$project_agents" ] || continue
+                project_agents=$(printf '%s' "$project_agents" | clip_chars "$trim_limit")
+                ;;
+            project_memory_system)
+                [ -n "$project_memory_system" ] || continue
+                project_memory_system=$(printf '%s' "$project_memory_system" | clip_chars "$trim_limit")
+                ;;
+            coder_role_content)
+                [ -n "$coder_role_content" ] || continue
+                coder_role_content=$(printf '%s' "$coder_role_content" | clip_chars "$trim_limit")
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        coder_prompt=$(build_coder_prompt \
+            "$task_json" \
+            "$coder_role_file" \
+            "$coder_role_content" \
+            "$coder_prompt_profile_name" \
+            "$coder_prompt_targets" \
+            "$context_content" \
+            "$relevant_context" \
+            "$project_agents" \
+            "$project_architecture" \
+            "$project_memory_system" \
+            "$memory_core" \
+            "$memory_recent" \
+            "$fix_instructions" \
+            "$human_comment" \
+            "$previous_review_target_hash" \
+            "$previous_diff_bytes" \
+            "$previous_diff_summary")
+        prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+    done <<< "$trim_plan"
+
+    coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "$prompt_max_chars")
+    prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+    if [ "$prompt_tokens" -gt "$prompt_budget" ]; then
+        coder_prompt=$(printf '%s' "$coder_prompt" | clip_prompt_tokens "$prompt_budget")
+        prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+    fi
+
+    printf '__TOKENS__:%s\n' "$prompt_tokens"
     printf '%s' "$coder_prompt"
 }
 
@@ -1880,7 +2028,6 @@ run_codex() {
     local retry=0
     local exit_code=0
     local watchdog_timeout="${RALPH_WATCHDOG_TIMEOUT:-300}"
-    CODEX_POLICY_VIOLATION_REASON=""
     local task_class
     task_class=$(detect_runtime_task_class 2>/dev/null || echo "implementation")
     local allow_timeout_retries=1
@@ -2022,14 +2169,6 @@ PY
         rm -f "$launcher_meta"
         rm -f "$stream_fifo"
         pkill -P "$$" 2>/dev/null || true
-
-        if coder_ran_full_test_suite "$output_file"; then
-            finalize_codex_stream_logger "$stream_logger_pid" "$stream_fifo"
-            log "❌ CODER VIOLATION: ran full test suite"
-            write_state "blocked" "" "coder_violation" "Coder ran full test suite"
-            CODEX_POLICY_VIOLATION_REASON="Coder ran full test suite"
-            return 1
-        fi
 
         # Watchdog timeout - retry with backoff like other recoverable errors.
         if [ "$watchdog_fired" -eq 1 ]; then
@@ -2449,7 +2588,8 @@ run_coder_agent() {
     relevant_context=$(build_relevant_context "$TASK_JSON" "$coder_prompt_profile_name" || true)
     human_comment=$(get_human_comment)
     context_content=$(build_required_context_content "${TASK_CONTEXT_FILES:-}" "$coder_prompt_profile_name")
-    coder_prompt=$(build_coder_prompt \
+    local prompt_payload=""
+    prompt_payload=$(build_coder_prompt_with_budget \
         "$TASK_JSON" \
         "$CODER_ROLE_FILE" \
         "$CODER_ROLE_CONTENT" \
@@ -2463,49 +2603,14 @@ run_coder_agent() {
         "$memory_core" \
         "$memory_recent" \
         "" \
-        "$human_comment")
-
-    coder_prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
-    if [ "$coder_prompt_tokens" -gt "$coder_prompt_budget" ] && [ "$coder_prompt_profile_name" = "narrow" ] && [ -n "$relevant_context" ]; then
-        relevant_context=$(printf '%s' "$relevant_context" | clip_chars "${RALPH_CONTEXT_MAX_CHARS_NARROW_FALLBACK:-2000}")
-        coder_prompt=$(build_coder_prompt \
-            "$TASK_JSON" \
-            "$CODER_ROLE_FILE" \
-            "$CODER_ROLE_CONTENT" \
-            "$coder_prompt_profile_name" \
-            "$coder_prompt_targets" \
-            "$context_content" \
-            "$relevant_context" \
-            "$project_agents" \
-            "$project_architecture" \
-            "$project_memory_system" \
-            "$memory_core" \
-            "$memory_recent" \
-            "" \
-            "$human_comment")
-        coder_prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
-    fi
-    if [ "$coder_prompt_tokens" -gt "$coder_prompt_budget" ] && [ "$coder_prompt_profile_name" = "narrow" ] && [ -n "$context_content" ]; then
-        context_content=$(printf '%s' "$context_content" | clip_chars "${RALPH_REQUIRED_CONTEXT_MAX_CHARS_NARROW_FALLBACK:-2000}")
-        coder_prompt=$(build_coder_prompt \
-            "$TASK_JSON" \
-            "$CODER_ROLE_FILE" \
-            "$CODER_ROLE_CONTENT" \
-            "$coder_prompt_profile_name" \
-            "$coder_prompt_targets" \
-            "$context_content" \
-            "$relevant_context" \
-            "$project_agents" \
-            "$project_architecture" \
-            "$project_memory_system" \
-            "$memory_core" \
-            "$memory_recent" \
-            "" \
-            "$human_comment")
-    fi
-
-    coder_prompt=$(printf '%s' "$coder_prompt" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
-    coder_prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
+        "$human_comment" \
+        "" \
+        "0" \
+        "" \
+        "$coder_prompt_budget" \
+        "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
+    coder_prompt_tokens=$(printf '%s\n' "$prompt_payload" | sed -n '1s/^__TOKENS__://p')
+    coder_prompt=$(printf '%s\n' "$prompt_payload" | sed '1d')
     log_coder_prompt_tokens "$coder_prompt_profile_name" "$coder_prompt_tokens" "$coder_prompt_budget"
     if ! check_prompt_budget "$coder_prompt" "$coder_prompt_budget" "Coder prompt" "$coder_prompt_tokens"; then
         write_state "blocked" "" "prompt_budget" "Coder prompt exceeded token budget"
@@ -2582,7 +2687,6 @@ PY
 
     run_coder_agent
     local heal_exit=$?
-    local heal_violation_reason="${CODEX_POLICY_VIOLATION_REASON:-}"
 
     TASK_JSON="$OLD_TASK_JSON"
     TASK_ID="$OLD_TASK_ID"
@@ -2593,11 +2697,6 @@ PY
     TASK_CONTEXT_FILES="$OLD_TASK_CONTEXT_FILES"
     TASK_RISK="$OLD_TASK_RISK"
     TASK_ROLE="$OLD_TASK_ROLE"
-
-    if [ -n "$heal_violation_reason" ]; then
-        log "❌ Self-heal blocked by coder policy violation: $heal_violation_reason"
-        return 1
-    fi
 
     if [ $heal_exit -ne 0 ]; then
         log '❌ Self-heal failed. Coder run did not complete cleanly.'
@@ -3169,7 +3268,7 @@ print(task.get('role', 'coder'))
 
             CONTEXT_CONTENT=$(build_required_context_content "$TASK_CONTEXT_FILES" "$CODER_PROMPT_PROFILE_NAME")
             HUMAN_COMMENT=$(get_human_comment)
-            CODER_PROMPT=$(build_coder_prompt \
+            PROMPT_PAYLOAD=$(build_coder_prompt_with_budget \
                 "$TASK_JSON" \
                 "$CODER_ROLE_FILE" \
                 "$CODER_ROLE_CONTENT" \
@@ -3186,9 +3285,11 @@ print(task.get('role', 'coder'))
                 "$HUMAN_COMMENT" \
                 "$PREVIOUS_LANDED_COMMIT" \
                 "$PREVIOUS_DIFF_BYTES" \
-                "$PREVIOUS_DIFF_SUMMARY")
-            CODER_PROMPT=$(printf '%s' "$CODER_PROMPT" | enforce_prompt_budget "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
-            CODER_PROMPT_TOKENS=$(printf '%s' "$CODER_PROMPT" | count_prompt_tokens)
+                "$PREVIOUS_DIFF_SUMMARY" \
+                "$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")" \
+                "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
+            CODER_PROMPT_TOKENS=$(printf '%s\n' "$PROMPT_PAYLOAD" | sed -n '1s/^__TOKENS__://p')
+            CODER_PROMPT=$(printf '%s\n' "$PROMPT_PAYLOAD" | sed '1d')
             CODER_PROMPT_BUDGET=$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")
             log_coder_prompt_tokens "$CODER_PROMPT_PROFILE_NAME" "$CODER_PROMPT_TOKENS" "$CODER_PROMPT_BUDGET"
             if ! check_prompt_budget "$CODER_PROMPT" "$CODER_PROMPT_BUDGET" "Coder prompt" "$CODER_PROMPT_TOKENS"; then
@@ -3209,17 +3310,6 @@ print(task.get('role', 'coder'))
             run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
             CODEX_EXIT=$?
             set -e
-            if [ -n "${CODEX_POLICY_VIOLATION_REASON:-}" ]; then
-                REASON="$CODEX_POLICY_VIOLATION_REASON"
-                TASK_DURATION=$(( $(date +%s) - TASK_START ))
-                log_metrics "failed" "false" "false"
-                log "📋 TASK_FAIL task_id=$TASK_ID status=coder_violation runtime_success=false verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
-                AUDIT_WRITTEN=true
-                defer_blocked_task "$REASON"
-                TASK_BLOCKED=true
-                break
-            fi
             CONTROL_STATUS=0
             check_control || CONTROL_STATUS=$?
             if [ $CONTROL_STATUS -eq 1 ]; then
