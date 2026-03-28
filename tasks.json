@@ -2617,7 +2617,7 @@
         "broad task prompts are <25k tokens",
         "measure token count in build_coder_prompt output"
       ],
-      "revision_notes": "Removed blocking guard",
+      "revision_notes": "Added pre-commit validation",
       "completed_at": null
     },
     {
