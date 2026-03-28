@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RalphState(BaseModel):
-    status: Literal["idle", "running", "paused", "waiting_human", "stopped"] = "idle"
+    status: Literal["idle", "running", "paused", "waiting_human", "stopped", "blocked"] = "idle"
     current_task: str = ""
     current_phase_step: str = ""
     last_update: Optional[str] = None
