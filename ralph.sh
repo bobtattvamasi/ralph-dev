@@ -167,6 +167,7 @@ FINAL_STATE_STEP="idle"
 FINAL_STATE_MESSAGE="All tasks complete"
 FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
 QUEUE_EXIT_LOG="🎉 All tasks complete!"
+FINAL_EXIT_CODE=0
 REASON=""
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 cleanup_orphan_coder_outputs
@@ -1321,6 +1322,28 @@ log_coder_prompt_tokens() {
     local prompt_tokens="${2:-0}"
     local prompt_budget="${3:-0}"
     log "🧮 Coder prompt tokens: profile=${prompt_profile} tokens=${prompt_tokens} limit=${prompt_budget}"
+}
+
+coder_ran_full_test_suite() {
+    local output_file="$1"
+    [ -f "$output_file" ] || return 1
+
+    python3 - "$output_file" <<'PY'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").lower()
+patterns = (
+    r'(^|[\s`\'"])make\s+test\b',
+    r'(^|[\s`\'"])pytest\b',
+    r'python\s+-m\s+pytest\b',
+)
+
+raise SystemExit(0 if any(re.search(pattern, text, re.MULTILINE) for pattern in patterns) else 1)
+PY
 }
 
 build_required_context_content() {
@@ -2820,6 +2843,12 @@ run_coder_agent() {
     codex_exit=$?
     set -e
 
+    if coder_ran_full_test_suite "$coder_output"; then
+        log "❌ CODER VIOLATION: ran full test suite"
+        write_state "blocked" "" "coder_violation" "Coder ran full test suite"
+        return 1
+    fi
+
     CODER_TOKENS=$(extract_tokens "$coder_output")
     TASK_TOKENS=$(( ${TASK_TOKENS:-0} + ${CODER_TOKENS:-0} ))
     SESSION_TOKENS=$(( ${SESSION_TOKENS:-0} + ${CODER_TOKENS:-0} ))
@@ -3497,6 +3526,26 @@ print(task.get('role', 'coder'))
             run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
             CODEX_EXIT=$?
             set -e
+            if coder_ran_full_test_suite "$CODER_OUTPUT"; then
+                REASON="Coder ran full test suite"
+                TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                log "❌ CODER VIOLATION: ran full test suite"
+                python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
+                write_state "blocked" "" "coder_violation" "$REASON"
+                log_metrics "failed" "false" "false"
+                log "📋 TASK_FAIL task_id=$TASK_ID status=coder_violation runtime_success=false verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
+                AUDIT_WRITTEN=true
+                FINAL_STATE_STATUS="blocked"
+                FINAL_STATE_STEP="coder_violation"
+                FINAL_STATE_MESSAGE="$REASON"
+                FINAL_NOTIFY_MESSAGE="🚫 Ralph blocked: coder violated policy on $TASK_ID. Run /status for details."
+                QUEUE_EXIT_LOG="🚫 $TASK_ID blocked: coder ran full test suite."
+                FINAL_EXIT_CODE=1
+                TASK_DONE=true
+                TASK_BLOCKED=true
+                break
+            fi
             CONTROL_STATUS=0
             check_control || CONTROL_STATUS=$?
             if [ $CONTROL_STATUS -eq 1 ]; then
@@ -3985,3 +4034,4 @@ log "💰 SESSION TOTAL: ${SESSION_TASKS} tasks, ~$(format_tokens "$SESSION_TOKE
 log "════════════════════════════════════════════════════"
 log "📊 Final:"
 print_final_report
+exit "$FINAL_EXIT_CODE"

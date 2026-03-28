@@ -13,12 +13,12 @@
     "non_bookkeeping": []
   },
   "review": {
-    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"OPS-09\",\"summary\":\"Неполная реализация narrow-профиля: на fix-retry и обычном moderate exact-task в coder prompt по-прежнему попадают широкие project docs, из-за чего падают 2 интеграционных теста.\",\"quality_score\":62,\"issues\":[\"В `src/ralph/resources/ralph.sh` условное исключение `AGENTS.md`/`ARCHITECTURE.md`/`MEMORY_SYSTEM.md`/memory-файлов проверяет `CODER_PROMPT_PROFILE_NAME` до того, как профиль вычислен, поэтому narrow prompt собирается как broad и не содержит `## Exact Task Targets` в сценариях из тестов.\"],\"fix_instructions\":\"Сначала вычисли `PROMPT_PROFILE_JSON` и `CODER_PROMPT_PROFILE_NAME`, а уже потом ветвь загрузки project docs/memory и вызовы `build_relevant_context` / `build_required_context_content` делай с этим профилем, чтобы для `profile=narrow` широкие секции не включались и проходили оба теста `test_ralph_uses_narrow_coder_prompt_for_moderate_exact_task_run` и `test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry`.\",\"alert_reason\":\"\",\"progress_note\":\"Проверка провалена: 2 теста падают, acceptance criteria про narrow prompt <15k для narrow tasks не подтверждены.\"}\nEND_RALPH_REVIEW_JSON",
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"OPS-09\",\"summary\":\"Проверка prompt budget добавлена, но изменение не проходит полный тестовый прогон из-за регрессии в блокировке coder при запуске full test suite.\",\"quality_score\":5,\"issues\":[\"Падает `tests/test_integration.py::test_ralph_blocks_coder_if_full_test_detected`: раннер завершает `T01` с `returncode=0` и доходит до Tech Lead вместо немедленной блокировки после вывода coder `running make test before coding`.\"],\"fix_instructions\":\"В `ralph.sh` восстанови/добавь проверку stdout/stderr coder на маркеры запуска полного тестового прогона (`make test`, `pytest`, и т.п.) сразу после `run_codex`, чтобы task mode немедленно выставлял `blocked`, `current_phase_step=coder_violation`, сообщение `Coder ran full test suite`, печатал `❌ CODER VIOLATION: ran full test suite` и не переходил к Tech Lead.\",\"alert_reason\":\"\",\"progress_note\":\"OPS-09 близок к завершению, но текущий diff нельзя одобрить до устранения этой регрессии.\"}\nEND_RALPH_REVIEW_JSON",
     "parsed": {}
   },
   "attempts": 3,
-  "duration_sec": 2209,
-  "timestamp": "2026-03-27T18:48:40Z",
+  "duration_sec": 2808,
+  "timestamp": "2026-03-28T07:38:21Z",
   "runtime_success": false,
   "verified_success": false
 }
