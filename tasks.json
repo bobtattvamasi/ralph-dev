@@ -2608,7 +2608,7 @@
       "id": "OPS-09",
       "phase": "OPS",
       "title": "Narrow: reduce coder prompt to <15k tokens for narrow tasks",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "optimization",
       "priority": "high",
@@ -2618,7 +2618,7 @@
         "measure token count in build_coder_prompt output"
       ],
       "revision_notes": "Removed guard",
-      "completed_at": null
+      "completed_at": "2026-03-28T07:58:21.397152+00:00"
     },
     {
       "id": "OPS-10",
