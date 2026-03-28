@@ -857,6 +857,128 @@ def test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_doc
     assert "limit=25000" in log_text
 
 
+def test_ralph_auto_mode_narrow_task_does_not_read_project_docs_eagerly(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Simple exact-task script update"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py with the smallest exact-task change."
+    tasks["tasks"][0]["complexity"] = "simple"
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/narrow_target.py is updated",
+        "Simple exact-task path stays narrow by default",
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    (project_dir / "AGENTS.md").chmod(0)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "auto"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    try:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert load_task_status(project_dir) == "verified_done"
+        assert "Permission denied" not in (result.stdout + result.stderr)
+        log_text = read_latest_ralph_log(project_dir)
+        assert "🧮 Coder prompt tokens: profile=narrow" in log_text
+        assert "limit=15000" in log_text
+    finally:
+        (project_dir / "AGENTS.md").chmod(0o644)
+
+
+def test_ralph_trims_token_dense_narrow_prompt_to_budget(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Simple exact-task script update with token-dense payload"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py with the smallest exact-task change."
+    tasks["tasks"][0]["complexity"] = "simple"
+    tasks["tasks"][0]["acceptance_criteria"] = [f"token-{i} a b c d e f g" for i in range(6000)]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    (project_dir / "AGENTS_CODER.md").write_text("# Coder\n" + ("x y z q r s\n" * 1200), encoding="utf-8")
+    prompt_file = tmp_path / "coder_prompt_narrow_token_dense.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
+    env["RALPH_CODER_PROMPT_MAX_CHARS"] = "120000"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Exact Task Targets" in prompt
+    assert "scripts/narrow_target.py" in prompt
+    assert count_prompt_tokens(prompt) <= 15000
+    log_text = read_latest_ralph_log(project_dir)
+    assert "🧮 Coder prompt tokens: profile=narrow" in log_text
+    assert "limit=15000" in log_text
+
+
+def test_ralph_trims_token_dense_broad_prompt_to_budget(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Exact task that explicitly requires architecture and memory docs"
+    tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py but read ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS.md first."
+    tasks["tasks"][0]["complexity"] = "moderate"
+    tasks["tasks"][0]["required_context"] = ["ARCHITECTURE.md"]
+    tasks["tasks"][0]["acceptance_criteria"] = [
+        "scripts/narrow_target.py is updated",
+        "project-wide docs remain available while the broad prompt stays under budget",
+    ]
+    write_tasks(project_dir, tasks)
+
+    (project_dir / "scripts").mkdir()
+    token_dense_doc = "# Doc\n" + ("a b c d e f g h i j\n" * 2500)
+    (project_dir / "AGENTS.md").write_text(token_dense_doc, encoding="utf-8")
+    (project_dir / "ARCHITECTURE.md").write_text(token_dense_doc, encoding="utf-8")
+    (project_dir / "MEMORY_SYSTEM.md").write_text(token_dense_doc, encoding="utf-8")
+    (project_dir / ".ralph" / "memory" / "core.md").write_text(token_dense_doc, encoding="utf-8")
+    (project_dir / ".ralph" / "memory" / "recent.md").write_text(token_dense_doc, encoding="utf-8")
+    (project_dir / "AGENTS_CODER.md").write_text("# Coder\n" + ("x y z q r s\n" * 1500), encoding="utf-8")
+    prompt_file = tmp_path / "coder_prompt_broad_token_dense.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "TARGET = True\n"
+    env["RALPH_CODER_PROMPT_MAX_CHARS"] = "120000"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Architecture Doc" in prompt
+    assert "## Memory System Doc" in prompt
+    assert "## Project Context (from memory)" in prompt
+    assert count_prompt_tokens(prompt) <= 25000
+    log_text = read_latest_ralph_log(project_dir)
+    assert "🧮 Coder prompt tokens: profile=broad" in log_text
+    assert "limit=25000" in log_text
+
+
 def test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     tasks = load_tasks(project_dir)

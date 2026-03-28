@@ -1,0 +1,24 @@
+{
+  "task_id": "OPS-09",
+  "title": "Narrow: reduce coder prompt to <15k tokens for narrow tasks",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "OPS-09 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"OPS-09\",\"summary\":\"Неполная реализация narrow-профиля: на fix-retry и обычном moderate exact-task в coder prompt по-прежнему попадают широкие project docs, из-за чего падают 2 интеграционных теста.\",\"quality_score\":62,\"issues\":[\"В `src/ralph/resources/ralph.sh` условное исключение `AGENTS.md`/`ARCHITECTURE.md`/`MEMORY_SYSTEM.md`/memory-файлов проверяет `CODER_PROMPT_PROFILE_NAME` до того, как профиль вычислен, поэтому narrow prompt собирается как broad и не содержит `## Exact Task Targets` в сценариях из тестов.\"],\"fix_instructions\":\"Сначала вычисли `PROMPT_PROFILE_JSON` и `CODER_PROMPT_PROFILE_NAME`, а уже потом ветвь загрузки project docs/memory и вызовы `build_relevant_context` / `build_required_context_content` делай с этим профилем, чтобы для `profile=narrow` широкие секции не включались и проходили оба теста `test_ralph_uses_narrow_coder_prompt_for_moderate_exact_task_run` и `test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry`.\",\"alert_reason\":\"\",\"progress_note\":\"Проверка провалена: 2 теста падают, acceptance criteria про narrow prompt <15k для narrow tasks не подтверждены.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 2209,
+  "timestamp": "2026-03-27T18:48:40Z",
+  "runtime_success": false,
+  "verified_success": false
+}
