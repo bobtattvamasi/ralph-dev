@@ -3134,6 +3134,9 @@ print(task.get('role', 'coder'))
             PREVIOUS_DIFF_BYTES="0"
             PREVIOUS_DIFF_SUMMARY=""
             HAS_PREVIOUS_REVIEW_TARGET=0
+            PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
+            CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
+            CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
             if [ "$CODER_PROMPT_PROFILE_NAME" != "narrow" ] && [ -f "AGENTS.md" ]; then
                 PROJECT_AGENTS=$(read_file_for_prompt "AGENTS.md" "${RALPH_AGENTS_MAX_CHARS:-8000}" || true)
             fi
@@ -3149,9 +3152,6 @@ print(task.get('role', 'coder'))
             if [ "$CODER_PROMPT_PROFILE_NAME" != "narrow" ] && [ -f ".ralph/memory/recent.md" ]; then
                 MEMORY_RECENT=$(read_file_for_prompt ".ralph/memory/recent.md" "${RALPH_MEMORY_RECENT_MAX_CHARS:-8000}" || true)
             fi
-            PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
-            CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
-            CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
             RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" "$CODER_PROMPT_PROFILE_NAME" || true)
             if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
                 if [ -f "$REVIEW_TARGET_FILE" ]; then
