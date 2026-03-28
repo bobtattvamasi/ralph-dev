@@ -192,5 +192,15 @@ Bot syntax check:
 python3 -c "import ast; ast.parse(open('scripts/ralph_bot.py').read())"
 ```
 
+Prompt budget validation:
+```bash
+python3 scripts/check_prompt_budgets.py
+```
+
+Repo-local pre-commit style validation:
+```bash
+make lint
+```
+
 ## Current Status
 Ralph is in active MVP development. The core orchestration loop, memory injection, Telegram controls, metrics, and integration tests are in place. Packaging, richer multi-project support, and more advanced retrieval/routing remain future work.
