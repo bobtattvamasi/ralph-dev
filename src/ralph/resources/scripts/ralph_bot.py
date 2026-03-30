@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -44,6 +45,8 @@ ralph_process = None
 caffeinate_process = None
 LAST_SEND_ERROR: dict[str, object] | None = None
 CURRENT_SEND_CONTEXT = ""
+CURRENT_HANDLER_NAME = ""
+CURRENT_HANDLER_SEND_COUNT = 0
 RUNTIME = SimpleNamespace(
     ralph_process=None,
     caffeinate_process=None,
@@ -750,6 +753,65 @@ def set_send_context(command_name: str) -> None:
     CURRENT_SEND_CONTEXT = command_name
 
 
+def log_bot(message: str) -> None:
+    """Emit a structured bot log line."""
+    print(f"[bot] {message}", file=sys.stderr)
+
+
+def _begin_handler_logging(handler_name: str) -> None:
+    """Reset per-handler send counters before command execution."""
+    global CURRENT_HANDLER_NAME, CURRENT_HANDLER_SEND_COUNT
+    CURRENT_HANDLER_NAME = handler_name
+    CURRENT_HANDLER_SEND_COUNT = 0
+
+
+def _finish_handler_logging() -> int:
+    """Clear per-handler logging context and return sent message count."""
+    global CURRENT_HANDLER_NAME, CURRENT_HANDLER_SEND_COUNT
+    sent_count = CURRENT_HANDLER_SEND_COUNT
+    CURRENT_HANDLER_NAME = ""
+    CURRENT_HANDLER_SEND_COUNT = 0
+    return sent_count
+
+
+def get_update_user_label(update: dict) -> str:
+    """Return normalized user label for message or callback updates."""
+    message_user = update.get("message", {}).get("from", {})
+    callback_user = update.get("callback_query", {}).get("from", {})
+    user = message_user or callback_user
+    user_id = user.get("id")
+    return f"user_{user_id}" if user_id is not None else "user_unknown"
+
+
+async def execute_logged_handler(
+    command_name: str,
+    user_label: str,
+    handler_name: str,
+    handler_coro,
+) -> None:
+    """Run a bot handler with timing, send counting, and traceback logging."""
+    set_send_context(command_name)
+    log_bot(f"CMD: {command_name} from {user_label}")
+    log_bot(f"Handler: {handler_name} START")
+    started_at = time.perf_counter()
+    _begin_handler_logging(handler_name)
+    try:
+        await handler_coro
+    except Exception:  # noqa: BLE001
+        duration_s = time.perf_counter() - started_at
+        sent_count = _finish_handler_logging()
+        log_bot(f"Handler: {handler_name} ERROR (took {duration_s:.3f}s, sent {sent_count} messages)")
+        exc_type, exc_value, _ = sys.exc_info()
+        if exc_type is not None:
+            log_bot(f"Exception in {handler_name}: {exc_type.__name__}: {exc_value}")
+        traceback.print_exc(file=sys.stderr)
+        raise
+
+    duration_s = time.perf_counter() - started_at
+    sent_count = _finish_handler_logging()
+    log_bot(f"Handler: {handler_name} END (took {duration_s:.3f}s, sent {sent_count} messages)")
+
+
 def _read_error_body(exc: Exception) -> str:
     if not hasattr(exc, "read"):
         return ""
@@ -889,10 +951,13 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
 
 async def safe_send(text: str, reply_markup: dict | None = None) -> None:
     """Best-effort message send; never raises to caller."""
+    global CURRENT_HANDLER_SEND_COUNT
     try:
+        if CURRENT_HANDLER_NAME:
+            CURRENT_HANDLER_SEND_COUNT += 1
         await send_message(prepare_html_message(text), reply_markup=reply_markup)
     except Exception as exc:  # noqa: BLE001
-        print(f"[bot] Send error: {exc}", file=sys.stderr)
+        log_bot(f"Send error: {exc}")
 
 
 async def send_split_message(text: str) -> None:
@@ -1681,14 +1746,18 @@ async def handle_update(update: dict) -> None:
 
     if callback:
         data = callback.get("data", "")
+        user_label = get_update_user_label(update)
         if data == "stop":
-            await cmd_stop(force=False)
+            await execute_logged_handler("callback:stop", user_label, "cmd_stop", cmd_stop(force=False))
         elif data == "stop_now":
-            await cmd_stop(force=True)
+            await execute_logged_handler("callback:stop_now", user_label, "cmd_stop", cmd_stop(force=True))
         elif data.startswith("skip:"):
             task_id = data.split(":", 1)[1]
-            write_control("skip", task_id)
-            await safe_send(f"⏭ Skipping {task_id}")
+            async def skip_handler() -> None:
+                write_control("skip", task_id)
+                await safe_send(f"⏭ Skipping {task_id}")
+
+            await execute_logged_handler("callback:skip", user_label, "callback_skip", skip_handler())
         return
 
     if not text.startswith("/"):
@@ -1697,74 +1766,115 @@ async def handle_update(update: dict) -> None:
     parts = text.split(maxsplit=1)
     cmd = parts[0].lower().split("@")[0]
     args = parts[1] if len(parts) > 1 else ""
+    user_label = get_update_user_label(update)
+
+    handler_name = ""
+    handler_coro = None
 
     if cmd == "/status":
-        await cmd_status()
+        handler_name = "cmd_status"
+        handler_coro = cmd_status()
     elif cmd == "/tasks":
-        await safe_send(get_tasks_summary(args or None))
+        handler_name = "tasks_summary"
+        handler_coro = safe_send(get_tasks_summary(args or None))
     elif cmd == "/plan":
-        await cmd_plan()
+        handler_name = "cmd_plan"
+        handler_coro = cmd_plan()
     elif cmd == "/article":
-        await cmd_article(args.strip())
+        handler_name = "cmd_article"
+        handler_coro = cmd_article(args.strip())
     elif cmd == "/add" and args:
-        await cmd_add(args)
+        handler_name = "cmd_add"
+        handler_coro = cmd_add(args)
     elif cmd == "/rm":
-        await cmd_rm(args)
+        handler_name = "cmd_rm"
+        handler_coro = cmd_rm(args)
     elif cmd == "/pause":
-        await cmd_pause()
+        handler_name = "cmd_pause"
+        handler_coro = cmd_pause()
     elif cmd == "/resume":
-        await cmd_resume()
+        handler_name = "cmd_resume"
+        handler_coro = cmd_resume()
     elif cmd == "/start" and args:
-        await cmd_start_task(args)
+        handler_name = "cmd_start_task"
+        handler_coro = cmd_start_task(args)
     elif cmd == "/phase" and args:
-        await cmd_start_phase(args)
+        handler_name = "cmd_start_phase"
+        handler_coro = cmd_start_phase(args)
     elif cmd == "/auto":
-        await cmd_start_auto()
+        handler_name = "cmd_start_auto"
+        handler_coro = cmd_start_auto()
     elif cmd == "/stop":
-        await cmd_stop(force="now" in args)
+        handler_name = "cmd_stop"
+        handler_coro = cmd_stop(force="now" in args)
     elif cmd == "/done":
-        await cmd_done(args.strip())
+        handler_name = "cmd_done"
+        handler_coro = cmd_done(args.strip())
     elif cmd == "/redo" and args:
         args_parts = args.split(maxsplit=1)
         task_id = args_parts[0]
         notes = args_parts[1] if len(args_parts) > 1 else ""
-        await cmd_redo(task_id, notes)
+        handler_name = "cmd_redo"
+        handler_coro = cmd_redo(task_id, notes)
     elif cmd == "/timeout":
-        await cmd_timeout(args.strip())
+        handler_name = "cmd_timeout"
+        handler_coro = cmd_timeout(args.strip())
     elif cmd == "/comment" and args:
-        write_control("comment", args)
-        await safe_send(f"📝 Comment saved for next task:\n{args}")
+        async def comment_handler() -> None:
+            write_control("comment", args)
+            await safe_send(f"📝 Comment saved for next task:\n{args}")
+
+        handler_name = "comment_save"
+        handler_coro = comment_handler()
     elif cmd == "/log":
-        n = int(args) if args.isdigit() else 15
-        log_text = html.escape(get_log_tail(n))
-        await safe_send(f"<pre>{log_text}</pre>")
+        async def log_handler() -> None:
+            n = int(args) if args.isdigit() else 15
+            log_text = html.escape(get_log_tail(n))
+            await safe_send(f"<pre>{log_text}</pre>")
+
+        handler_name = "cmd_log"
+        handler_coro = log_handler()
     elif cmd == "/progress":
-        await cmd_progress()
+        handler_name = "cmd_progress"
+        handler_coro = cmd_progress()
     elif cmd == "/tail":
-        n = int(args) if args.isdigit() else 20
-        await cmd_tail(n)
+        handler_name = "cmd_tail"
+        handler_coro = cmd_tail(int(args) if args.isdigit() else 20)
     elif cmd == "/audit":
-        await cmd_audit(args)
+        handler_name = "cmd_audit"
+        handler_coro = cmd_audit(args)
     elif cmd == "/audit_last":
-        await cmd_audit_last(args)
+        handler_name = "cmd_audit_last"
+        handler_coro = cmd_audit_last(args)
     elif cmd == "/trust_report":
-        await cmd_trust_report()
+        handler_name = "cmd_trust_report"
+        handler_coro = cmd_trust_report()
     elif cmd == "/ask":
-        await cmd_ask(args.lstrip())
+        handler_name = "cmd_ask"
+        handler_coro = cmd_ask(args.lstrip())
     elif cmd == "/cost":
-        await cmd_cost()
+        handler_name = "cmd_cost"
+        handler_coro = cmd_cost()
     elif cmd == "/stats":
-        await cmd_stats()
+        handler_name = "cmd_stats"
+        handler_coro = cmd_stats()
     elif cmd == "/limits":
-        await cmd_limits()
+        handler_name = "cmd_limits"
+        handler_coro = cmd_limits()
     elif cmd == "/diff":
-        await cmd_diff()
+        handler_name = "cmd_diff"
+        handler_coro = cmd_diff()
     elif cmd == "/reload":
-        await cmd_reload()
+        handler_name = "cmd_reload"
+        handler_coro = cmd_reload()
     elif cmd == "/help" or (cmd == "/start" and not args):
-        await cmd_help()
+        handler_name = "cmd_help"
+        handler_coro = cmd_help()
     else:
-        await safe_send("Unknown command. Try /help")
+        handler_name = "unknown_command"
+        handler_coro = safe_send("Unknown command. Try /help")
+
+    await execute_logged_handler(cmd, user_label, handler_name, handler_coro)
 
 
 async def poll_updates() -> None:
@@ -1790,11 +1900,11 @@ async def poll_updates() -> None:
                 try:
                     await handle_update(update)
                 except Exception as exc:  # noqa: BLE001
-                    print(f"[bot] Handler error: {exc}", file=sys.stderr)
+                    log_bot(f"Handler error: {exc}")
         except Exception as exc:  # noqa: BLE001
             consecutive_errors += 1
             delay = min(backoff_seconds, 60)
-            print(f"[bot] Poll error #{consecutive_errors}, retry in {delay}s: {exc}", file=sys.stderr)
+            log_bot(f"Poll error #{consecutive_errors}, retry in {delay}s: {exc}")
             await asyncio.sleep(delay)
             backoff_seconds = min(backoff_seconds * 2, 60)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -87,3 +88,49 @@ async def test_handle_update_dispatches_reload(monkeypatch):
     await bot.handle_update({"message": {"text": "/reload"}})
 
     assert called == ["reload"]
+
+
+@pytest.mark.asyncio
+async def test_handle_update_logs_command_entry_exit_and_send_count(
+    monkeypatch, capsys: pytest.CaptureFixture[str]
+):
+    bot = load_bot_module()
+    send_message_mock = AsyncMock()
+
+    async def fake_cmd_status() -> None:
+        await bot.safe_send("first")
+        await bot.safe_send("second")
+
+    monkeypatch.setattr(bot, "send_message", send_message_mock)
+    monkeypatch.setattr(bot, "cmd_status", fake_cmd_status)
+
+    await bot.handle_update({"message": {"text": "/status", "from": {"id": 123}}})
+
+    captured = capsys.readouterr()
+    assert "[bot] CMD: /status from user_123" in captured.err
+    assert "[bot] Handler: cmd_status START" in captured.err
+    assert "[bot] Handler: cmd_status END (took " in captured.err
+    assert "sent 2 messages" in captured.err
+    assert send_message_mock.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_handle_update_logs_exception_with_traceback(
+    monkeypatch, capsys: pytest.CaptureFixture[str]
+):
+    bot = load_bot_module()
+
+    async def fake_cmd_status() -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(bot, "cmd_status", fake_cmd_status)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await bot.handle_update({"message": {"text": "/status", "from": {"id": 123}}})
+
+    captured = capsys.readouterr()
+    assert "[bot] CMD: /status from user_123" in captured.err
+    assert "[bot] Handler: cmd_status START" in captured.err
+    assert "[bot] Handler: cmd_status ERROR (took " in captured.err
+    assert "[bot] Exception in cmd_status: RuntimeError: boom" in captured.err
+    assert "Traceback (most recent call last):" in captured.err
