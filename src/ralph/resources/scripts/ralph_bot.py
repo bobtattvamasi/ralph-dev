@@ -56,6 +56,10 @@ ASK_BACKEND_ENV = "RALPH_ASK_BACKEND"
 ASK_CODEX_MODEL_ENV = "RALPH_ASK_CODEX_MODEL"
 ASK_CODEX_TIMEOUT_ENV = "RALPH_ASK_TIMEOUT_SEC"
 ASK_CODEX_TIMEOUT_SEC = 90
+ASK_CONTEXT_MAX_CHARS = 4000
+ASK_TASKS_CONTEXT_MAX_CHARS = 1800
+ASK_LOG_CONTEXT_LINES = 20
+ASK_CODE_SNIPPET_MAX_LINES = 20
 
 HOT_RELOAD_EXPORTS = [
     "read_state",
@@ -319,6 +323,103 @@ async def stream_repo_local_answer(question: str) -> None:
     await safe_send(answer_repo_local_question(question))
 
 
+class AskTimeoutError(RuntimeError):
+    """Raised when the bounded /ask provider exceeds its timeout."""
+
+
+class LLMProvider:
+    """Bounded single-shot LLM provider used by /ask."""
+
+    def __init__(self, backend_name: str | None = None) -> None:
+        name = backend_name or os.environ.get(ASK_BACKEND_ENV, "codex")
+        self.backend_name = name.strip().lower() or "codex"
+
+    async def query(self, question: str, context: str) -> list[str]:
+        """Return bounded response chunks for one operator question."""
+        bounded_question = " ".join(question.split())[:ASK_MAX_QUESTION_CHARS]
+        if self.backend_name == "repo_local":
+            response = answer_repo_local_question(bounded_question)
+            return [response[:ASK_MAX_RESPONSE_CHARS].rstrip()] if response.strip() else []
+        return await self._query_codex_cli(bounded_question, context)
+
+    async def _query_codex_cli(self, question: str, context: str) -> list[str]:
+        prompt = build_codex_ask_prompt(question, context)
+        command = build_codex_ask_command(prompt)
+        timeout_sec = get_ask_timeout_sec()
+
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=str(PROJECT_DIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except OSError as exc:
+            raise RuntimeError(f"/ask backend failed to start Codex: {exc}") from exc
+
+        stdout = process.stdout
+        if stdout is None:
+            process.kill()
+            process.wait()
+            raise RuntimeError("/ask backend returned no stdout pipe")
+
+        chunks: list[str] = []
+        chunks_sent_chars = 0
+        buffer = ""
+        deadline = time.monotonic() + timeout_sec
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.kill()
+                process.wait()
+                if buffer.strip() and chunks_sent_chars < ASK_MAX_RESPONSE_CHARS:
+                    rendered = buffer.rstrip()
+                    chunks.append(rendered)
+                raise AskTimeoutError(f"⏱ /ask timed out after {timeout_sec}s")
+            try:
+                line = await asyncio.wait_for(asyncio.to_thread(stdout.readline), timeout=remaining)
+            except asyncio.TimeoutError as exc:
+                process.kill()
+                process.wait()
+                if buffer.strip() and chunks_sent_chars < ASK_MAX_RESPONSE_CHARS:
+                    rendered = buffer.rstrip()
+                    chunks.append(rendered)
+                raise AskTimeoutError(f"⏱ /ask timed out after {timeout_sec}s") from exc
+
+            if line == "":
+                break
+
+            if chunks_sent_chars >= ASK_MAX_RESPONSE_CHARS:
+                continue
+
+            allowed = ASK_MAX_RESPONSE_CHARS - chunks_sent_chars
+            snippet = line[:allowed]
+            if not snippet:
+                continue
+            buffer += snippet
+
+            if len(buffer) >= ASK_STREAM_CHUNK_CHARS or buffer.endswith("\n\n"):
+                rendered = buffer.rstrip()
+                if rendered:
+                    chunks.append(rendered)
+                    chunks_sent_chars += len(rendered)
+                buffer = ""
+
+        exit_code = await asyncio.to_thread(process.wait)
+        if buffer.strip() and chunks_sent_chars < ASK_MAX_RESPONSE_CHARS:
+            rendered = buffer.rstrip()
+            chunks.append(rendered)
+            chunks_sent_chars += len(rendered)
+
+        if exit_code != 0:
+            raise RuntimeError(f"/ask Codex exited with code {exit_code}")
+
+        return chunks
+
+
 def get_ask_timeout_sec() -> int:
     """Return the bounded timeout for /ask Codex runs."""
     raw = os.environ.get(ASK_CODEX_TIMEOUT_ENV, "").strip()
@@ -353,31 +454,86 @@ def build_codex_cli_ask_backend() -> dict[str, object]:
     }
 
 
+def _read_bounded_text(path: Path, max_chars: int) -> str:
+    """Read a bounded text payload from disk if available."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[:max_chars].strip()
+    except OSError:
+        return ""
+
+
+def _read_recent_log_excerpt(max_lines: int = ASK_LOG_CONTEXT_LINES) -> str:
+    """Return the most recent Ralph log excerpt for /ask context."""
+    if not LOG_DIR.exists():
+        return "No logs/ directory found"
+
+    log_files = sorted(LOG_DIR.glob("ralph_*.log"), reverse=True)
+    if not log_files:
+        return "No ralph log files found"
+
+    latest = log_files[0]
+    try:
+        lines = latest.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        return f"Error reading {latest.name}: {exc}"
+    excerpt = lines[-max_lines:] if len(lines) > max_lines else lines
+    body = "\n".join(excerpt).strip()
+    return f"{latest.name}\n{body}".strip()
+
+
+def _build_code_snippet(path: Path, start_line: int, end_line: int) -> str:
+    """Render a small file snippet for prompt grounding."""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return f"File: {path.name}\n(unavailable)"
+
+    start_idx = max(0, start_line - 1)
+    end_idx = min(len(lines), end_line)
+    snippet_lines = lines[start_idx:end_idx][:ASK_CODE_SNIPPET_MAX_LINES]
+    numbered = "\n".join(f"{start_idx + index + 1}: {line}" for index, line in enumerate(snippet_lines))
+    return f"File: {path}\n{numbered}".strip()
+
+
+def build_ask_code_snippets() -> str:
+    """Return small repo snippets relevant to operator /ask answers."""
+    snippets = [
+        _build_code_snippet(PROJECT_DIR / "scripts" / "ralph_bot.py", 1498, 1524),
+        _build_code_snippet(PROJECT_DIR / "ralph.sh", 1, 20),
+    ]
+    return "\n\n".join(snippet for snippet in snippets if snippet).strip()
+
+
 def build_ask_project_context() -> str:
-    """Build the repo-local snapshot injected into the /ask Codex prompt."""
+    """Build the repo-local snapshot injected into the /ask provider context."""
     state = read_state()
-    state_status = state.get("status", "idle")
-    current_task = state.get("current_task") or "none"
-    current_phase_step = state.get("current_phase_step") or "none"
-    tasks_summary = get_tasks_summary()[:1200].strip()
+    state_payload = json.dumps(state, indent=2, ensure_ascii=False)[:600].strip()
+    tasks_payload = _read_bounded_text(TASKS_FILE, ASK_TASKS_CONTEXT_MAX_CHARS) or "No tasks.json found"
+    recent_logs = _read_recent_log_excerpt()
+    code_snippets = build_ask_code_snippets()
     context_lines = [
         f"Project directory: {PROJECT_DIR}",
-        f"Ralph status: {state_status}",
-        f"Current task: {current_task}",
-        f"Current phase step: {current_phase_step}",
         "",
-        "tasks.json summary (task truth):",
-        tasks_summary or "No tasks summary available",
+        "project state:",
+        state_payload or "{}",
+        "",
+        "tasks.json (task truth):",
+        tasks_payload,
+        "",
+        "recent logs:",
+        recent_logs,
+        "",
+        "relevant code snippets:",
+        code_snippets or "No code snippets available",
         "",
         "progress.md is narrative-only context and should not override tasks.json.",
     ]
-    return "\n".join(context_lines).strip()
+    return "\n".join(context_lines).strip()[:ASK_CONTEXT_MAX_CHARS]
 
 
-def build_codex_ask_prompt(question: str) -> str:
+def build_codex_ask_prompt(question: str, context: str) -> str:
     """Render the bounded prompt for Codex-backed /ask analysis."""
     bounded_question = " ".join(question.split())[:ASK_MAX_QUESTION_CHARS]
-    project_context = build_ask_project_context()
     return (
         "You are answering a Telegram /ask operator question about the current Ralph repository.\n"
         "Work from the current repo state in the working directory.\n"
@@ -388,7 +544,7 @@ def build_codex_ask_prompt(question: str) -> str:
         "Operator question:\n"
         f"{bounded_question}\n\n"
         "Repo-local context:\n"
-        f"{project_context}\n"
+        f"{context}\n"
     )
 
 
@@ -412,88 +568,22 @@ async def emit_ask_stream_chunk(chunk: str) -> None:
 
 async def stream_codex_cli_answer(question: str) -> None:
     """Run a bounded Codex CLI analysis and stream its output back to Telegram."""
-    prompt = build_codex_ask_prompt(question)
-    command = build_codex_ask_command(prompt)
-    timeout_sec = get_ask_timeout_sec()
-
     try:
-        process = subprocess.Popen(
-            command,
-            cwd=str(PROJECT_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-    except OSError as exc:
-        await safe_send(f"❌ /ask backend failed to start Codex: {exc}")
+        await safe_send("🧠 Codex is analyzing the repo...")
+        provider = LLMProvider("codex")
+        context = build_ask_project_context()
+        chunks = await provider.query(question, context)
+    except AskTimeoutError as exc:
+        await safe_send(str(exc))
+        return
+    except RuntimeError as exc:
+        await safe_send(f"❌ {exc}")
         return
 
-    await safe_send("🧠 Codex is analyzing the repo...")
+    for chunk in chunks:
+        await emit_ask_stream_chunk(chunk)
 
-    stdout = process.stdout
-    if stdout is None:
-        process.kill()
-        process.wait()
-        await safe_send("❌ /ask backend returned no stdout pipe")
-        return
-
-    chunks_sent_chars = 0
-    buffer = ""
-    timed_out = False
-    deadline = time.monotonic() + timeout_sec
-
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            timed_out = True
-            break
-        try:
-            line = await asyncio.wait_for(asyncio.to_thread(stdout.readline), timeout=remaining)
-        except asyncio.TimeoutError:
-            timed_out = True
-            break
-
-        if line == "":
-            break
-
-        if chunks_sent_chars >= ASK_MAX_RESPONSE_CHARS:
-            continue
-
-        allowed = ASK_MAX_RESPONSE_CHARS - chunks_sent_chars
-        snippet = line[:allowed]
-        if not snippet:
-            continue
-        buffer += snippet
-
-        if len(buffer) >= ASK_STREAM_CHUNK_CHARS or buffer.endswith("\n\n"):
-            rendered = buffer.rstrip()
-            if rendered:
-                await emit_ask_stream_chunk(rendered)
-                chunks_sent_chars += len(rendered)
-            buffer = ""
-
-    if timed_out:
-        process.kill()
-        process.wait()
-        if buffer.strip():
-            rendered = buffer.rstrip()
-            await emit_ask_stream_chunk(rendered)
-            chunks_sent_chars += len(rendered)
-        await safe_send(f"⏱ /ask timed out after {timeout_sec}s")
-        return
-
-    exit_code = await asyncio.to_thread(process.wait)
-    if buffer.strip() and chunks_sent_chars < ASK_MAX_RESPONSE_CHARS:
-        rendered = buffer.rstrip()
-        await emit_ask_stream_chunk(rendered)
-        chunks_sent_chars += len(rendered)
-
-    if exit_code != 0:
-        await safe_send(f"❌ /ask Codex exited with code {exit_code}")
-        return
-
-    if chunks_sent_chars == 0:
+    if not chunks:
         await safe_send("⚠️ /ask returned an empty Codex response")
 
 
@@ -1498,15 +1588,32 @@ async def cmd_trust_report() -> None:
 
 
 async def cmd_ask(prompt: str) -> None:
-    """Handle /ask through the configured single-shot analysis backend."""
+    """Handle /ask through the bounded LLM provider with injected context."""
     set_send_context("/ask")
     question = prompt.strip()
     if not question:
         await safe_send(ASK_USAGE_TEXT)
         return
-    backend = get_ask_backend()
-    stream_answer = backend["stream_answer"]
-    await stream_answer(question)
+    provider = LLMProvider()
+    context = build_ask_project_context()
+
+    if provider.backend_name == "codex":
+        await safe_send("🧠 Codex is analyzing the repo...")
+
+    try:
+        chunks = await provider.query(question, context)
+    except AskTimeoutError as exc:
+        await safe_send(str(exc))
+        return
+    except RuntimeError as exc:
+        await safe_send(f"❌ {exc}")
+        return
+
+    for chunk in chunks:
+        await emit_ask_stream_chunk(chunk)
+
+    if not chunks:
+        await safe_send("⚠️ /ask returned an empty response")
 
 
 async def cmd_reload() -> None:

@@ -5,7 +5,7 @@ import json
 from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 
@@ -84,31 +84,65 @@ async def test_cmd_ask_without_input_returns_usage(bot_env: dict[str, object]) -
 
 
 @pytest.mark.asyncio
-async def test_cmd_ask_uses_configured_backend_stream(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
-    stream_mock = AsyncMock()
-    monkeypatch.setattr(
-        bot,
-        "get_ask_backend",
-        lambda: {
-            "name": "fake_backend",
-            "mode": "single_shot_stream",
-            "stream_answer": stream_mock,
-        },
-    )
-
-    await bot.cmd_ask("what is Ralph doing now?")
-
-    stream_mock.assert_awaited_once_with("what is Ralph doing now?")
-
-
-@pytest.mark.asyncio
-async def test_stream_codex_cli_answer_streams_chunks_with_repo_context(
+async def test_cmd_ask_uses_llm_provider_query_and_streams_chunks(
     bot_env: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     send_split_mock = AsyncMock()
     monkeypatch.setattr(bot, "send_split_message", send_split_mock)
 
+    captured: dict[str, str] = {}
+
+    class FakeProvider:
+        def __init__(self) -> None:
+            self.backend_name = "repo_local"
+
+        async def query(self, question: str, context: str) -> list[str]:
+            captured["question"] = question
+            captured["context"] = context
+            return ["chunk one", "chunk two"]
+
+    monkeypatch.setattr(bot, "LLMProvider", FakeProvider)
+
+    await bot.cmd_ask("what is Ralph doing now?")
+
+    assert captured["question"] == "what is Ralph doing now?"
+    assert "tasks.json (task truth):" in captured["context"]
+    assert "project state:" in captured["context"]
+    send_split_mock.assert_has_awaits([call("chunk one"), call("chunk two")])
+
+
+def test_build_ask_project_context_injects_tasks_state_logs_and_code(
+    bot_env: dict[str, object],
+) -> None:
+    project_dir = bot_env["project_dir"]
+    bot.STATE_FILE.write_text(
+        json.dumps({"status": "running", "current_task": "T01", "current_phase_step": "coder"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (project_dir / "logs" / "ralph_20260330.log").write_text(
+        "first line\nsecond line\nthird line\n",
+        encoding="utf-8",
+    )
+
+    context = bot.build_ask_project_context()
+
+    assert "project state:" in context
+    assert '"current_task": "T01"' in context
+    assert "tasks.json (task truth):" in context
+    assert '"id": "T01"' in context
+    assert "recent logs:" in context
+    assert "second line" in context
+    assert "relevant code snippets:" in context
+    assert f"File: {bot.PROJECT_DIR / 'scripts' / 'ralph_bot.py'}" in context
+    assert "progress.md is narrative-only context" in context
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_codex_query_builds_prompt_with_injected_context(
+    bot_env: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     popen_calls: list[dict[str, object]] = []
 
     class FakeStdout:
@@ -131,12 +165,10 @@ async def test_stream_codex_cli_answer_streams_chunks_with_repo_context(
 
     monkeypatch.setattr(bot.subprocess, "Popen", FakePopen)
 
-    await bot.stream_codex_cli_answer("what is Ralph doing now?")
+    provider = bot.LLMProvider("codex")
+    chunks = await provider.query("what is Ralph doing now?", "tasks.json (task truth):\nT01\nrecent logs:\nOK")
 
-    safe_send = bot_env["safe_send"]
-    safe_send.assert_awaited_once_with("🧠 Codex is analyzing the repo...")
-    send_split_mock.assert_awaited_once_with("Ralph status looks healthy.\nCurrent task is idle.")
-
+    assert chunks == ["Ralph status looks healthy.\nCurrent task is idle."]
     assert popen_calls
     call = popen_calls[0]
     assert call["kwargs"]["cwd"] == str(bot.PROJECT_DIR)
@@ -144,8 +176,9 @@ async def test_stream_codex_cli_answer_streams_chunks_with_repo_context(
     assert command[:4] == ["codex", "exec", "-s", "danger-full-access"]
     prompt = command[-1]
     assert "Operator question:\nwhat is Ralph doing now?" in prompt
-    assert "tasks.json summary (task truth):" in prompt
-    assert "progress.md is narrative-only context" in prompt
+    assert "tasks.json (task truth):\nT01" in prompt
+    assert "recent logs:\nOK" in prompt
+    assert "progress.md is narrative-only context" not in prompt
 
 
 def test_get_ask_backend_defaults_to_codex(monkeypatch: pytest.MonkeyPatch) -> None:
