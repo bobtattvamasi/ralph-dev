@@ -953,9 +953,9 @@ async def safe_send(text: str, reply_markup: dict | None = None) -> None:
     """Best-effort message send; never raises to caller."""
     global CURRENT_HANDLER_SEND_COUNT
     try:
+        await send_message(prepare_html_message(text), reply_markup=reply_markup)
         if CURRENT_HANDLER_NAME:
             CURRENT_HANDLER_SEND_COUNT += 1
-        await send_message(prepare_html_message(text), reply_markup=reply_markup)
     except Exception as exc:  # noqa: BLE001
         log_bot(f"Send error: {exc}")
 
