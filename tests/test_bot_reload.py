@@ -91,6 +91,21 @@ async def test_handle_update_dispatches_reload(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handle_update_dispatches_exit(monkeypatch):
+    bot = load_bot_module()
+    called: list[str] = []
+
+    async def fake_exit() -> None:
+        called.append("exit")
+
+    monkeypatch.setattr(bot, "cmd_exit", fake_exit)
+
+    await bot.handle_update({"message": {"text": "/exit", "from": {"id": 123}}})
+
+    assert called == ["exit"]
+
+
+@pytest.mark.asyncio
 async def test_handle_update_logs_command_entry_exit_and_send_count(
     monkeypatch, capsys: pytest.CaptureFixture[str]
 ):

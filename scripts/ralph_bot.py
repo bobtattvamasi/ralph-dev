@@ -80,6 +80,7 @@ HOT_RELOAD_EXPORTS = [
     "cmd_start_phase",
     "cmd_start_auto",
     "cmd_stop",
+    "cmd_exit",
     "cmd_redo",
     "cmd_pause",
     "cmd_resume",
@@ -1166,6 +1167,11 @@ async def cmd_stop(force: bool = False) -> None:
             await safe_send("⏸ Ralph is not running")
 
 
+async def cmd_exit() -> None:
+    """Force-stop Ralph via legacy /exit command."""
+    await cmd_stop(force=True)
+
+
 async def cmd_redo(task_id: str, notes: str) -> None:
     """Reset task to pending."""
     try:
@@ -1722,6 +1728,7 @@ async def cmd_help() -> None:
         "/auto — run all\n"
         "/stop — stop after current task\n"
         "/stop now — kill immediately\n"
+        "/exit — force kill immediately\n"
         "/done [task_id] — mark task done\n"
         "/redo [task_id] [notes] — redo task\n"
         "/timeout [seconds] — set timeout override\n"
@@ -1810,6 +1817,9 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/stop":
         handler_name = "cmd_stop"
         handler_coro = cmd_stop(force="now" in args)
+    elif cmd == "/exit":
+        handler_name = "cmd_exit"
+        handler_coro = cmd_exit()
     elif cmd == "/done":
         handler_name = "cmd_done"
         handler_coro = cmd_done(args.strip())
