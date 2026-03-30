@@ -2342,9 +2342,9 @@
         "The template explicitly tells the journalist role to read blog_state.json for numbering"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "blocked",
       "completed_at": null,
-      "revision_notes": "verified_done",
+      "revision_notes": "Retry produced identical diff to prior attempt",
       "timeout": 300,
       "role": "coder"
     },
@@ -2798,6 +2798,28 @@
       "status": "pending",
       "completed_at": null,
       "revision_notes": "Modular design: StatusProvider can be swapped for Claude/local backends later",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "OPS-15",
+      "phase": "OPS",
+      "category": "feature",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Lead review transparency: capture and log review reasoning",
+      "description": "Like Coder has MOCK_CODEX_CAPTURE_PROMPT_FILE, Lead should capture its review prompt and reasoning before outputting JSON. This helps debug false negatives and understand Lead decision-making.",
+      "acceptance_criteria": [
+        "Lead captures full review prompt to .ralph/audit/lead_prompt_<TASK>.txt",
+        "Lead captures reasoning/thinking to .ralph/audit/lead_reasoning_<TASK>.txt",
+        "Both files are readable and help debug review decisions",
+        "No impact on existing Lead output or JSON format"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "Discovered during R12-03 run: Lead review is opaque, hard to debug false negatives",
       "timeout": 300,
       "role": "coder"
     }
