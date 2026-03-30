@@ -2627,7 +2627,7 @@
       "id": "OPS-10",
       "phase": "OPS",
       "title": "Fail-fast: block retry if coder output is identical to prior attempt",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "fix",
       "priority": "high",
@@ -2636,7 +2636,7 @@
         "regression test verifies no attempt 3 if attempt 2 is no-op"
       ],
       "revision_notes": "Unblocked: false positive guard removed",
-      "completed_at": null
+      "completed_at": "2026-03-30T10:02:50.122965+00:00"
     },
     {
       "id": "OPS-12",
@@ -2820,6 +2820,29 @@
       "status": "pending",
       "completed_at": null,
       "revision_notes": "Discovered during R12-03 run: Lead review is opaque, hard to debug false negatives",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "BUG-03",
+      "phase": "BUG",
+      "category": "bug",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Bot logging: add command entry/exit and handler timing",
+      "description": "Bot commands like /status work but are slow and silent. No logs show: command received, handler start, handler end, time taken. Need detailed logging to debug delays.",
+      "acceptance_criteria": [
+        "Log command received: [bot] CMD: /status from user_<id>",
+        "Log handler entry: [bot] Handler: cmd_status START",
+        "Log handler exit: [bot] Handler: cmd_status END (took Xs, sent N messages)",
+        "Log any exception with traceback",
+        "Existing functionality unchanged"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "Discovered: /status works but no visibility into timing/flow",
       "timeout": 300,
       "role": "coder"
     }
