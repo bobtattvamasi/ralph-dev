@@ -2840,9 +2840,32 @@
         "Existing functionality unchanged"
       ],
       "dependencies": [],
+      "status": "blocked",
+      "completed_at": null,
+      "revision_notes": "BUG-03 failed after 2 retries",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "OPS-16",
+      "phase": "OPS",
+      "category": "feature",
+      "priority": "high",
+      "complexity": "moderate",
+      "risk": "low",
+      "title": "Coder discipline: local-first mode for simple/exact-task jobs",
+      "description": "Enforce local-first search (rg, read existing patterns) before web search for simple tasks. Prevents 26s web overhead on 30s tasks. Implements opt-in web-search policy.",
+      "acceptance_criteria": [
+        "For complexity=simple or exact_local_change=true: web search disabled by default",
+        "Coder prompt includes: 'Search locally first with rg; if pattern exists, implement from local evidence only'",
+        "Runtime logs web_used_on_simple_task metric",
+        "Metrics show time_to_first_edit and local_search_before_web flags",
+        "Existing tests pass, no regression"
+      ],
+      "dependencies": [],
       "status": "pending",
       "completed_at": null,
-      "revision_notes": "Discovered: /status works but no visibility into timing/flow",
+      "revision_notes": "Discovered: BUG-03 wasted 26s on web search for local /exit pattern. Root cause: no local-first policy for simple tasks.",
       "timeout": 300,
       "role": "coder"
     }
