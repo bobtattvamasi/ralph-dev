@@ -1,24 +1,34 @@
 {
   "task_id": "OPS-09",
   "title": "Narrow: reduce coder prompt to <15k tokens for narrow tasks",
-  "status": "failed",
+  "status": "done",
   "verification": {
-    "result": "needs_human_review",
-    "reason": "OPS-09 failed after 2 retries",
-    "task_class": "unknown",
-    "evidence_files": []
+    "result": "pass",
+    "reason": "Generic implementation verification passed.",
+    "task_class": "implementation",
+    "evidence_files": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh"
+    ]
   },
   "changes": {
-    "all": [],
-    "non_bookkeeping": []
+    "all": [
+      ".ralph/audit/OPS-09.json",
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh"
+    ]
   },
   "review": {
-    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"OPS-09\",\"summary\":\"Проверка prompt budget добавлена, но изменение не проходит полный тестовый прогон из-за регрессии в блокировке coder при запуске full test suite.\",\"quality_score\":5,\"issues\":[\"Падает `tests/test_integration.py::test_ralph_blocks_coder_if_full_test_detected`: раннер завершает `T01` с `returncode=0` и доходит до Tech Lead вместо немедленной блокировки после вывода coder `running make test before coding`.\"],\"fix_instructions\":\"В `ralph.sh` восстанови/добавь проверку stdout/stderr coder на маркеры запуска полного тестового прогона (`make test`, `pytest`, и т.п.) сразу после `run_codex`, чтобы task mode немедленно выставлял `blocked`, `current_phase_step=coder_violation`, сообщение `Coder ran full test suite`, печатал `❌ CODER VIOLATION: ran full test suite` и не переходил к Tech Lead.\",\"alert_reason\":\"\",\"progress_note\":\"OPS-09 близок к завершению, но текущий diff нельзя одобрить до устранения этой регрессии.\"}\nEND_RALPH_REVIEW_JSON",
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"OPS-09\",\"summary\":\"Prompt budget для coder подтвержден: narrow-профиль держится ниже 15k, broad ниже 25k, токены измеряются и логируются при сборке `build_coder_prompt`, полный тестовый прогон проходит без регрессий.\",\"quality_score\":93,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"OPS-09 можно закрывать: budget-ограничения и измерение токенов подтверждены тестами, регрессия с блокировкой coder на full test suite устранена.\"}\nEND_RALPH_REVIEW_JSON",
     "parsed": {}
   },
-  "attempts": 3,
-  "duration_sec": 2808,
-  "timestamp": "2026-03-28T07:38:21Z",
-  "runtime_success": false,
-  "verified_success": false
+  "attempts": 1,
+  "duration_sec": 851,
+  "timestamp": "2026-03-28T07:58:22Z",
+  "runtime_success": true,
+  "verified_success": true
 }

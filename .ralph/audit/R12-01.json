@@ -1,0 +1,24 @@
+{
+  "task_id": "R12-01",
+  "title": "Bot: /ask command with Codex reasoning backend",
+  "status": "blocked",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap.",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R12-01\",\"summary\":\"Изменения не реализуют /ask с Codex backend: в diff только перенос INTERVIEW_PREP.md, а критерии по роутингу команды, LLM backend, streaming и тестам не подтверждены.\",\"quality_score\":8,\"issues\":[\"Нет evidence, что `/ask` маршрутизируется в `cmd_ask` handler.\",\"Нет evidence, что `cmd_ask` отправляет вопрос и project context в swap-friendly LLM backend.\",\"Нет evidence streaming-ответа пользователю и тестов на `/ask` с Codex integration.\"],\"fix_instructions\":\"Реализуй минимальный `/ask` vertical slice в Telegram bot: добавь роутинг команды в `cmd_ask`, вынеси вызов модели в отдельный backend-интерфейс с Codex-реализацией, которая получает вопрос плюс project context (`tasks.json`, state, repo context), и добавь один интеграционный тест, проверяющий `/ask` -> backend call -> streamed reply chunks пользователю.\",\"alert_reason\":\"\",\"progress_note\":\"Тестовый прогон зелёный, но он не покрывает acceptance criteria задачи R12-01.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 1,
+  "duration_sec": 861,
+  "timestamp": "2026-03-30T08:11:51Z",
+  "runtime_success": true,
+  "verified_success": false
+}
