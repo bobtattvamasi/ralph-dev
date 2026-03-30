@@ -84,16 +84,84 @@ async def test_cmd_ask_without_input_returns_usage(bot_env: dict[str, object]) -
 
 
 @pytest.mark.asyncio
-async def test_cmd_ask_with_input_returns_repo_local_single_shot_response(bot_env: dict[str, object]) -> None:
+async def test_cmd_ask_uses_configured_backend_stream(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    stream_mock = AsyncMock()
+    monkeypatch.setattr(
+        bot,
+        "get_ask_backend",
+        lambda: {
+            "name": "fake_backend",
+            "mode": "single_shot_stream",
+            "stream_answer": stream_mock,
+        },
+    )
+
     await bot.cmd_ask("what is Ralph doing now?")
 
+    stream_mock.assert_awaited_once_with("what is Ralph doing now?")
+
+
+@pytest.mark.asyncio
+async def test_stream_codex_cli_answer_streams_chunks_with_repo_context(
+    bot_env: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    send_split_mock = AsyncMock()
+    monkeypatch.setattr(bot, "send_split_message", send_split_mock)
+
+    popen_calls: list[dict[str, object]] = []
+
+    class FakeStdout:
+        def __init__(self, lines: list[str]) -> None:
+            self._lines = iter(lines)
+
+        def readline(self) -> str:
+            return next(self._lines, "")
+
+    class FakePopen:
+        def __init__(self, command: list[str], **kwargs: object) -> None:
+            popen_calls.append({"command": command, "kwargs": kwargs})
+            self.stdout = FakeStdout(["Ralph status looks healthy.\n", "Current task is idle.\n"])
+
+        def wait(self) -> int:
+            return 0
+
+        def kill(self) -> None:
+            raise AssertionError("kill() should not be called in success path")
+
+    monkeypatch.setattr(bot.subprocess, "Popen", FakePopen)
+
+    await bot.stream_codex_cli_answer("what is Ralph doing now?")
+
     safe_send = bot_env["safe_send"]
-    safe_send.assert_awaited_once()
-    message = safe_send.await_args.args[0]
-    assert "🧠 Ralph single-shot reply" in message
-    assert "Question: what is Ralph doing now?" in message
-    assert "Status: idle" in message
-    assert "Repo-local snapshot:" in message
+    safe_send.assert_awaited_once_with("🧠 Codex is analyzing the repo...")
+    send_split_mock.assert_awaited_once_with("Ralph status looks healthy.\nCurrent task is idle.")
+
+    assert popen_calls
+    call = popen_calls[0]
+    assert call["kwargs"]["cwd"] == str(bot.PROJECT_DIR)
+    command = call["command"]
+    assert command[:4] == ["codex", "exec", "-s", "danger-full-access"]
+    prompt = command[-1]
+    assert "Operator question:\nwhat is Ralph doing now?" in prompt
+    assert "tasks.json summary (task truth):" in prompt
+    assert "progress.md is narrative-only context" in prompt
+
+
+def test_get_ask_backend_defaults_to_codex(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(bot.ASK_BACKEND_ENV, raising=False)
+
+    backend = bot.get_ask_backend()
+
+    assert backend["name"] == "codex_cli"
+
+
+def test_get_ask_backend_can_switch_to_repo_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(bot.ASK_BACKEND_ENV, "repo_local")
+
+    backend = bot.get_ask_backend()
+
+    assert backend["name"] == "repo_local_single_shot"
 
 
 @pytest.mark.asyncio

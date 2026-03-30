@@ -162,6 +162,8 @@ mkdir -p "$LOG_DIR"
 RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
 METRICS_FILE="$LOG_DIR/metrics.csv"
 [ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
+PHASE_TIMINGS_FILE="$LOG_DIR/task_phase_timings.csv"
+[ ! -f "$PHASE_TIMINGS_FILE" ] && echo "timestamp,task_id,attempt,mode,phase,duration_s" > "$PHASE_TIMINGS_FILE"
 FINAL_STATE_STATUS="idle"
 FINAL_STATE_STEP="idle"
 FINAL_STATE_MESSAGE="All tasks complete"
@@ -315,6 +317,101 @@ if (
 
 print(json.dumps({"profile": profile, "targets": concrete_targets}, ensure_ascii=False))
 PY
+}
+
+extract_task_field() {
+    local task_json="$1"
+    local expression="$2"
+    printf '%s' "$task_json" | python3 -c "import json,sys; task=json.load(sys.stdin); ${expression}" 2>/dev/null
+}
+
+prepare_coder_prompt_for_task_json() {
+    local task_json="$1"
+    local task_context_files="$2"
+    local prompt_profile_json=""
+    local context_content=""
+    local prompt_payload=""
+    local previous_landed_commit=""
+    local previous_diff_bytes="0"
+    local previous_diff_summary=""
+    local previous_attempt_context=""
+    local previous_feedback=""
+    local previous_feedback_source=""
+    local previous_test_output=""
+
+    PROJECT_AGENTS=""
+    PROJECT_ARCHITECTURE=""
+    PROJECT_MEMORY_SYSTEM=""
+    MEMORY_CORE=""
+    MEMORY_RECENT=""
+    RELEVANT_CONTEXT=""
+    CODER_PROMPT_PROFILE_NAME="broad"
+    CODER_PROMPT_TARGETS=""
+    CODER_PROMPT_TOKENS=0
+    CODER_PROMPT_BUDGET=0
+
+    prompt_profile_json=$(coder_prompt_profile "$task_json" || echo '{"profile":"broad","targets":[]}')
+    CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
+    CODER_PROMPT_TARGETS=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
+    load_coder_prompt_project_context "$CODER_PROMPT_PROFILE_NAME"
+    PROJECT_AGENTS="$CODER_PROMPT_PROJECT_AGENTS"
+    PROJECT_ARCHITECTURE="$CODER_PROMPT_PROJECT_ARCHITECTURE"
+    PROJECT_MEMORY_SYSTEM="$CODER_PROMPT_PROJECT_MEMORY_SYSTEM"
+    MEMORY_CORE="$CODER_PROMPT_MEMORY_CORE"
+    MEMORY_RECENT="$CODER_PROMPT_MEMORY_RECENT"
+    RELEVANT_CONTEXT=$(build_relevant_context "$task_json" "$CODER_PROMPT_PROFILE_NAME" || true)
+
+    if [ "${FIX_RETRY:-0}" -gt 0 ] && [ -f "${DIFF_SNAPSHOT_FILE:-}" ]; then
+        if [ -f "${REVIEW_TARGET_FILE:-}" ]; then
+            previous_landed_commit=$(cat "$REVIEW_TARGET_FILE" 2>/dev/null || true)
+        fi
+        previous_diff_bytes=$(wc -c < "$DIFF_SNAPSHOT_FILE" 2>/dev/null | tr -d ' ' || echo "0")
+        previous_diff_bytes="${previous_diff_bytes:-0}"
+        if [ -f "${DIFF_SUMMARY_FILE:-}" ]; then
+            previous_diff_summary=$(cat "$DIFF_SUMMARY_FILE" 2>/dev/null || true)
+        fi
+        if [ -f "${RETRY_FEEDBACK_FILE:-}" ]; then
+            previous_feedback=$(cat "$RETRY_FEEDBACK_FILE" 2>/dev/null || true)
+        fi
+        if [ -f "${RETRY_FEEDBACK_SOURCE_FILE:-}" ]; then
+            previous_feedback_source=$(cat "$RETRY_FEEDBACK_SOURCE_FILE" 2>/dev/null || true)
+        fi
+        if [ -f "${RETRY_TEST_OUTPUT_FILE:-}" ]; then
+            previous_test_output=$(cat "$RETRY_TEST_OUTPUT_FILE" 2>/dev/null || true)
+        fi
+        previous_attempt_context=$(build_retry_attempt_context \
+            "$FIX_RETRY" \
+            "$previous_landed_commit" \
+            "$previous_diff_bytes" \
+            "$previous_diff_summary" \
+            "$previous_feedback_source" \
+            "$previous_feedback" \
+            "$previous_test_output")
+    fi
+
+    context_content=$(build_required_context_content "$task_context_files" "$CODER_PROMPT_PROFILE_NAME")
+    HUMAN_COMMENT=$(get_human_comment)
+    prompt_payload=$(build_coder_prompt_with_budget \
+        "$task_json" \
+        "$CODER_ROLE_FILE" \
+        "$CODER_ROLE_CONTENT" \
+        "$CODER_PROMPT_PROFILE_NAME" \
+        "$CODER_PROMPT_TARGETS" \
+        "$context_content" \
+        "$RELEVANT_CONTEXT" \
+        "$PROJECT_AGENTS" \
+        "$PROJECT_ARCHITECTURE" \
+        "$PROJECT_MEMORY_SYSTEM" \
+        "$MEMORY_CORE" \
+        "$MEMORY_RECENT" \
+        "${FIX_INSTRUCTIONS:-}" \
+        "$HUMAN_COMMENT" \
+        "$previous_attempt_context" \
+        "$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")" \
+        "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
+    CODER_PROMPT_TOKENS=$(printf '%s\n' "$prompt_payload" | sed -n '1s/^__TOKENS__://p')
+    CODER_PROMPT=$(printf '%s\n' "$prompt_payload" | sed '1d')
+    CODER_PROMPT_BUDGET=$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")
 }
 
 handoff_candidate_paths() {
@@ -625,6 +722,15 @@ log_metrics() {
     local files=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | wc -l | tr -d ' ')
     local cost=$(estimate_cost "$TASK_TOKENS")
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$quality,$cost,$runtime_success,$verified_success" >> "$METRICS_FILE"
+}
+
+log_phase_timing() {
+    local task_id="$1"
+    local attempt="$2"
+    local mode_name="$3"
+    local phase="$4"
+    local duration="$5"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$task_id,$attempt,$mode_name,$phase,$duration" >> "$PHASE_TIMINGS_FILE"
 }
 
 write_task_audit_artifact() {
@@ -1324,27 +1430,6 @@ log_coder_prompt_tokens() {
     log "🧮 Coder prompt tokens: profile=${prompt_profile} tokens=${prompt_tokens} limit=${prompt_budget}"
 }
 
-coder_ran_full_test_suite() {
-    local output_file="$1"
-    [ -f "$output_file" ] || return 1
-
-    python3 - "$output_file" <<'PY'
-from __future__ import annotations
-
-import re
-import sys
-from pathlib import Path
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").lower()
-patterns = (
-    r'(^|[\s`\'"])make\s+test\b',
-    r'(^|[\s`\'"])pytest\b',
-    r'python\s+-m\s+pytest\b',
-)
-
-raise SystemExit(0 if any(re.search(pattern, text, re.MULTILINE) for pattern in patterns) else 1)
-PY
-}
 
 build_required_context_content() {
     local context_files="${1:-}"
@@ -1512,6 +1597,113 @@ print("\n".join(lines), end="")
 PY
 }
 
+summarize_retry_test_output() {
+    local raw_output="${1:-}"
+
+    RALPH_RETRY_TEST_OUTPUT="$raw_output" python3 - <<'PY'
+import os
+import re
+
+raw = os.environ.get("RALPH_RETRY_TEST_OUTPUT", "")
+if not raw.strip():
+    raise SystemExit(0)
+
+lines = [line.rstrip() for line in raw.splitlines() if line.strip()]
+markers = ("FAIL", "FAILED", "ERROR", "AssertionError", "Traceback", "not ok", "tests failed")
+selected = []
+seen = set()
+
+for line in lines:
+    if any(marker in line for marker in markers):
+        normalized = line.strip()
+        if normalized not in seen:
+            selected.append(normalized)
+            seen.add(normalized)
+
+if not selected:
+    raise SystemExit(0)
+
+summary = "\n".join(selected[:12])
+if len(summary) > 2000:
+    summary = summary[:1997] + "..."
+print(summary)
+PY
+}
+
+build_retry_attempt_context() {
+    local previous_attempt_number="$1"
+    local previous_review_target_hash="$2"
+    local previous_diff_bytes="$3"
+    local previous_diff_summary="$4"
+    local previous_feedback_source="${5:-}"
+    local previous_feedback="${6:-}"
+    local previous_test_output="${7:-}"
+
+    PREVIOUS_ATTEMPT_NUMBER="$previous_attempt_number" \
+    PREVIOUS_REVIEW_TARGET_HASH="$previous_review_target_hash" \
+    PREVIOUS_DIFF_BYTES="$previous_diff_bytes" \
+    PREVIOUS_DIFF_SUMMARY="$previous_diff_summary" \
+    PREVIOUS_FEEDBACK_SOURCE="$previous_feedback_source" \
+    PREVIOUS_FEEDBACK="$previous_feedback" \
+    PREVIOUS_TEST_OUTPUT="$previous_test_output" \
+    python3 - <<'PY'
+import os
+import re
+
+attempt = os.environ.get("PREVIOUS_ATTEMPT_NUMBER", "").strip()
+review_hash = os.environ.get("PREVIOUS_REVIEW_TARGET_HASH", "").strip()
+diff_bytes = os.environ.get("PREVIOUS_DIFF_BYTES", "").strip() or "0"
+diff_summary = os.environ.get("PREVIOUS_DIFF_SUMMARY", "").strip()
+feedback_source = os.environ.get("PREVIOUS_FEEDBACK_SOURCE", "").strip()
+feedback = os.environ.get("PREVIOUS_FEEDBACK", "").strip()
+test_output = os.environ.get("PREVIOUS_TEST_OUTPUT", "").strip()
+
+sections = []
+
+if review_hash or diff_summary:
+    parts = []
+    if review_hash:
+        parts.append(f"Review target hash: {review_hash}")
+    parts.append(f"Previous diff snapshot: {diff_bytes} bytes")
+    if diff_summary:
+        parts.append("What changed in prior attempt:")
+        parts.append(diff_summary)
+    sections.append("\n".join(parts))
+
+if feedback:
+    label = {
+        "lead": "Lead review feedback from prior attempt:",
+        "verification": "Verification feedback from prior attempt:",
+    }.get(feedback_source, "Retry guidance from prior attempt:")
+    sections.append(f"{label}\n{feedback}")
+
+if test_output:
+    sections.append(f"Failed tests from prior attempt:\n{test_output}")
+
+reason_bits = []
+if feedback_source == "lead":
+    reason_bits.append("Tech Lead rejected the prior attempt")
+elif feedback_source == "verification":
+    reason_bits.append("closure verification still found an implementation gap")
+elif feedback:
+    reason_bits.append("the prior attempt still missed the task target")
+
+if test_output:
+    reason_bits.append("tests reported failures")
+
+reason_clause = " and ".join(reason_bits) if reason_bits else "the prior attempt did not satisfy the task"
+try_clause = re.sub(r"\s+", " ", feedback.replace("\n", " ")).strip()
+try_clause = try_clause.rstrip(".")
+if not try_clause:
+    try_clause = "make a materially different patch that addresses the failure context above"
+
+if attempt:
+    sections.append(f"Attempt {attempt} failed because {reason_clause}, try {try_clause} instead.")
+
+print("\n\n".join(section for section in sections if section.strip()))
+PY
+}
+
 build_coder_prompt() {
     local task_prompt_payload="$1"
     local coder_role_file="$2"
@@ -1527,9 +1719,7 @@ build_coder_prompt() {
     local memory_recent="${12}"
     local fix_instructions="${13:-}"
     local human_comment="${14:-}"
-    local previous_review_target_hash="${15:-}"
-    local previous_diff_bytes="${16:-0}"
-    local previous_diff_summary="${17:-}"
+    local previous_attempt_context="${15:-}"
     local coder_prompt=""
 
     if [ "$coder_prompt_profile_name" = "narrow" ]; then
@@ -1596,13 +1786,11 @@ $fix_instructions"
 $human_comment"
     fi
 
-    if [ -n "$previous_review_target_hash" ]; then
+    if [ -n "$previous_attempt_context" ]; then
         coder_prompt="$coder_prompt
 
 ## Previous Attempt Context
-Review target hash: $previous_review_target_hash
-Previous diff summary: ${previous_diff_summary:-unavailable}
-Previous diff snapshot: ${previous_diff_bytes} bytes"
+$previous_attempt_context"
     fi
 
     coder_prompt="$coder_prompt
@@ -1644,11 +1832,9 @@ build_coder_prompt_with_budget() {
     local memory_recent="${12}"
     local fix_instructions="${13:-}"
     local human_comment="${14:-}"
-    local previous_review_target_hash="${15:-}"
-    local previous_diff_bytes="${16:-0}"
-    local previous_diff_summary="${17:-}"
-    local prompt_budget="${18:-0}"
-    local prompt_max_chars="${19:-${RALPH_CODER_PROMPT_MAX_CHARS:-40000}}"
+    local previous_attempt_context="${15:-}"
+    local prompt_budget="${16:-0}"
+    local prompt_max_chars="${17:-${RALPH_CODER_PROMPT_MAX_CHARS:-40000}}"
     local coder_prompt=""
     local prompt_tokens=0
     local task_prompt_payload=""
@@ -1673,9 +1859,7 @@ build_coder_prompt_with_budget() {
         "$memory_recent" \
         "$fix_instructions" \
         "$human_comment" \
-        "$previous_review_target_hash" \
-        "$previous_diff_bytes" \
-        "$previous_diff_summary")
+        "$previous_attempt_context")
     prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
 
     if [ "$coder_prompt_profile_name" = "narrow" ]; then
@@ -1757,9 +1941,7 @@ coder_role_content:${RALPH_ROLE_MAX_CHARS_BROAD_FALLBACK:-5000}"
             "$memory_recent" \
             "$fix_instructions" \
             "$human_comment" \
-            "$previous_review_target_hash" \
-            "$previous_diff_bytes" \
-            "$previous_diff_summary")
+            "$previous_attempt_context")
         prompt_tokens=$(printf '%s' "$coder_prompt" | count_prompt_tokens)
     done <<< "$trim_plan"
 
@@ -2600,6 +2782,9 @@ stage_changed_paths() {
 
     while IFS= read -r path; do
         [ -n "$path" ] || continue
+        if handoff_is_runtime_owned_path "$path"; then
+            continue
+        fi
         if [ -e "$path" ] && [ ! -r "$path" ]; then
             continue
         fi
@@ -2824,8 +3009,6 @@ run_coder_agent() {
         "" \
         "$human_comment" \
         "" \
-        "0" \
-        "" \
         "$coder_prompt_budget" \
         "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
     coder_prompt_tokens=$(printf '%s\n' "$prompt_payload" | sed -n '1s/^__TOKENS__://p')
@@ -2842,12 +3025,6 @@ run_coder_agent() {
     run_codex "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "${CODEX_MODEL:-}"
     codex_exit=$?
     set -e
-
-    if coder_ran_full_test_suite "$coder_output"; then
-        log "❌ CODER VIOLATION: ran full test suite"
-        write_state "blocked" "" "coder_violation" "Coder ran full test suite"
-        return 1
-    fi
 
     CODER_TOKENS=$(extract_tokens "$coder_output")
     TASK_TOKENS=$(( ${TASK_TOKENS:-0} + ${CODER_TOKENS:-0} ))
@@ -3073,7 +3250,7 @@ run_pre_task_check() {
     local log_file="${1:-/tmp/ralph_test.log}"
 
     if should_run_full_pre_task_suite; then
-        PRETASK_CHECK_SCOPE="full test suite"
+        PRETASK_CHECK_SCOPE="make test"
         PRETASK_HEAL_DESCRIPTION="Before starting the task queue, make test is failing. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features."
         make test >"$log_file" 2>&1
     else
@@ -3081,6 +3258,303 @@ run_pre_task_check() {
         PRETASK_HEAL_DESCRIPTION="Before starting the task queue, fast Python validation is failing. Fix Python syntax errors and unresolved imports without changing tasks.json or progress.md. Do NOT add new features."
         run_fast_python_validation "$log_file"
     fi
+}
+
+benchmark_select_simple_tasks() {
+    python3 - <<'PY'
+import json
+from pathlib import Path
+
+data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
+selected = [
+    task["id"]
+    for task in data.get("tasks", [])
+    if task.get("status") == "pending" and task.get("complexity") == "simple"
+][:3]
+for task_id in selected:
+    print(task_id)
+PY
+}
+
+copy_repo_for_benchmark() {
+    local destination="$1"
+    mkdir -p "$destination"
+    tar -cf - . | (cd "$destination" && tar -xf -)
+}
+
+run_manual_benchmark_for_task() {
+    local task_id="$1"
+    local output_file="$2"
+    local task_json=""
+    local task_context_files=""
+    local task_complexity=""
+    local model=""
+    local coder_output=""
+    local manual_start=""
+    local manual_end=""
+    local manual_duration=""
+    local codex_status=0
+
+    task_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --task "$task_id" 2>/dev/null || echo "null")
+    [ "$task_json" != "null" ] && [ -n "$task_json" ] || return 1
+
+    TASK_JSON="$task_json"
+    TASK_ID="$task_id"
+    TASK_TITLE=$(extract_task_field "$task_json" "print(task.get('title', ''))" || echo "")
+    task_context_files=$(extract_task_field "$task_json" "print(' '.join(task.get('required_context', []) or []))" || echo "")
+    task_complexity=$(extract_task_field "$task_json" "print(task.get('complexity', 'moderate'))" || echo "moderate")
+    model=""
+    if [ "$task_complexity" = "simple" ]; then
+        model="$MINI_MODEL"
+    fi
+
+    FIX_RETRY=0
+    FIX_INSTRUCTIONS=""
+    CODER_ROLE_FILE=$(resolve_agent_prompt_file "coder" "AGENTS_CODER.md")
+    CODER_ROLE_CONTENT=$(read_file_for_prompt "$CODER_ROLE_FILE" "${RALPH_ROLE_MAX_CHARS:-8000}" || true)
+    prepare_coder_prompt_for_task_json "$task_json" "$task_context_files"
+
+    coder_output="/tmp/ralph_benchmark_manual_${task_id}_$$.txt"
+    manual_start=$(python3 -c 'import time; print(f"{time.time():.6f}")')
+    set +e
+    if [ -n "$model" ]; then
+        codex exec -s danger-full-access -m "$model" "$CODER_PROMPT" >"$coder_output" 2>&1
+    else
+        codex exec -s danger-full-access "$CODER_PROMPT" >"$coder_output" 2>&1
+    fi
+    codex_status=$?
+    set -e
+    manual_end=$(python3 -c 'import time; print(f"{time.time():.6f}")')
+    manual_duration=$(python3 - "$manual_start" "$manual_end" <<'PY'
+import sys
+start = float(sys.argv[1])
+end = float(sys.argv[2])
+print(f"{end - start:.6f}")
+PY
+)
+    log_phase_timing "$task_id" "1" "benchmark_manual" "coder" "$manual_duration"
+    python3 - "$output_file" "$task_id" "$TASK_TITLE" "$manual_duration" "$CODER_PROMPT_TOKENS" "$codex_status" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+entry = {
+    "task_id": sys.argv[2],
+    "title": sys.argv[3],
+    "coder_duration_s": float(sys.argv[4]),
+    "prompt_tokens": int(sys.argv[5] or 0),
+    "exit_code": int(sys.argv[6]),
+}
+with path.open("a", encoding="utf-8") as fh:
+    fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+PY
+    if [ "$codex_status" -eq 0 ]; then
+        python3 - "$task_id" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+task_id = sys.argv[1]
+path = Path("tasks.json")
+data = json.loads(path.read_text(encoding="utf-8"))
+for task in data.get("tasks", []):
+    if task.get("id") == task_id:
+        task["status"] = "verified_done"
+        break
+path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+    fi
+    rm -f "$coder_output"
+    return "$codex_status"
+}
+
+write_benchmark_report() {
+    local auto_dir="$1"
+    local manual_results_file="$2"
+    local report_file="$3"
+    local task_ids_csv="$4"
+    local auto_total_wall="$5"
+    local manual_total_wall="$6"
+
+    python3 - "$auto_dir" "$manual_results_file" "$report_file" "$task_ids_csv" "$auto_total_wall" "$manual_total_wall" <<'PY'
+from __future__ import annotations
+
+import csv
+import json
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+auto_dir = Path(sys.argv[1])
+manual_results_file = Path(sys.argv[2])
+report_file = Path(sys.argv[3])
+task_ids = [item for item in sys.argv[4].split(",") if item]
+auto_total_wall = float(sys.argv[5])
+manual_total_wall = float(sys.argv[6])
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+metrics_rows = [row for row in read_csv(auto_dir / "logs" / "metrics.csv") if row.get("task_id") in task_ids]
+timing_rows = [
+    row for row in read_csv(auto_dir / "logs" / "task_phase_timings.csv")
+    if row.get("task_id") in task_ids and row.get("mode") == "auto"
+]
+
+phase_totals: dict[str, float] = defaultdict(float)
+task_phase_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+for row in timing_rows:
+    duration = float(row.get("duration_s") or 0.0)
+    phase = row.get("phase") or "unknown"
+    phase_totals[phase] += duration
+    task_phase_totals[row.get("task_id") or ""][phase] += duration
+
+auto_tasks = []
+auto_total = 0.0
+for row in metrics_rows:
+    task_id = row["task_id"]
+    task_total = float(row.get("duration_s") or 0.0)
+    phases = task_phase_totals.get(task_id, {})
+    known = sum(phases.values())
+    auto_total += task_total
+    auto_tasks.append(
+        {
+            "task_id": task_id,
+            "status": row.get("status", ""),
+            "duration_s": task_total,
+            "attempts": int(row.get("attempts") or 0),
+            "coder_duration_s": round(phases.get("coder", 0.0), 3),
+            "test_duration_s": round(phases.get("test", 0.0), 3),
+            "lead_duration_s": round(phases.get("lead", 0.0), 3),
+            "other_duration_s": round(max(task_total - known, 0.0), 3),
+        }
+    )
+
+manual_tasks = []
+manual_total = 0.0
+if manual_results_file.exists():
+    for line in manual_results_file.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        manual_total += float(entry.get("coder_duration_s") or 0.0)
+        manual_tasks.append(entry)
+
+ratio = auto_total_wall / manual_total_wall if manual_total_wall > 0 else float("inf")
+report = {
+    "sample_size": len(task_ids),
+    "task_ids": task_ids,
+    "threshold_ratio": 5.0,
+    "auto": {
+        "total_duration_s": round(auto_total_wall, 3),
+        "task_total_duration_s": round(auto_total, 3),
+        "phase_totals_s": {
+            "coder": round(phase_totals.get("coder", 0.0), 3),
+            "test": round(phase_totals.get("test", 0.0), 3),
+            "lead": round(phase_totals.get("lead", 0.0), 3),
+            "other": round(max(auto_total_wall - sum(phase_totals.values()), 0.0), 3),
+        },
+        "tasks": auto_tasks,
+    },
+    "manual": {
+        "total_duration_s": round(manual_total_wall, 3),
+        "task_total_duration_s": round(manual_total, 3),
+        "tasks": manual_tasks,
+    },
+    "comparison": {
+        "auto_to_manual_ratio": round(ratio, 3),
+        "assertion": "pass" if ratio < 5.0 else "fail",
+    },
+}
+
+report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+if report["sample_size"] != 3:
+    raise SystemExit("benchmark requires exactly 3 simple tasks")
+if len(auto_tasks) != 3:
+    raise SystemExit("auto benchmark did not complete 3 tasks")
+if len(manual_tasks) != 3:
+    raise SystemExit("manual benchmark did not execute 3 tasks")
+if report["comparison"]["assertion"] != "pass":
+    raise SystemExit(f"auto/manual ratio too high: {ratio:.3f}")
+PY
+}
+
+run_auto_manual_benchmark() {
+    local task_ids=""
+    local task_ids_csv=""
+    local benchmark_root=""
+    local auto_dir=""
+    local manual_dir=""
+    local manual_results_file=""
+    local report_file="$LOG_DIR/benchmark_auto_vs_manual.json"
+    local auto_start=""
+    local auto_end=""
+    local auto_total_wall=""
+    local manual_start=""
+    local manual_end=""
+    local manual_total_wall=""
+
+    task_ids=$(benchmark_select_simple_tasks)
+    if [ "$(printf '%s\n' "$task_ids" | sed '/^$/d' | wc -l | tr -d ' ')" != "3" ]; then
+        echo "❌ Benchmark requires exactly 3 pending simple tasks in tasks.json"
+        exit 1
+    fi
+    task_ids_csv=$(printf '%s\n' "$task_ids" | paste -sd ',' -)
+
+    benchmark_root=$(mktemp -d "/tmp/ralph_benchmark_XXXXXX")
+    auto_dir="$benchmark_root/auto"
+    manual_dir="$benchmark_root/manual"
+    manual_results_file="$manual_dir/logs/manual_benchmark.jsonl"
+    mkdir -p "$auto_dir" "$manual_dir" "$manual_dir/logs"
+    copy_repo_for_benchmark "$auto_dir"
+    copy_repo_for_benchmark "$manual_dir"
+
+    log "⏱️ Benchmark: running auto mode for tasks [$task_ids_csv]"
+    auto_start=$(python3 -c 'import time; print(f"{time.time():.6f}")')
+    (
+        cd "$auto_dir"
+        export RALPH_PROJECT_DIR="$auto_dir"
+        "$RALPH_DIR/ralph.sh" auto
+    )
+    auto_end=$(python3 -c 'import time; print(f"{time.time():.6f}")')
+    auto_total_wall=$(python3 - "$auto_start" "$auto_end" <<'PY'
+import sys
+start = float(sys.argv[1])
+end = float(sys.argv[2])
+print(f"{end - start:.6f}")
+PY
+)
+
+    log "⏱️ Benchmark: running manual codex baseline for tasks [$task_ids_csv]"
+    manual_start=$(python3 -c 'import time; print(f"{time.time():.6f}")')
+    (
+        cd "$manual_dir"
+        export RALPH_PROJECT_DIR="$manual_dir"
+        while IFS= read -r task_id; do
+            [ -n "$task_id" ] || continue
+            run_manual_benchmark_for_task "$task_id" "$manual_results_file"
+        done <<EOF
+$task_ids
+EOF
+    )
+    manual_end=$(python3 -c 'import time; print(f"{time.time():.6f}")')
+    manual_total_wall=$(python3 - "$manual_start" "$manual_end" <<'PY'
+import sys
+start = float(sys.argv[1])
+end = float(sys.argv[2])
+print(f"{end - start:.6f}")
+PY
+)
+
+    write_benchmark_report "$auto_dir" "$manual_results_file" "$report_file" "$task_ids_csv" "$auto_total_wall" "$manual_total_wall"
+    log "📊 Benchmark report written to $report_file"
+    cat "$report_file"
 }
 
 # ─── Status ───
@@ -3153,6 +3627,11 @@ if [ "$MODE" = "re-audit-last" ]; then
     exit $?
 fi
 
+if [ "$MODE" = "benchmark" ]; then
+    run_auto_manual_benchmark
+    exit $?
+fi
+
 # ─── Redo ───
 if [ "$MODE" = "redo" ]; then
     if [ -z "$TARGET" ]; then
@@ -3205,7 +3684,7 @@ case "$MODE" in
         NEXT_ARGS=""
         ;;
     *)
-        echo "Usage: ralph.sh {task|handoff|phase|auto|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
+        echo "Usage: ralph.sh {task|handoff|phase|auto|benchmark|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
         exit 1
         ;;
 esac
@@ -3321,9 +3800,15 @@ print(task.get('role', 'coder'))
     DIFF_SNAPSHOT_FILE="/tmp/ralph_diff_${TASK_ID}.txt"
     DIFF_SUMMARY_FILE="/tmp/ralph_diff_summary_${TASK_ID}.txt"
     REVIEW_TARGET_FILE="/tmp/ralph_review_target_${TASK_ID}.txt"
+    RETRY_FEEDBACK_FILE="/tmp/ralph_retry_feedback_${TASK_ID}.txt"
+    RETRY_FEEDBACK_SOURCE_FILE="/tmp/ralph_retry_feedback_source_${TASK_ID}.txt"
+    RETRY_TEST_OUTPUT_FILE="/tmp/ralph_retry_tests_${TASK_ID}.txt"
     rm -f "$DIFF_SNAPSHOT_FILE"
     rm -f "$DIFF_SUMMARY_FILE"
     rm -f "$REVIEW_TARGET_FILE"
+    rm -f "$RETRY_FEEDBACK_FILE"
+    rm -f "$RETRY_FEEDBACK_SOURCE_FILE"
+    rm -f "$RETRY_TEST_OUTPUT_FILE"
 
     while [ "$FIX_RETRY" -le "$MAX_FIX_RETRIES" ] && [ "$TASK_DONE" = false ]; do
         CONTROL_STATUS=0
@@ -3449,64 +3934,11 @@ print(task.get('role', 'coder'))
             MEMORY_CORE=""
             MEMORY_RECENT=""
             RELEVANT_CONTEXT=""
-            PROMPT_PROFILE_JSON=""
             CODER_PROMPT_PROFILE_NAME="broad"
             CODER_PROMPT_TARGETS=""
             CODER_PROMPT_TOKENS=0
             CODER_PROMPT_BUDGET=0
-            PREVIOUS_LANDED_COMMIT=""
-            PREVIOUS_DIFF_BYTES="0"
-            PREVIOUS_DIFF_SUMMARY=""
-            HAS_PREVIOUS_REVIEW_TARGET=0
-            PROMPT_PROFILE_JSON=$(coder_prompt_profile "$TASK_JSON" || echo '{"profile":"broad","targets":[]}')
-            CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
-            CODER_PROMPT_TARGETS=$(printf '%s' "$PROMPT_PROFILE_JSON" | python3 -c "import json,sys; print('\n'.join(json.load(sys.stdin).get('targets', [])))" 2>/dev/null || echo "")
-            load_coder_prompt_project_context "$CODER_PROMPT_PROFILE_NAME"
-            PROJECT_AGENTS="$CODER_PROMPT_PROJECT_AGENTS"
-            PROJECT_ARCHITECTURE="$CODER_PROMPT_PROJECT_ARCHITECTURE"
-            PROJECT_MEMORY_SYSTEM="$CODER_PROMPT_PROJECT_MEMORY_SYSTEM"
-            MEMORY_CORE="$CODER_PROMPT_MEMORY_CORE"
-            MEMORY_RECENT="$CODER_PROMPT_MEMORY_RECENT"
-            RELEVANT_CONTEXT=$(build_relevant_context "$TASK_JSON" "$CODER_PROMPT_PROFILE_NAME" || true)
-            if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
-                if [ -f "$REVIEW_TARGET_FILE" ]; then
-                    PREVIOUS_LANDED_COMMIT=$(cat "$REVIEW_TARGET_FILE" 2>/dev/null || true)
-                    if [ -n "$PREVIOUS_LANDED_COMMIT" ]; then
-                        HAS_PREVIOUS_REVIEW_TARGET=1
-                    fi
-                fi
-                PREVIOUS_DIFF_BYTES=$(wc -c < "$DIFF_SNAPSHOT_FILE" 2>/dev/null | tr -d ' ' || echo "0")
-                PREVIOUS_DIFF_BYTES="${PREVIOUS_DIFF_BYTES:-0}"
-                if [ -f "$DIFF_SUMMARY_FILE" ]; then
-                    PREVIOUS_DIFF_SUMMARY=$(cat "$DIFF_SUMMARY_FILE" 2>/dev/null || true)
-                fi
-            fi
-
-            CONTEXT_CONTENT=$(build_required_context_content "$TASK_CONTEXT_FILES" "$CODER_PROMPT_PROFILE_NAME")
-            HUMAN_COMMENT=$(get_human_comment)
-            PROMPT_PAYLOAD=$(build_coder_prompt_with_budget \
-                "$TASK_JSON" \
-                "$CODER_ROLE_FILE" \
-                "$CODER_ROLE_CONTENT" \
-                "$CODER_PROMPT_PROFILE_NAME" \
-                "$CODER_PROMPT_TARGETS" \
-                "$CONTEXT_CONTENT" \
-                "$RELEVANT_CONTEXT" \
-                "$PROJECT_AGENTS" \
-                "$PROJECT_ARCHITECTURE" \
-                "$PROJECT_MEMORY_SYSTEM" \
-                "$MEMORY_CORE" \
-                "$MEMORY_RECENT" \
-                "$FIX_INSTRUCTIONS" \
-                "$HUMAN_COMMENT" \
-                "$PREVIOUS_LANDED_COMMIT" \
-                "$PREVIOUS_DIFF_BYTES" \
-                "$PREVIOUS_DIFF_SUMMARY" \
-                "$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")" \
-                "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
-            CODER_PROMPT_TOKENS=$(printf '%s\n' "$PROMPT_PAYLOAD" | sed -n '1s/^__TOKENS__://p')
-            CODER_PROMPT=$(printf '%s\n' "$PROMPT_PAYLOAD" | sed '1d')
-            CODER_PROMPT_BUDGET=$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")
+            prepare_coder_prompt_for_task_json "$TASK_JSON" "$TASK_CONTEXT_FILES"
             log_coder_prompt_tokens "$CODER_PROMPT_PROFILE_NAME" "$CODER_PROMPT_TOKENS" "$CODER_PROMPT_BUDGET"
             if ! check_prompt_budget "$CODER_PROMPT" "$CODER_PROMPT_BUDGET" "Coder prompt" "$CODER_PROMPT_TOKENS"; then
                 REASON="Coder prompt exceeded token budget"
@@ -3526,62 +3958,9 @@ print(task.get('role', 'coder'))
             run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
             CODEX_EXIT=$?
             set -e
-            if coder_ran_full_test_suite "$CODER_OUTPUT"; then
-                REASON="Coder ran full test suite"
-                TASK_DURATION=$(( $(date +%s) - TASK_START ))
-                log "❌ CODER VIOLATION: ran full test suite"
-                python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$REASON" >/dev/null 2>&1 || true
-                write_state "blocked" "" "coder_violation" "$REASON"
-                log_metrics "failed" "false" "false"
-                log "📋 TASK_FAIL task_id=$TASK_ID status=coder_violation runtime_success=false verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
-                AUDIT_WRITTEN=true
-                FINAL_STATE_STATUS="blocked"
-                FINAL_STATE_STEP="coder_violation"
-                FINAL_STATE_MESSAGE="$REASON"
-                FINAL_NOTIFY_MESSAGE="🚫 Ralph blocked: coder violated policy on $TASK_ID. Run /status for details."
-                QUEUE_EXIT_LOG="🚫 $TASK_ID blocked: coder ran full test suite."
-                FINAL_EXIT_CODE=1
-                TASK_DONE=true
-                TASK_BLOCKED=true
-                break
-            fi
             CONTROL_STATUS=0
-            check_control || CONTROL_STATUS=$?
-            if [ $CONTROL_STATUS -eq 1 ]; then
-                log "⏹ Stop signal received"
-                write_state "stopped" "" "" "Stopped by user"
-                notify "⏹ Ralph stopped by user"
-                cleanup
-                exit 0
-            elif [ $CONTROL_STATUS -eq 2 ] && { [ -z "$CONTROL_TARGET" ] || [ "$CONTROL_TARGET" = "$TASK_ID" ]; }; then
-                skip_current_task
-                TASK_DONE=true
-                TASK_SKIPPED=true
-                break
-            fi
-            CODER_TOKENS=$(extract_tokens "$CODER_OUTPUT")
-            TASK_TOKENS=$((TASK_TOKENS + ${CODER_TOKENS:-0}))
             SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
             log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
-
-            CURRENT_ATTEMPT_DIFF=$(task_scoped_current_diff)
-            if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && [ "$HAS_PREVIOUS_REVIEW_TARGET" -eq 1 ]; then
-                PRIOR_DIFF=$(cat "$DIFF_SNAPSHOT_FILE" 2>/dev/null || true)
-                if [ -z "$CURRENT_ATTEMPT_DIFF" ] || [ "$PRIOR_DIFF" = "$CURRENT_ATTEMPT_DIFF" ]; then
-                    REASON="Retry produced no new diff"
-                    TASK_DURATION=$(( $(date +%s) - TASK_START ))
-                    log "⚠️ No new changes in this attempt; diff identical to prior review"
-                    write_state "blocked" "" "idempotent_retry" "Retry produced no new diff"
-                    log_metrics "failed" "true" "false"
-                    log "📋 TASK_FAIL task_id=$TASK_ID status=idempotent_retry runtime_success=true verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                    RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "true" "false" "$TASK_DURATION"
-                    AUDIT_WRITTEN=true
-                    defer_blocked_task "$REASON"
-                    TASK_BLOCKED=true
-                    break
-                fi
-            fi
 
             # Commit any unstaged changes the coder left behind
             if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
@@ -3620,16 +3999,34 @@ print(task.get('role', 'coder'))
 
         CODER_DURATION=$(( $(date +%s) - CODER_START ))
         log "⏱️ Coder took ${CODER_DURATION}s"
+        log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "coder" "$CODER_DURATION"
 
         POST_HASH=$(git rev-parse HEAD)
         EFFECTIVE_REVIEW_BASE_HASH=$(resolve_git_ref "${REVIEW_BASE_HASH:-$PRE_HASH}")
         EFFECTIVE_REVIEW_TARGET_HASH=$(resolve_git_ref "${REVIEW_TARGET_HASH:-$POST_HASH}")
+        PRIOR_ATTEMPT_DIFF=""
+        if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
+            PRIOR_ATTEMPT_DIFF=$(cat "$DIFF_SNAPSHOT_FILE" 2>/dev/null || true)
+        fi
         if [ "$EFFECTIVE_REVIEW_BASE_HASH" = "$EFFECTIVE_REVIEW_TARGET_HASH" ] && [ -n "$(task_scoped_cached_name_only_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")" ]; then
             CURRENT_DIFF=$(task_scoped_cached_diff_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")
             CURRENT_DIFF_SUMMARY=$(summarize_cached_diff_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")
         else
             CURRENT_DIFF=$(task_scoped_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
             CURRENT_DIFF_SUMMARY=$(summarize_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
+        fi
+        if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && { [ -z "$CURRENT_DIFF" ] || [ "$PRIOR_ATTEMPT_DIFF" = "$CURRENT_DIFF" ]; }; then
+            REASON="Retry produced identical diff to prior attempt"
+            TASK_DURATION=$(( $(date +%s) - TASK_START ))
+            log "⚠️ Retry diff matched the prior attempt; blocking before attempt $((CURRENT_ATTEMPT + 1))"
+            write_state "blocked" "" "idempotent_retry" "$REASON"
+            log_metrics "failed" "true" "false"
+            log "📋 TASK_FAIL task_id=$TASK_ID status=idempotent_retry runtime_success=true verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "true" "false" "$TASK_DURATION"
+            AUDIT_WRITTEN=true
+            defer_blocked_task "$REASON"
+            TASK_BLOCKED=true
+            break
         fi
         printf '%s' "$CURRENT_DIFF" > "$DIFF_SNAPSHOT_FILE"
         printf '%s' "$CURRENT_DIFF_SUMMARY" > "$DIFF_SUMMARY_FILE"
@@ -3645,7 +4042,17 @@ print(task.get('role', 'coder'))
         else
             GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
+        TEST_START=$(date +%s)
         TEST_OUTPUT=$(make test 2>&1 | tail -40 || echo "tests failed")
+        TEST_DURATION=$(( $(date +%s) - TEST_START ))
+        log "⏱️ Test gate took ${TEST_DURATION}s"
+        log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
+        RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
+        if [ -n "$RETRY_TEST_OUTPUT" ]; then
+            printf '%s' "$RETRY_TEST_OUTPUT" > "$RETRY_TEST_OUTPUT_FILE"
+        else
+            rm -f "$RETRY_TEST_OUTPUT_FILE"
+        fi
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
@@ -3722,6 +4129,7 @@ Do not ask the coder to update tasks.json, progress.md, final commits, final sta
             log "💰 [LEAD]  Tokens: $(format_tokens "$LEAD_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
             LEAD_DURATION=$(( $(date +%s) - LEAD_START ))
             log "⏱️ Tech Lead took ${LEAD_DURATION}s"
+            log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "lead" "$LEAD_DURATION"
             REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
             parse_lead_review_json
             validate_lead_review_json
@@ -3787,6 +4195,8 @@ print('?')
 
                 if [ "${VERIFICATION_RESULT:-needs_human_review}" = "fail_fix" ]; then
                     FIX_INSTRUCTIONS="$VERIFICATION_REASON"
+                    printf '%s' "$FIX_INSTRUCTIONS" > "$RETRY_FEEDBACK_FILE"
+                    printf '%s' "verification" > "$RETRY_FEEDBACK_SOURCE_FILE"
                     FIX_RETRY=$((FIX_RETRY+1))
                     notify "🔧 $TASK_ID verification blocked closure ($FIX_RETRY/$MAX_FIX_RETRIES)"
                     log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: $FIX_INSTRUCTIONS"
@@ -3897,6 +4307,8 @@ except Exception:
                     log "🧹 Sanitized Tech Lead fix instructions: removed runtime-owned bookkeeping/diff demands"
                 fi
 
+                printf '%s' "$FIX_INSTRUCTIONS" > "$RETRY_FEEDBACK_FILE"
+                printf '%s' "lead" > "$RETRY_FEEDBACK_SOURCE_FILE"
                 FIX_RETRY=$((FIX_RETRY+1))
                 notify "🔧 $TASK_ID fix needed ($FIX_RETRY/$MAX_FIX_RETRIES)"
                 log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: $FIX_INSTRUCTIONS"

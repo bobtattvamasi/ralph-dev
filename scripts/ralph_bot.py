@@ -51,6 +51,11 @@ RUNTIME = SimpleNamespace(
 ASK_USAGE_TEXT = "Usage: /ask <question>\nExample: /ask what is Ralph doing now?"
 ASK_MAX_QUESTION_CHARS = 280
 ASK_MAX_RESPONSE_CHARS = 1200
+ASK_STREAM_CHUNK_CHARS = 700
+ASK_BACKEND_ENV = "RALPH_ASK_BACKEND"
+ASK_CODEX_MODEL_ENV = "RALPH_ASK_CODEX_MODEL"
+ASK_CODEX_TIMEOUT_ENV = "RALPH_ASK_TIMEOUT_SEC"
+ASK_CODEX_TIMEOUT_SEC = 90
 
 HOT_RELOAD_EXPORTS = [
     "read_state",
@@ -286,7 +291,7 @@ def build_repo_local_ask_backend() -> dict[str, object]:
         "mode": "single_shot",
         "max_question_chars": ASK_MAX_QUESTION_CHARS,
         "max_response_chars": ASK_MAX_RESPONSE_CHARS,
-        "answer": answer_repo_local_question,
+        "stream_answer": stream_repo_local_answer,
     }
 
 
@@ -307,6 +312,189 @@ def answer_repo_local_question(question: str) -> str:
         f"{tasks_summary}"
     )
     return response[:ASK_MAX_RESPONSE_CHARS].rstrip()
+
+
+async def stream_repo_local_answer(question: str) -> None:
+    """Send the repo-local fallback answer as a single bounded reply."""
+    await safe_send(answer_repo_local_question(question))
+
+
+def get_ask_timeout_sec() -> int:
+    """Return the bounded timeout for /ask Codex runs."""
+    raw = os.environ.get(ASK_CODEX_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return ASK_CODEX_TIMEOUT_SEC
+    try:
+        value = int(raw)
+    except ValueError:
+        return ASK_CODEX_TIMEOUT_SEC
+    return max(15, value)
+
+
+def get_ask_backend() -> dict[str, object]:
+    """Resolve the operator /ask backend from repo-local configuration."""
+    backends = {
+        "codex": build_codex_cli_ask_backend,
+        "repo_local": build_repo_local_ask_backend,
+    }
+    backend_name = os.environ.get(ASK_BACKEND_ENV, "codex").strip().lower() or "codex"
+    backend_factory = backends.get(backend_name, build_codex_cli_ask_backend)
+    return backend_factory()
+
+
+def build_codex_cli_ask_backend() -> dict[str, object]:
+    """Return the Codex-backed /ask contract with swappable backend metadata."""
+    return {
+        "name": "codex_cli",
+        "mode": "single_shot_stream",
+        "max_question_chars": ASK_MAX_QUESTION_CHARS,
+        "max_response_chars": ASK_MAX_RESPONSE_CHARS,
+        "stream_answer": stream_codex_cli_answer,
+    }
+
+
+def build_ask_project_context() -> str:
+    """Build the repo-local snapshot injected into the /ask Codex prompt."""
+    state = read_state()
+    state_status = state.get("status", "idle")
+    current_task = state.get("current_task") or "none"
+    current_phase_step = state.get("current_phase_step") or "none"
+    tasks_summary = get_tasks_summary()[:1200].strip()
+    context_lines = [
+        f"Project directory: {PROJECT_DIR}",
+        f"Ralph status: {state_status}",
+        f"Current task: {current_task}",
+        f"Current phase step: {current_phase_step}",
+        "",
+        "tasks.json summary (task truth):",
+        tasks_summary or "No tasks summary available",
+        "",
+        "progress.md is narrative-only context and should not override tasks.json.",
+    ]
+    return "\n".join(context_lines).strip()
+
+
+def build_codex_ask_prompt(question: str) -> str:
+    """Render the bounded prompt for Codex-backed /ask analysis."""
+    bounded_question = " ".join(question.split())[:ASK_MAX_QUESTION_CHARS]
+    project_context = build_ask_project_context()
+    return (
+        "You are answering a Telegram /ask operator question about the current Ralph repository.\n"
+        "Work from the current repo state in the working directory.\n"
+        "Read code, tasks.json, and lightweight context as needed before answering.\n"
+        "Use tasks.json as task truth. Use progress.md only as narrative context if needed.\n"
+        "Keep the answer concise, concrete, and operationally useful.\n"
+        "If something is uncertain, say so explicitly.\n\n"
+        "Operator question:\n"
+        f"{bounded_question}\n\n"
+        "Repo-local context:\n"
+        f"{project_context}\n"
+    )
+
+
+def build_codex_ask_command(prompt: str) -> list[str]:
+    """Build the Codex CLI command for one bounded /ask run."""
+    command = ["codex", "exec", "-s", "danger-full-access"]
+    model = os.environ.get(ASK_CODEX_MODEL_ENV, "").strip()
+    if model:
+        command.extend(["-m", model])
+    command.append(prompt)
+    return command
+
+
+async def emit_ask_stream_chunk(chunk: str) -> None:
+    """Send one streamed /ask chunk after trimming empty content."""
+    text = chunk.strip()
+    if not text:
+        return
+    await send_split_message(text)
+
+
+async def stream_codex_cli_answer(question: str) -> None:
+    """Run a bounded Codex CLI analysis and stream its output back to Telegram."""
+    prompt = build_codex_ask_prompt(question)
+    command = build_codex_ask_command(prompt)
+    timeout_sec = get_ask_timeout_sec()
+
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=str(PROJECT_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except OSError as exc:
+        await safe_send(f"❌ /ask backend failed to start Codex: {exc}")
+        return
+
+    await safe_send("🧠 Codex is analyzing the repo...")
+
+    stdout = process.stdout
+    if stdout is None:
+        process.kill()
+        process.wait()
+        await safe_send("❌ /ask backend returned no stdout pipe")
+        return
+
+    chunks_sent_chars = 0
+    buffer = ""
+    timed_out = False
+    deadline = time.monotonic() + timeout_sec
+
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            timed_out = True
+            break
+        try:
+            line = await asyncio.wait_for(asyncio.to_thread(stdout.readline), timeout=remaining)
+        except asyncio.TimeoutError:
+            timed_out = True
+            break
+
+        if line == "":
+            break
+
+        if chunks_sent_chars >= ASK_MAX_RESPONSE_CHARS:
+            continue
+
+        allowed = ASK_MAX_RESPONSE_CHARS - chunks_sent_chars
+        snippet = line[:allowed]
+        if not snippet:
+            continue
+        buffer += snippet
+
+        if len(buffer) >= ASK_STREAM_CHUNK_CHARS or buffer.endswith("\n\n"):
+            rendered = buffer.rstrip()
+            if rendered:
+                await emit_ask_stream_chunk(rendered)
+                chunks_sent_chars += len(rendered)
+            buffer = ""
+
+    if timed_out:
+        process.kill()
+        process.wait()
+        if buffer.strip():
+            rendered = buffer.rstrip()
+            await emit_ask_stream_chunk(rendered)
+            chunks_sent_chars += len(rendered)
+        await safe_send(f"⏱ /ask timed out after {timeout_sec}s")
+        return
+
+    exit_code = await asyncio.to_thread(process.wait)
+    if buffer.strip() and chunks_sent_chars < ASK_MAX_RESPONSE_CHARS:
+        rendered = buffer.rstrip()
+        await emit_ask_stream_chunk(rendered)
+        chunks_sent_chars += len(rendered)
+
+    if exit_code != 0:
+        await safe_send(f"❌ /ask Codex exited with code {exit_code}")
+        return
+
+    if chunks_sent_chars == 0:
+        await safe_send("⚠️ /ask returned an empty Codex response")
 
 
 def get_log_tail(n: int = 15) -> str:
@@ -1313,16 +1501,15 @@ async def cmd_trust_report() -> None:
 
 
 async def cmd_ask(prompt: str) -> None:
-    """Handle the narrow /ask entrypoint through the repo-local single-shot backend."""
+    """Handle /ask through the configured single-shot analysis backend."""
     set_send_context("/ask")
     question = prompt.strip()
     if not question:
         await safe_send(ASK_USAGE_TEXT)
         return
-    backend = build_repo_local_ask_backend()
-    answer_fn = backend["answer"]
-    response = answer_fn(question)
-    await safe_send(response)
+    backend = get_ask_backend()
+    stream_answer = backend["stream_answer"]
+    await stream_answer(question)
 
 
 async def cmd_reload() -> None:
