@@ -2298,9 +2298,9 @@
         "Modular design: LLM backend can be swapped (Codex \u2192 Claude \u2192 local LLM)"
       ],
       "dependencies": [],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "Code exists in commit 3fc13bc. Tech Lead false negative \u2014 unicode cleanup diff masked real changes.",
+      "status": "verified_done",
+      "completed_at": "2026-03-30T15:30:47.286343",
+      "revision_notes": "Verified: /ask command works with Codex backend, tests pass, streaming works",
       "timeout": 300,
       "role": "coder"
     },
