@@ -2342,7 +2342,7 @@
         "The template explicitly tells the journalist role to read blog_state.json for numbering"
       ],
       "dependencies": [],
-      "status": "--status",
+      "status": "pending",
       "completed_at": null,
       "revision_notes": "verified_done",
       "timeout": 300,
