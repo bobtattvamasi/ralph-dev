@@ -2120,6 +2120,8 @@ def test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt(tmp_path:
     assert "⚠️ Retry diff matched the prior attempt; blocking before attempt 3" in result.stdout
     assert result.stdout.count("🤖 CODER — Attempt") == 2
     assert result.stdout.count("👔 TECH LEAD — Reviewing") == 1
+    assert "🤖 CODER — Attempt 3/3" not in result.stdout
+    assert "🔧 Fix 2/2:" not in result.stdout
 
 
 def test_ralph_blocks_bookkeeping_only_closure(tmp_path: Path) -> None:
