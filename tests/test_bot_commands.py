@@ -17,6 +17,7 @@ def bot_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     (project_dir / "logs").mkdir()
+    (project_dir / "scripts").mkdir()
     (project_dir / "tasks.json").write_text(
         json.dumps(
             {
@@ -35,6 +36,16 @@ def bot_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object
             indent=2,
         )
         + "\n",
+        encoding="utf-8",
+    )
+    (project_dir / "scripts" / "ralph_bot.py").write_text(
+        "def cmd_ask(prompt: str) -> None:\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    (project_dir / "ralph.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n",
         encoding="utf-8",
     )
 

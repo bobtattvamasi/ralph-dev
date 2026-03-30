@@ -486,11 +486,19 @@ def _build_code_snippet(path: Path, start_line: int, end_line: int) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return f"File: {path.name}\n(unavailable)"
+        return f"File: {path}\n(unavailable)"
 
+    if not lines:
+        return f"File: {path}\n(empty file)"
+
+    line_count = len(lines)
     start_idx = max(0, start_line - 1)
-    end_idx = min(len(lines), end_line)
+    if start_idx >= line_count:
+        start_idx = max(0, line_count - ASK_CODE_SNIPPET_MAX_LINES)
+    end_idx = min(line_count, max(end_line, start_idx + ASK_CODE_SNIPPET_MAX_LINES))
     snippet_lines = lines[start_idx:end_idx][:ASK_CODE_SNIPPET_MAX_LINES]
+    if not snippet_lines:
+        return f"File: {path}\n(no snippet lines available)"
     numbered = "\n".join(f"{start_idx + index + 1}: {line}" for index, line in enumerate(snippet_lines))
     return f"File: {path}\n{numbered}".strip()
 
