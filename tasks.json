@@ -2727,9 +2727,9 @@
         "Tests verify context injection"
       ],
       "dependencies": [],
-      "status": "blocked",
-      "completed_at": null,
-      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap.",
+      "status": "verified_done",
+      "completed_at": "2026-03-30T16:07:03.282008",
+      "revision_notes": "Code exists: LLMProvider.query() + context injection + tests. Tech Lead false negative on incremental diff (BUG-01).",
       "timeout": 300,
       "role": "coder"
     },
@@ -2778,7 +2778,7 @@
       "role": "coder"
     },
     {
-      "id": "R12-02",
+      "id": "R12-03",
       "phase": "R12",
       "category": "feature",
       "priority": "high",
@@ -2794,9 +2794,7 @@
         "Tests cover /status with mocked provider",
         "Output formatted as readable Telegram message"
       ],
-      "dependencies": [
-        "R12-01b"
-      ],
+      "dependencies": [],
       "status": "pending",
       "completed_at": null,
       "revision_notes": "Modular design: StatusProvider can be swapped for Claude/local backends later",
