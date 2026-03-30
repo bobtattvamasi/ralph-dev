@@ -897,7 +897,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
     """Send message via Telegram API."""
     import urllib.request
 
-    global LAST_SEND_ERROR
+    global LAST_SEND_ERROR, CURRENT_HANDLER_SEND_COUNT
     if not text:
         return
 
@@ -929,6 +929,8 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
                 headers={"Content-Type": "application/json"},
             )
             urllib.request.urlopen(req, timeout=10)
+            if CURRENT_HANDLER_NAME:
+                CURRENT_HANDLER_SEND_COUNT += 1
         except Exception as exc1:  # noqa: BLE001
             _log_send_error(exc1, payload)
             retry_payload: dict[str, object] = {
@@ -946,17 +948,16 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
                     headers={"Content-Type": "application/json"},
                 )
                 urllib.request.urlopen(req, timeout=10)
+                if CURRENT_HANDLER_NAME:
+                    CURRENT_HANDLER_SEND_COUNT += 1
             except Exception as exc2:  # noqa: BLE001
                 _log_send_error(exc2, retry_payload)
 
 
 async def safe_send(text: str, reply_markup: dict | None = None) -> None:
     """Best-effort message send; never raises to caller."""
-    global CURRENT_HANDLER_SEND_COUNT
     try:
         await send_message(prepare_html_message(text), reply_markup=reply_markup)
-        if CURRENT_HANDLER_NAME:
-            CURRENT_HANDLER_SEND_COUNT += 1
     except Exception as exc:  # noqa: BLE001
         log_bot(f"Send error: {exc}")
 

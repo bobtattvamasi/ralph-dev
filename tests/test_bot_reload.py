@@ -8,7 +8,7 @@ import json
 import urllib.request
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -113,14 +113,16 @@ async def test_handle_update_logs_command_entry_exit_and_send_count(
     monkeypatch, capsys: pytest.CaptureFixture[str]
 ):
     bot = load_bot_module()
-    send_message_mock = AsyncMock()
+    urlopen_mock = MagicMock()
 
     async def fake_cmd_status() -> None:
         await bot.safe_send("first")
         await bot.safe_send("second")
 
-    monkeypatch.setattr(bot, "send_message", send_message_mock)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen_mock)
     monkeypatch.setattr(bot, "cmd_status", fake_cmd_status)
+    monkeypatch.setattr(bot, "CHAT_ID", "123")
+    monkeypatch.setattr(bot, "API", "https://fake")
 
     await bot.handle_update({"message": {"text": "/status", "from": {"id": 123}}})
 
@@ -129,7 +131,7 @@ async def test_handle_update_logs_command_entry_exit_and_send_count(
     assert "[bot] Handler: cmd_status START" in captured.err
     assert "[bot] Handler: cmd_status END (took " in captured.err
     assert "sent 2 messages" in captured.err
-    assert send_message_mock.await_count == 2
+    assert urlopen_mock.call_count == 2
 
 
 @pytest.mark.asyncio

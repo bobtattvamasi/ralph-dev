@@ -1,0 +1,24 @@
+{
+  "task_id": "BUG-03",
+  "title": "Bot logging: add command entry/exit and handler timing",
+  "status": "blocked",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "Retry produced identical diff to prior attempt",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"BUG-03\",\"summary\":\"Добавлен traceback для ошибок в poll_updates, но требуемое логирование команд и таймингов обработчиков не реализовано.\",\"quality_score\":42,\"issues\":[\"В diff нет реализации логов получения команды, входа/выхода обработчика и длительности выполнения для bot-команд из acceptance_criteria.\"],\"fix_instructions\":\"В `scripts/ralph_bot.py` и `src/ralph/resources/scripts/ralph_bot.py` добавь обёртку вокруг выполнения командного handler'а, чтобы при обработке `/status` и других команд логировались: `CMD: /<name> from user_<id>`, `Handler: <handler_name> START`, `Handler: <handler_name> END (took Xs, sent N messages)`, а при исключении печатались лог ошибки и traceback без изменения текущего поведения команд.\",\"alert_reason\":\"\",\"progress_note\":\"Traceback logging for update-handler failures is covered by tests, but the main observability behavior requested by BUG-03 is still missing.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 1664,
+  "timestamp": "2026-03-30T16:22:38Z",
+  "runtime_success": true,
+  "verified_success": false
+}

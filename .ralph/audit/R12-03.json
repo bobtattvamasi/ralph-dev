@@ -1,0 +1,24 @@
+{
+  "task_id": "R12-03",
+  "title": "Complete AGENTS_JOURNALIST.md with concrete examples and context rules",
+  "status": "blocked",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "Retry produced identical diff to prior attempt",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R12-03\",\"summary\":\"Шаблон уточняет Channel Context и numbering через blog_state.json, но в показанном diff нет секции с хорошим примером поста и нет секции с плохим примером поста с объяснением.\",\"quality_score\":83,\"issues\":[\"Не выполнены acceptance criteria про `good post example section` и `bad post example section with explanation` в `templates/AGENTS_JOURNALIST.md`.\"],\"fix_instructions\":\"Добавь в `templates/AGENTS_JOURNALIST.md` две явные секции: одну с хорошим примером поста, вторую с плохим примером поста и коротким объяснением, почему он плохой; этого достаточно, чтобы задача стала одобряемой.\",\"alert_reason\":\"\",\"progress_note\":\"\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 2,
+  "duration_sec": 828,
+  "timestamp": "2026-03-30T09:29:48Z",
+  "runtime_success": true,
+  "verified_success": false
+}

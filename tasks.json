@@ -2842,7 +2842,7 @@
       "dependencies": [],
       "status": "blocked",
       "completed_at": null,
-      "revision_notes": "BUG-03 failed after 2 retries",
+      "revision_notes": "Retry produced identical diff to prior attempt",
       "timeout": 300,
       "role": "coder"
     },
@@ -2867,6 +2867,25 @@
       "completed_at": null,
       "revision_notes": "Discovered: BUG-03 wasted 26s on web search for local /exit pattern. Root cause: no local-first policy for simple tasks.",
       "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "BUG-04",
+      "phase": "BUG",
+      "title": "Fix: operator /comment not reaching coder prompt",
+      "description": "ralph_control.json comment written by bot is not injected into coder prompt. Root cause: either key mismatch (value vs comment body), noclobber blocking write, or ralph.sh not reading the comment field correctly.",
+      "complexity": "simple",
+      "risk": "low",
+      "priority": "high",
+      "acceptance_criteria": [
+        "Bot /comment text writes to ralph_control.json and ralph.sh reads it into coder prompt",
+        "Manual test: write comment, run task, verify comment appears in codex prompt log",
+        "Existing tests pass"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "timeout": 180,
       "role": "coder"
     }
   ]
