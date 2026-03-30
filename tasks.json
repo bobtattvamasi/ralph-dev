@@ -2727,9 +2727,9 @@
         "Tests verify context injection"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "blocked",
       "completed_at": null,
-      "revision_notes": "Can proceed with Codex-only implementation",
+      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap.",
       "timeout": 300,
       "role": "coder"
     },
@@ -2774,6 +2774,32 @@
       "status": "pending",
       "completed_at": null,
       "revision_notes": "Discovered during R12-01 review cycle",
+      "timeout": 300,
+      "role": "coder"
+    },
+    {
+      "id": "R12-02",
+      "phase": "R12",
+      "category": "feature",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Bot: /status command with backend provider info",
+      "description": "Implement /status that shows: backend name (Codex), model, session, rate limits, usage. Architecture: abstract StatusProvider interface so future backends (Claude, local) can plug in their own status.",
+      "acceptance_criteria": [
+        "/status routes to cmd_status handler",
+        "Shows Codex info: model, session, rate limits (from codex status output)",
+        "StatusProvider interface defined (backend-agnostic)",
+        "CodexStatusProvider implements StatusProvider",
+        "Tests cover /status with mocked provider",
+        "Output formatted as readable Telegram message"
+      ],
+      "dependencies": [
+        "R12-01b"
+      ],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "Modular design: StatusProvider can be swapped for Claude/local backends later",
       "timeout": 300,
       "role": "coder"
     }
