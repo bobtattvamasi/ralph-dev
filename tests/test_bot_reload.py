@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import urllib.request
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import AsyncMock
@@ -148,4 +150,36 @@ async def test_handle_update_logs_exception_with_traceback(
     assert "[bot] Handler: cmd_status START" in captured.err
     assert "[bot] Handler: cmd_status ERROR (took " in captured.err
     assert "[bot] Exception in cmd_status: RuntimeError: boom" in captured.err
+    assert "Traceback (most recent call last):" in captured.err
+
+
+@pytest.mark.asyncio
+async def test_poll_updates_logs_traceback_for_update_handler_errors(
+    monkeypatch, capsys: pytest.CaptureFixture[str]
+):
+    bot = load_bot_module()
+
+    class FakeResponse:
+        def read(self) -> bytes:
+            return json.dumps({"result": [{"update_id": 1, "message": {"text": "/status"}}]}).encode("utf-8")
+
+    responses = iter([FakeResponse(), asyncio.CancelledError()])
+
+    def fake_urlopen(url: str, timeout: int = 35):
+        response = next(responses)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    async def fake_handle_update(update: dict) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(bot, "handle_update", fake_handle_update)
+
+    with pytest.raises(asyncio.CancelledError):
+        await bot.poll_updates()
+
+    captured = capsys.readouterr()
+    assert "[bot] Handler error: boom" in captured.err
     assert "Traceback (most recent call last):" in captured.err

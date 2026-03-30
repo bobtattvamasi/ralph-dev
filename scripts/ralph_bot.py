@@ -1914,6 +1914,7 @@ async def poll_updates() -> None:
                     await handle_update(update)
                 except Exception as exc:  # noqa: BLE001
                     log_bot(f"Handler error: {exc}")
+                    traceback.print_exc(file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
             consecutive_errors += 1
             delay = min(backoff_seconds, 60)
