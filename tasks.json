@@ -2771,9 +2771,9 @@
         "Consider: Lead should read actual files, not just diff"
       ],
       "dependencies": [],
-      "status": "pending",
-      "completed_at": null,
-      "revision_notes": "Discovered during R12-01 review cycle",
+      "status": "verified_done",
+      "completed_at": "2026-03-30T16:15:03.382424",
+      "revision_notes": "Fixed: TASK_START_COMMIT captures task baseline, REVIEW_BASE_HASH uses it for cumulative diff",
       "timeout": 300,
       "role": "coder"
     },
