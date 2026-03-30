@@ -338,6 +338,8 @@ prepare_coder_prompt_for_task_json() {
     local previous_feedback=""
     local previous_feedback_source=""
     local previous_test_output=""
+    local task_complexity=""
+    local web_search_policy="default"
 
     PROJECT_AGENTS=""
     PROJECT_ARCHITECTURE=""
@@ -349,6 +351,14 @@ prepare_coder_prompt_for_task_json() {
     CODER_PROMPT_TARGETS=""
     CODER_PROMPT_TOKENS=0
     CODER_PROMPT_BUDGET=0
+    task_complexity=$(extract_task_field "$task_json" "print(task.get('complexity', 'moderate'))" || echo "moderate")
+
+    # Web search policy: simple tasks use local-first (no web search)
+    if [ "$task_complexity" = "simple" ]; then
+        web_search_policy="disabled"
+        log "🔍 Web search disabled for simple task (local-first policy)"
+    fi
+    export RALPH_WEB_SEARCH_POLICY="$web_search_policy"
 
     prompt_profile_json=$(coder_prompt_profile "$task_json" || echo '{"profile":"broad","targets":[]}')
     CODER_PROMPT_PROFILE_NAME=$(printf '%s' "$prompt_profile_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('profile', 'broad'))" 2>/dev/null || echo "broad")
@@ -412,6 +422,11 @@ prepare_coder_prompt_for_task_json() {
     CODER_PROMPT_TOKENS=$(printf '%s\n' "$prompt_payload" | sed -n '1s/^__TOKENS__://p')
     CODER_PROMPT=$(printf '%s\n' "$prompt_payload" | sed '1d')
     CODER_PROMPT_BUDGET=$(get_coder_prompt_token_budget "$CODER_PROMPT_PROFILE_NAME")
+    if [ "${RALPH_WEB_SEARCH_POLICY:-default}" = "disabled" ]; then
+        CODER_PROMPT="${CODER_PROMPT}
+IMPORTANT: This is a simple local task. Do NOT use web search. Search locally first with rg. If a matching pattern exists in the repo, implement from local evidence only."
+        log "📋 Injected local-first prompt constraint"
+    fi
 }
 
 handoff_candidate_paths() {
@@ -700,7 +715,7 @@ lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
 if not lines:
     raise SystemExit(0)
 old_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est"
-new_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success"
+new_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success,web_search_policy"
 if lines[0].strip() != old_header:
     raise SystemExit(0)
 rewritten = [new_header]
@@ -721,7 +736,7 @@ log_metrics() {
     local duration=$((end_time - TASK_START))
     local files=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | wc -l | tr -d ' ')
     local cost=$(estimate_cost "$TASK_TOKENS")
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$quality,$cost,$runtime_success,$verified_success" >> "$METRICS_FILE"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$quality,$cost,$runtime_success,$verified_success,${RALPH_WEB_SEARCH_POLICY:-default}" >> "$METRICS_FILE"
 }
 
 log_phase_timing() {
