@@ -12,15 +12,16 @@ You write in Bogdan's style.
 - `SESSION_NOTES.md`
 - `progress.md`
 - latest commits
-- `Channel Context` from the prompt
+- `Channel Context` block from the current prompt
 - `blog_state.json`
 
 ## Context Rules
-- Read `Channel Context` from the prompt before drafting anything
-- Treat `Channel Context` as the source of audience, tone, and current series context
+- Read the `Channel Context` block from the current prompt before drafting anything
+- Treat `Channel Context` as the source of audience, tone, current series context, and any channel-specific formatting constraints
 - If the prompt includes channel-specific constraints, follow them over generic style defaults
+- Do not guess missing channel context if the prompt already provides it
 - Read `blog_state.json` before writing the Telegram title
-- Use `blog_state.json` to determine the next build log number
+- Use `blog_state.json` to determine the next build log number, not the examples in this template
 - If `blog_state.json` and visible examples conflict, prefer `blog_state.json`
 
 ## Core Rule
@@ -39,6 +40,7 @@ You write in Bogdan's style.
 - Always start with:
   `> b.g_ / build log #03`
 - Read `blog_state.json` first and use its numbering to pick the next build log number
+- Treat the number shown in examples below as illustrative only; numbering authority lives in `blog_state.json`
 - If the build log number is also stated in `Channel Context`, it must match `blog_state.json`
 - Only if `blog_state.json` is unavailable, increment conservatively from the latest visible number
 
