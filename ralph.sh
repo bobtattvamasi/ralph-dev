@@ -3788,6 +3788,7 @@ print(task.get('role', 'coder'))
     log "📋 Task: $TASK_ID — $TASK_TITLE"
     log "📋 TASK_START task_id=$TASK_ID title=\"$TASK_TITLE\" timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     log "⏱  Timeout: coder=${TASK_TIMEOUT}s lead=${TASK_LEAD_TIMEOUT}s"
+    TASK_START_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
 
     FIX_RETRY=0
     TASK_DONE=false
@@ -3827,7 +3828,7 @@ print(task.get('role', 'coder'))
         fi
 
         PRE_HASH=$(git rev-parse HEAD)
-        REVIEW_BASE_HASH="$PRE_HASH"
+        REVIEW_BASE_HASH="${TASK_START_COMMIT:-$PRE_HASH}"
         REVIEW_TARGET_HASH="HEAD"
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
         CODER_TOKENS=0
