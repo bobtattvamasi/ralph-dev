@@ -2755,6 +2755,27 @@
       "revision_notes": "Future: after modular backend",
       "timeout": 300,
       "role": "coder"
+    },
+    {
+      "id": "BUG-01",
+      "phase": "BUG",
+      "category": "bug",
+      "priority": "high",
+      "complexity": "simple",
+      "risk": "low",
+      "title": "Tech Lead: false negative on diff-masked code changes",
+      "description": "Lead review failed to detect /ask implementation because git diff showed only tasks.json cleanup. Code exists in commit 3fc13bc but diff output was misleading. Need to improve Lead's diff parsing or require full context.",
+      "acceptance_criteria": [
+        "Lead correctly identifies code changes even when diff is large",
+        "Lead doesn't reject based on 'no evidence' when tests pass",
+        "Consider: Lead should read actual files, not just diff"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "completed_at": null,
+      "revision_notes": "Discovered during R12-01 review cycle",
+      "timeout": 300,
+      "role": "coder"
     }
   ]
 }
