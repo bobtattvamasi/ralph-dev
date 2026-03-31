@@ -97,3 +97,5 @@
 - **OPS-09** (2026-03-28 07:58 UTC): OPS-09 можно закрывать: budget-ограничения и измерение токенов подтверждены тестами, регрессия с блокировкой coder на full test suite устранена.
 - **OPS-10** (2026-03-30 10:02 UTC): Добавлена точечная регрессия в tests/test_integration.py на отсутствие attempt 3 и второго fix-цикла при совпадении diff между соседними попытками.
 - **R13-06** (2026-03-31 05:52 UTC): R13-06 закрывается по диффу: удалены неиспользуемые helper-функции, acceptance criteria выполнены, 175 тестов прошли.
+- **R13-04** (2026-03-31 07:57 UTC): R13-04 hardens the cited silent-failure paths and makes malformed operator/runtime inputs visible without crashing the main flow.
+- **R13-07** (2026-03-31 10:50 UTC): R13-07 approved: destructive crash rollback is gated by RALPH_DESTRUCTIVE_ROLLBACK=reviewed, Telegram/article timeouts are centralized in ralph_common, and lead/retry/rate-limit defaults are named configuration in ralph.sh and mirrored resource script.

@@ -1,0 +1,2358 @@
+OpenAI Codex v0.117.0 (research preview)
+--------
+workdir: /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 019d42b6-dd4f-77b3-9b6f-a413d62df4dc
+--------
+user
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R13-03",
+  "phase": "R13",
+  "category": "refactor",
+  "priority": "high",
+  "complexity": "moderate",
+  "title": "Consolidate duplicated task and control logic",
+  "description": "Remove duplicated project-dir, tasks.json, and control-file logic called out in BRITTLENESS_AUDIT.md: scripts/update_task.py:9, scripts/update_progress.py:9, scripts/next_task.py:9, scripts/explain_task.py:15, scripts/reopen_tasks.py:13, scripts/next_task.py:21, scripts/update_task.py:29, scripts/re_audit_tasks.py:34, scripts/explain_task.py:27, scripts/ralph_bot.py:623, ralph.sh:1077, ralph.sh:2214, and scripts/ralph_bot.py:251. Also unify verifier/re-audit classification split at scripts/verify_task_closure.py:60 and scripts/re_audit_tasks.py:48 plus runnable reasoning split at scripts/explain_task.py:31 and scripts/next_task.py:26.",
+  "acceptance_criteria": [
+    "Project-dir resolution is implemented in one shared helper",
+    "Task loading and saving go through one validated code path",
+    "Control-file schema and IO are shared between bot and runtime",
+    "Verifier and re-audit reuse a single task classification path",
+    "Operator explanation reuses scheduler runnable logic"
+  ],
+  "dependencies": [
+    "R13-01"
+  ],
+  "status": "pending"
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/scripts/explain_task.py b/scripts/explain_task.py
+index f1c0fc9..8f41b29 100644
+--- a/scripts/explain_task.py
++++ b/scripts/explain_task.py
+@@ -4,40 +4,12 @@
+ from __future__ import annotations
+ 
+ import argparse
+-import json
+ import os
+-from pathlib import Path
+ 
+-
+-COMPLETED_STATUSES = {"done", "verified_done"}
+-
+-
+-def resolve_project_dir(explicit: str | None = None) -> Path:
+-    if explicit:
+-        return Path(explicit).resolve()
+-    cwd = Path.cwd()
+-    if (cwd / "tasks.json").exists():
+-        return cwd
+-    env = os.environ.get("RALPH_PROJECT_DIR")
+-    if env:
+-        return Path(env).resolve()
+-    return cwd
+-
+-
+-def load_tasks(tasks_file: Path) -> dict:
+-    return json.loads(tasks_file.read_text(encoding="utf-8"))
+-
+-
+-def runnable_reason(task: dict, tasks: list[dict]) -> tuple[bool, str]:
+-    status = str(task.get("status", ""))
+-    if status != "pending":
+-        return False, f"status={status}"
+-
+-    done_ids = {item.get("id") for item in tasks if item.get("status") in COMPLETED_STATUSES}
+-    unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
+-    if unmet:
+-        return False, "unmet dependencies: " + ", ".join(unmet)
+-    return True, "pending and dependencies satisfied"
++try:
++    from ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
++except ImportError:
++    from scripts.ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+ 
+ 
+ def suggested_next_action(task: dict, is_runnable: bool, reason: str, re_audit: dict) -> str:
+@@ -73,8 +45,7 @@ def main() -> int:
+     from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
+     from re_audit_tasks import classify_task
+ 
+-    tasks_file = project_dir / "tasks.json"
+-    data = load_tasks(tasks_file)
++    data = load_tasks_data(project_dir)
+     tasks = data.get("tasks", [])
+     task = next((item for item in tasks if item.get("id") == args.task_id), None)
+     if task is None:
+diff --git a/scripts/next_task.py b/scripts/next_task.py
+index 27e7ef2..c413cf5 100755
+--- a/scripts/next_task.py
++++ b/scripts/next_task.py
+@@ -2,86 +2,14 @@
+ """Pick next pending task from tasks.json."""
+ import argparse
+ import json
+-import os
+ import sys
+-from pathlib import Path
++try:
++    from ralph_common import explain_non_runnable, load_tasks_data, pick_next_task, resolve_project_dir
++except ImportError:
++    from scripts.ralph_common import explain_non_runnable, load_tasks_data, pick_next_task, resolve_project_dir
+ 
+ 
+-def get_project_dir() -> Path:
+-    """Get project directory from env or default to script parent."""
+-    env = os.environ.get("RALPH_PROJECT_DIR")
+-    if env:
+-        return Path(env)
+-    return Path(__file__).parent.parent
+-
+-
+-PROJECT_DIR = get_project_dir()
+-TASKS_FILE = PROJECT_DIR / "tasks.json"
+-PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+-COMPLETED_STATUSES = {"done", "verified_done"}
+-
+-
+-def load_tasks():
+-    return json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+-
+-
+-def pick_next(tasks, *, task_id=None, phase=None):
+-    done = {t["id"] for t in tasks if t["status"] in COMPLETED_STATUSES}
+-    candidates = [
+-        t for t in tasks
+-        if t["status"] == "pending"
+-        and all(d in done for d in t.get("dependencies", []))
+-    ]
+-    if task_id:
+-        return next((t for t in candidates if t["id"] == task_id), None)
+-    if phase:
+-        candidates = [t for t in candidates if str(t["phase"]) == str(phase)]
+-    if not candidates:
+-        return None
+-    candidates.sort(key=lambda t: PRIORITY_ORDER.get(t.get("priority", "low"), 9))
+-    return candidates[0]
+-
+-
+-def explain_non_runnable(tasks, *, phase=None):
+-    done = {t["id"] for t in tasks if t["status"] in COMPLETED_STATUSES}
+-    unresolved = [t for t in tasks if t["status"] not in COMPLETED_STATUSES]
+-    if phase is not None:
+-        unresolved = [t for t in unresolved if str(t.get("phase")) == str(phase)]
+-    pending = [t for t in unresolved if t["status"] == "pending"]
+-    if phase is not None:
+-        pending = [t for t in pending if str(t.get("phase")) == str(phase)]
+-    blocked = []
+-    for task in pending:
+-        unmet = [dep for dep in task.get("dependencies", []) if dep not in done]
+-        if unmet:
+-            blocked.append(
+-                {
+-                    "id": task["id"],
+-                    "title": task.get("title", ""),
+-                    "unmet_dependencies": unmet,
+-                }
+-            )
+-    blocked_by_status = [
+-        {
+-            "id": task["id"],
+-            "title": task.get("title", ""),
+-            "status": task.get("status", ""),
+-        }
+-        for task in unresolved
+-        if task.get("status") != "pending"
+-    ]
+-    reason = "no_pending"
+-    if blocked:
+-        reason = "blocked_dependencies"
+-    elif blocked_by_status:
+-        reason = "blocked_statuses"
+-    return {
+-        "has_pending": bool(pending),
+-        "has_unresolved": bool(unresolved),
+-        "blocked_pending": blocked,
+-        "blocked_by_status": blocked_by_status,
+-        "reason": reason,
+-    }
++pick_next = pick_next_task
+ 
+ 
+ def main():
+@@ -90,11 +18,12 @@ def main():
+     parser.add_argument("--phase", default=None)
+     parser.add_argument("--explain", action="store_true")
+     args = parser.parse_args()
+-    data = load_tasks()
++    project_dir = resolve_project_dir(script_path=__file__)
++    data = load_tasks_data(project_dir)
+     if args.explain:
+         print(json.dumps(explain_non_runnable(data["tasks"], phase=args.phase), indent=2, ensure_ascii=False))
+         sys.exit(0)
+-    task = pick_next(data["tasks"], task_id=args.task, phase=args.phase)
++    task = pick_next_task(data["tasks"], task_id=args.task, phase=args.phase)
+     if task is None:
+         print("null")
+         sys.exit(0)
+diff --git a/scripts/ralph_bot.py b/scripts/ralph_bot.py
+index 03b5e3c..505611c 100755
+--- a/scripts/ralph_bot.py
++++ b/scripts/ralph_bot.py
+@@ -25,6 +25,13 @@ try:
+ except ImportError:
+     from models import RalphState
+ 
++try:
++    from ralph_common import load_tasks_data as shared_load_tasks_data
++    from ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
++except ImportError:
++    from scripts.ralph_common import load_tasks_data as shared_load_tasks_data
++    from scripts.ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
++
+ RALPH_DIR = Path(__file__).resolve().parent.parent
+ PROJECT_DIR = Path.cwd()  # overridden in __main__
+ STATE_FILE = PROJECT_DIR / "ralph_state.json"
+@@ -250,12 +257,7 @@ def reset_stale_state() -> None:
+ 
+ def write_control(action: str, comment: str = "") -> None:
+     """Write control signal for ralph."""
+-    data = {
+-        "action": action,
+-        "comment": comment,
+-        "timestamp": datetime.now(timezone.utc).isoformat(),
+-    }
+-    CONTROL_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
++    write_control_data(PROJECT_DIR, action, comment)
+ 
+ 
+ def get_tasks_summary(phase: str | None = None) -> str:
+@@ -620,12 +622,12 @@ def get_log_tail(n: int = 15) -> str:
+ 
+ def load_tasks_data() -> dict:
+     """Load tasks.json as a dict."""
+-    return json.loads(TASKS_FILE.read_text(encoding="utf-8"))
++    return shared_load_tasks_data(PROJECT_DIR)
+ 
+ 
+ def save_tasks_data(data: dict) -> None:
+     """Persist tasks.json with stable formatting."""
+-    TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++    shared_save_tasks_data(PROJECT_DIR, data)
+ 
+ 
+ def get_audit_summary(task_id: str) -> str:
+@@ -2055,12 +2057,7 @@ if __name__ == "__main__":
+     RALPH_DIR = Path(__file__).resolve().parent.parent
+ 
+     # PROJECT_DIR priority: --project-dir > RALPH_PROJECT_DIR env > cwd
+-    if args.project_dir:
+-        PROJECT_DIR = Path(args.project_dir).resolve()
+-    elif os.environ.get("RALPH_PROJECT_DIR"):
+-        PROJECT_DIR = Path(os.environ["RALPH_PROJECT_DIR"]).resolve()
+-    else:
+-        PROJECT_DIR = Path.cwd()
++    PROJECT_DIR = resolve_project_dir(args.project_dir)
+ 
+     if not (PROJECT_DIR / "tasks.json").exists():
+         print(f"❌ No tasks.json in {PROJECT_DIR}")
+diff --git a/scripts/ralph_common.py b/scripts/ralph_common.py
+new file mode 100644
+index 0000000..8aa6668
+--- /dev/null
++++ b/scripts/ralph_common.py
+@@ -0,0 +1,398 @@
++#!/usr/bin/env python3
++"""Shared project, task, control, and task-truth helpers for Ralph."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import re
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import Any
++
++
++DEFAULT_CONTROL_ACTION = "continue"
++COMPLETED_STATUSES = {"done", "verified_done"}
++PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
++BOOKKEEPING_EXACT = {
++    "tasks.json",
++    "progress.md",
++    "audit_report.md",
++    "ralph_state.json",
++    "ralph_control.json",
++    "ralph_alerts.log",
++    "ralph_main.pid",
++    "ralph_codex.pid",
++    "ralph_codex.pgid",
++    ".ralph/memory/recent.md",
++    ".ralph/memory/decisions.md",
++    ".ralph/memory/patterns.md",
++}
++BOOKKEEPING_PREFIXES = (
++    "logs/",
++    ".pytest_cache/",
++    "__pycache__/",
++    ".ralph/audit/",
++    "ralph/audit/",
++)
++DOC_KEYWORDS = (
++    "readme",
++    "documentation",
++    "docs/",
++    "postmortem",
++    "prompt_version",
++    "changelog",
++)
++
++
++def resolve_project_dir(explicit: str | None = None, *, script_path: str | Path | None = None) -> Path:
++    """Resolve Ralph project dir from explicit arg, cwd, env, then script location."""
++    if explicit:
++        return Path(explicit).resolve()
++
++    cwd = Path.cwd().resolve()
++    if (cwd / "tasks.json").exists():
++        return cwd
++
++    env = os.environ.get("RALPH_PROJECT_DIR")
++    if env:
++        return Path(env).resolve()
++
++    if script_path is not None:
++        return Path(script_path).resolve().parent.parent
++
++    return cwd
++
++
++def tasks_file_path(project_dir: Path) -> Path:
++    return project_dir / "tasks.json"
++
++
++def control_file_path(project_dir: Path) -> Path:
++    return project_dir / "ralph_control.json"
++
++
++def load_tasks_data(project_dir: Path) -> dict[str, Any]:
++    """Load tasks.json through one validated code path."""
++    path = tasks_file_path(project_dir)
++    data = json.loads(path.read_text(encoding="utf-8"))
++    if not isinstance(data, dict):
++        raise ValueError("tasks.json must contain a JSON object")
++    tasks = data.get("tasks")
++    if not isinstance(tasks, list):
++        raise ValueError("tasks.json must contain a top-level 'tasks' list")
++    return data
++
++
++def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
++    """Persist tasks.json through one validated code path."""
++    if not isinstance(data, dict):
++        raise ValueError("tasks payload must be a dict")
++    tasks = data.get("tasks")
++    if not isinstance(tasks, list):
++        raise ValueError("tasks payload must contain a top-level 'tasks' list")
++    tasks_file_path(project_dir).write_text(
++        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
++        encoding="utf-8",
++    )
++
++
++def _normalize_control_data(data: Any) -> dict[str, Any]:
++    if not isinstance(data, dict):
++        data = {}
++    normalized = dict(data)
++    action = normalized.get("action", DEFAULT_CONTROL_ACTION)
++    if not isinstance(action, str) or not action.strip():
++        action = DEFAULT_CONTROL_ACTION
++    comment = normalized.get("comment")
++    if comment is None:
++        comment = normalized.get("value", "")
++    if not isinstance(comment, str):
++        comment = str(comment)
++    normalized["action"] = action
++    normalized["comment"] = comment
++    normalized.pop("value", None)
++    return normalized
++
++
++def read_control_data(project_dir: Path) -> dict[str, Any]:
++    """Load and normalize ralph_control.json."""
++    path = control_file_path(project_dir)
++    if not path.exists():
++        return {"action": DEFAULT_CONTROL_ACTION, "comment": ""}
++    try:
++        data = json.loads(path.read_text(encoding="utf-8"))
++    except Exception:
++        data = {}
++    return _normalize_control_data(data)
++
++
++def write_control_data(project_dir: Path, action: str, comment: str = "") -> None:
++    """Persist normalized control-file schema."""
++    path = control_file_path(project_dir)
++    payload = read_control_data(project_dir) if path.exists() else {}
++    payload.update(
++        {
++            "action": action or DEFAULT_CONTROL_ACTION,
++            "comment": comment or "",
++            "timestamp": datetime.now(timezone.utc).isoformat(),
++        }
++    )
++    path.write_text(json.dumps(_normalize_control_data(payload), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++
++
++def clear_control_action(project_dir: Path) -> None:
++    """Reset control action while preserving file ownership to shared IO."""
++    path = control_file_path(project_dir)
++    if not path.exists():
++        return
++    write_control_data(project_dir, DEFAULT_CONTROL_ACTION, "")
++
++
++def consume_control_comment(project_dir: Path) -> str:
++    """Return and clear operator comment payload."""
++    path = control_file_path(project_dir)
++    data = read_control_data(project_dir)
++    comment = str(data.get("comment", "")).strip()
++    if path.exists() and comment:
++        data["comment"] = ""
++        data["timestamp"] = datetime.now(timezone.utc).isoformat()
++        path.write_text(json.dumps(_normalize_control_data(data), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++    return comment
++
++
++def completed_task_ids(tasks: list[dict[str, Any]]) -> set[str]:
++    return {str(task.get("id")) for task in tasks if task.get("status") in COMPLETED_STATUSES}
++
++
++def runnable_reason(task: dict[str, Any], tasks: list[dict[str, Any]]) -> tuple[bool, str]:
++    status = str(task.get("status", ""))
++    if status != "pending":
++        return False, f"status={status}"
++
++    done_ids = completed_task_ids(tasks)
++    unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
++    if unmet:
++        return False, "unmet dependencies: " + ", ".join(unmet)
++    return True, "pending and dependencies satisfied"
++
++
++def pick_next_task(
++    tasks: list[dict[str, Any]],
++    *,
++    task_id: str | None = None,
++    phase: str | None = None,
++) -> dict[str, Any] | None:
++    done_ids = completed_task_ids(tasks)
++    candidates = [
++        task
++        for task in tasks
++        if task.get("status") == "pending"
++        and all(dep in done_ids for dep in task.get("dependencies", []))
++    ]
++    if task_id:
++        return next((task for task in candidates if task.get("id") == task_id), None)
++    if phase is not None:
++        candidates = [task for task in candidates if str(task.get("phase")) == str(phase)]
++    if not candidates:
++        return None
++    candidates.sort(key=lambda task: PRIORITY_ORDER.get(str(task.get("priority", "low")), 9))
++    return candidates[0]
++
++
++def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = None) -> dict[str, Any]:
++    done_ids = completed_task_ids(tasks)
++    unresolved = [task for task in tasks if task.get("status") not in COMPLETED_STATUSES]
++    if phase is not None:
++        unresolved = [task for task in unresolved if str(task.get("phase")) == str(phase)]
++    pending = [task for task in unresolved if task.get("status") == "pending"]
++    blocked_pending = []
++    for task in pending:
++        unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
++        if unmet:
++            blocked_pending.append(
++                {
++                    "id": task.get("id", ""),
++                    "title": task.get("title", ""),
++                    "unmet_dependencies": unmet,
++                }
++            )
++    blocked_by_status = [
++        {
++            "id": task.get("id", ""),
++            "title": task.get("title", ""),
++            "status": task.get("status", ""),
++        }
++        for task in unresolved
++        if task.get("status") != "pending"
++    ]
++    reason = "no_pending"
++    if blocked_pending:
++        reason = "blocked_dependencies"
++    elif blocked_by_status:
++        reason = "blocked_statuses"
++    return {
++        "has_pending": bool(pending),
++        "has_unresolved": bool(unresolved),
++        "blocked_pending": blocked_pending,
++        "blocked_by_status": blocked_by_status,
++        "reason": reason,
++    }
++
++
++def normalize_path(path: str) -> str:
++    return path.strip().replace("\\", "/").lstrip("./")
++
++
++def is_bookkeeping_file(path: str) -> bool:
++    normalized = normalize_path(path)
++    if normalized in BOOKKEEPING_EXACT:
++        return True
++    return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
++
++
++def is_bookkeeping(path: str) -> bool:
++    return is_bookkeeping_file(path)
++
++
++def extract_path_candidates(task: dict[str, Any]) -> list[str]:
++    texts: list[str] = [task.get("title", ""), task.get("description", "")]
++    texts.extend(task.get("acceptance_criteria", []) or [])
++    texts.extend(task.get("test_steps", []) or [])
++    combined = "\n".join(texts)
+diff error
+```
+
+Previous diff snapshot: 76577 bytes
+
+## Tests
+```
+tests/test_operator_helpers.py::test_bot_smoke_check_collects_help_output PASSED [ 79%]
+tests/test_operator_helpers.py::test_bot_smoke_check_reports_send_failure PASSED [ 79%]
+tests/test_operator_helpers.py::test_bot_smoke_check_resolve_project_dir_prefers_cwd PASSED [ 80%]
+tests/test_operator_helpers.py::test_shared_tasks_io_round_trips_validated_payload PASSED [ 80%]
+tests/test_operator_helpers.py::test_shared_control_io_normalizes_and_consumes_comment PASSED [ 81%]
+tests/test_re_audit_tasks.py::test_reaudit_dry_run_classifies_obvious_false_positive PASSED [ 82%]
+tests/test_re_audit_tasks.py::test_reaudit_command_alias_handler_counts_as_verified_done PASSED [ 82%]
+tests/test_re_audit_tasks.py::test_reaudit_missing_command_still_becomes_false_positive PASSED [ 83%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_updates_tasks_for_strong_case PASSED [ 83%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_false_positive_keeps_reason_and_clears_stale_latest_run_truth PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_ambiguous_case_becomes_needs_human_review PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_report_stays_task_scoped PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_verified_case_becomes_verified_done PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_partial_case_is_reported PASSED [ 86%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_partial_and_needs_human_review PASSED [ 87%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_tasks_already_aligned_to_verified_done PASSED [ 87%]
+tests/test_re_audit_tasks.py::test_next_task_still_only_picks_pending PASSED [ 88%]
+tests/test_run_eval.py::test_load_fixture_reads_basic_eval_source PASSED [ 88%]
+tests/test_run_eval.py::test_evaluate_fixture_applies_bounded_limit PASSED [ 89%]
+tests/test_run_eval.py::test_run_eval_cli_emits_json_result PASSED       [ 89%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_full_tasks PASSED [ 90%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_minimal_tasks PASSED [ 91%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_priority_uses_default PASSED [ 91%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_dependencies_uses_default PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_timeout_uses_default PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_completed_at PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_required_fields_exist PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_empty_tasks_file PASSED [ 94%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_no_tasks_key PASSED   [ 94%]
+tests/test_verify_task_closure.py::test_bookkeeping_only_diff_blocks_implementation_task PASSED [ 95%]
+tests/test_verify_task_closure.py::test_missing_script_file_blocks_closure PASSED [ 96%]
+tests/test_verify_task_closure.py::test_missing_command_handler_blocks_closure PASSED [ 96%]
+tests/test_verify_task_closure.py::test_command_alias_handler_counts_as_valid_runtime_evidence PASSED [ 97%]
+tests/test_verify_task_closure.py::test_missing_template_file_blocks_closure PASSED [ 97%]
+tests/test_verify_task_closure.py::test_docs_only_task_can_pass_with_docs_evidence PASSED [ 98%]
+tests/test_verify_task_closure.py::test_tests_only_task_requires_actual_test_evidence PASSED [ 98%]
+tests/test_verify_task_closure.py::test_reaudit_reporting_task_passes_with_saved_report_evidence PASSED [ 99%]
+tests/test_verify_task_closure.py::test_generic_implementation_task_still_fails_on_report_and_state_files_only PASSED [100%]
+
+================== 178 passed, 1 skipped in 700.44s (0:11:40) ==================
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.
+deprecated: `[features].web_search_request` is deprecated because web search is enabled by default.
+Set `web_search` to `"live"`, `"cached"`, or `"disabled"` at the top level (or under a profile) in config.toml if you want to override it.
+codex
+Сначала прочитаю обязательные инструкции и целевые модули, затем сверю acceptance criteria с фактической реализацией и тестовым покрытием.
+exec
+/bin/zsh -lc "sed -n '1,260p' ARCHITECTURE.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+exec
+/bin/zsh -lc "sed -n '1,220p' AGENTS.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+# AGENTS.md — Ralph Dev
+
+## Read First
+- `ARCHITECTURE.md` — execution model, orchestration, runtime, and state
+- `MEMORY_SYSTEM.md` — memory layers and update policy
+- `tasks.json` — roadmap and task source of truth
+- `progress.md` — lightweight narrative history only, not authoritative task truth
+
+## General Rules
+1. `ralph.sh` must stay project-agnostic.
+2. All bash script paths use `$RALPH_DIR`.
+3. All project paths use `$PROJECT_DIR`.
+4. No external Python dependencies except `dotenv`.
+5. Bash changes must pass `bash -n ralph.sh`.
+6. Python changes must pass `python3 -c "import ast; ast.parse(...)"` where applicable.
+7. Prefer repo-local state and configuration over machine-level assumptions.
+8. Prefer narrow task execution over broad repo exploration: start from the known hot zone and expand only when evidence requires it.
+
+## Notes
+- Ralph attaches to any repo that contains `tasks.json`.
+- Telegram bot is the main human control surface.
+- Persistent memory lives in `.ralph/memory/`.
+
+ succeeded in 0ms:
+# Ralph Architecture
+
+## Ralph as AI Execution Layer
+Ralph is a project-agnostic AI execution layer for software delivery workflows.
+It sits on top of an existing repository, reads structured tasks, runs AI agents,
+collects outputs, applies review gates, and coordinates human escalation.
+
+## Core Components
+- `ralph.sh` — orchestrator loop and execution policy
+- `scripts/ralph_bot.py` — Telegram control plane
+- `codex exec` — tool runtime used for Coder and Tech Lead agents
+- `scripts/*.py` — task, progress, notification, and memory helpers
+
+## Execution Model
+1. Select next pending task from `tasks.json`
+2. Build coder prompt from task payload, repo docs, memory, and optional human comment
+3. Run Coder agent through `codex exec`
+4. If `assets_manifest.json` exists, validate it, wait for missing required assets, and sync them into target paths
+5. Capture git diff and test output
+6. Run Tech Lead review through `codex exec`
+7. Resolve decision: `approve`, `fix`, `alert`, or `reorder`
+8. Persist state, progress, memory, logs, and metrics
+
+## Orchestrator
+`ralph.sh` is the main runtime controller.
+
+Responsibilities:
+- task selection and phase/auto execution
+- process supervision and cleanup
+- retries, timeouts, exponential backoff, and rate-limit pauses
+- prompt assembly for Coder and Tech Lead
+- git commit flow for agent-produced changes
+- task lifecycle updates and human alerting
+
+## Tool Runtime
+Ralph currently depends on:
+- `codex exec` for both agent roles
+- `make test` as the default verification gate
+- `git` for diffing and commits
+- `gtimeout` for bounded runs
+- `python3` helper scripts for state and file updates
+
+## State Model
+Runtime state is file-based and repo-local:
+- `tasks.json` — backlog, dependencies, and task statuses
+- `ralph_state.json` — current runner state
+- `ralph_control.json` — bot-to-runner control signals
+- `progress.md` — append-only human-readable execution log
+- `logs/` — execution logs and metrics
+
+## Memory Model
+Persistent memory lives in `.ralph/memory/` and is partially injected into agent prompts.
+See `MEMORY_SYSTEM.md` for the memory layers and update rules.
+
+## Human Control Layer
+Telegram is the primary remote control interface.
+
+Current control surface:
+- start a task, phase, or full auto mode
+- stop gracefully or force kill
+- inspect tasks, logs, progress, cost, and diff
+- leave a comment for the next agent attempt
+
+Asset-heavy projects can also use `assets_manifest.json` as an async handoff between the agent and a human who later supplies binary assets.
+
+## Reliability Model
+Implemented safeguards include:
+- recursive process cleanup
+- retry with exponential backoff
+- rate-limit detection and pause
+- watchdog around Codex execution
+- circuit breaker after repeated failures
+- alert path for human intervention
+
+exec
+/bin/zsh -lc "sed -n '1,260p' MEMORY_SYSTEM.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+# Ralph Memory System
+
+## Purpose
+Ralph keeps lightweight persistent memory across tasks so the agent loop does
+not start from zero on every run.
+
+## Memory Layers
+- `core.md` — stable project context: architecture, stack, conventions, constraints
+- `recent.md` — short history of the last approved tasks
+- `patterns.md` — recurring error patterns and working fixes
+- `decisions.md` — architectural and product decisions worth preserving
+
+## Injection Policy
+Before each coder run, Ralph reads and injects:
+- `.ralph/memory/core.md`
+- `.ralph/memory/recent.md`
+
+This gives the coding agent project context plus short-term history.
+
+## Update Policy
+- `core.md` — maintained manually by project owners
+- `recent.md` — updated automatically after approved tasks
+- `patterns.md` — intended for recurring failure learnings
+- `decisions.md` — intended for durable architecture decisions
+
+## Current Implementation Status
+- `core.md` and `recent.md` are actively used by `ralph.sh`
+- `recent.md` is updated by `scripts/update_memory.py`
+- `patterns.md` and `decisions.md` exist as placeholders and are not yet automatically maintained
+
+## Design Constraints
+- markdown files instead of a database
+- repo-local storage for portability
+- low operational overhead
+- readable and editable by humans
+
+exec
+/bin/zsh -lc "sed -n '1,220p' AGENTS_LEAD.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+codex
+Инструкции и архитектурный контекст прочитал. Сейчас проверяю, закрыта ли задача полностью по коду, а не только по тестам: общий helper, единый путь IO/control, классификация и общий runnable reasoning.
+exec
+/bin/zsh -lc "sed -n '1,260p' scripts/ralph_common.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Shared project, task, control, and task-truth helpers for Ralph."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+DEFAULT_CONTROL_ACTION = "continue"
+COMPLETED_STATUSES = {"done", "verified_done"}
+PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+BOOKKEEPING_EXACT = {
+    "tasks.json",
+    "progress.md",
+    "audit_report.md",
+    "ralph_state.json",
+    "ralph_control.json",
+    "ralph_alerts.log",
+    "ralph_main.pid",
+    "ralph_codex.pid",
+    "ralph_codex.pgid",
+    ".ralph/memory/recent.md",
+    ".ralph/memory/decisions.md",
+    ".ralph/memory/patterns.md",
+}
+BOOKKEEPING_PREFIXES = (
+    "logs/",
+    ".pytest_cache/",
+    "__pycache__/",
+    ".ralph/audit/",
+    "ralph/audit/",
+)
+DOC_KEYWORDS = (
+    "readme",
+    "documentation",
+    "docs/",
+    "postmortem",
+    "prompt_version",
+    "changelog",
+)
+
+
+def resolve_project_dir(explicit: str | None = None, *, script_path: str | Path | None = None) -> Path:
+    """Resolve Ralph project dir from explicit arg, cwd, env, then script location."""
+    if explicit:
+        return Path(explicit).resolve()
+
+    cwd = Path.cwd().resolve()
+    if (cwd / "tasks.json").exists():
+        return cwd
+
+    env = os.environ.get("RALPH_PROJECT_DIR")
+    if env:
+        return Path(env).resolve()
+
+    if script_path is not None:
+        return Path(script_path).resolve().parent.parent
+
+    return cwd
+
+
+def tasks_file_path(project_dir: Path) -> Path:
+    return project_dir / "tasks.json"
+
+
+def control_file_path(project_dir: Path) -> Path:
+    return project_dir / "ralph_control.json"
+
+
+def load_tasks_data(project_dir: Path) -> dict[str, Any]:
+    """Load tasks.json through one validated code path."""
+    path = tasks_file_path(project_dir)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("tasks.json must contain a JSON object")
+    tasks = data.get("tasks")
+    if not isinstance(tasks, list):
+        raise ValueError("tasks.json must contain a top-level 'tasks' list")
+    return data
+
+
+def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
+    """Persist tasks.json through one validated code path."""
+    if not isinstance(data, dict):
+        raise ValueError("tasks payload must be a dict")
+    tasks = data.get("tasks")
+    if not isinstance(tasks, list):
+        raise ValueError("tasks payload must contain a top-level 'tasks' list")
+    tasks_file_path(project_dir).write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _normalize_control_data(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        data = {}
+    normalized = dict(data)
+    action = normalized.get("action", DEFAULT_CONTROL_ACTION)
+    if not isinstance(action, str) or not action.strip():
+        action = DEFAULT_CONTROL_ACTION
+    comment = normalized.get("comment")
+    if comment is None:
+        comment = normalized.get("value", "")
+    if not isinstance(comment, str):
+        comment = str(comment)
+    normalized["action"] = action
+    normalized["comment"] = comment
+    normalized.pop("value", None)
+    return normalized
+
+
+def read_control_data(project_dir: Path) -> dict[str, Any]:
+    """Load and normalize ralph_control.json."""
+    path = control_file_path(project_dir)
+    if not path.exists():
+        return {"action": DEFAULT_CONTROL_ACTION, "comment": ""}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    return _normalize_control_data(data)
+
+
+def write_control_data(project_dir: Path, action: str, comment: str = "") -> None:
+    """Persist normalized control-file schema."""
+    path = control_file_path(project_dir)
+    payload = read_control_data(project_dir) if path.exists() else {}
+    payload.update(
+        {
+            "action": action or DEFAULT_CONTROL_ACTION,
+            "comment": comment or "",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    path.write_text(json.dumps(_normalize_control_data(payload), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def clear_control_action(project_dir: Path) -> None:
+    """Reset control action while preserving file ownership to shared IO."""
+    path = control_file_path(project_dir)
+    if not path.exists():
+        return
+    write_control_data(project_dir, DEFAULT_CONTROL_ACTION, "")
+
+
+def consume_control_comment(project_dir: Path) -> str:
+    """Return and clear operator comment payload."""
+    path = control_file_path(project_dir)
+    data = read_control_data(project_dir)
+    comment = str(data.get("comment", "")).strip()
+    if path.exists() and comment:
+        data["comment"] = ""
+        data["timestamp"] = datetime.now(timezone.utc).isoformat()
+        path.write_text(json.dumps(_normalize_control_data(data), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return comment
+
+
+def completed_task_ids(tasks: list[dict[str, Any]]) -> set[str]:
+    return {str(task.get("id")) for task in tasks if task.get("status") in COMPLETED_STATUSES}
+
+
+def runnable_reason(task: dict[str, Any], tasks: list[dict[str, Any]]) -> tuple[bool, str]:
+    status = str(task.get("status", ""))
+    if status != "pending":
+        return False, f"status={status}"
+
+    done_ids = completed_task_ids(tasks)
+    unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
+    if unmet:
+        return False, "unmet dependencies: " + ", ".join(unmet)
+    return True, "pending and dependencies satisfied"
+
+
+def pick_next_task(
+    tasks: list[dict[str, Any]],
+    *,
+    task_id: str | None = None,
+    phase: str | None = None,
+) -> dict[str, Any] | None:
+    done_ids = completed_task_ids(tasks)
+    candidates = [
+        task
+        for task in tasks
+        if task.get("status") == "pending"
+        and all(dep in done_ids for dep in task.get("dependencies", []))
+    ]
+    if task_id:
+        return next((task for task in candidates if task.get("id") == task_id), None)
+    if phase is not None:
+        candidates = [task for task in candidates if str(task.get("phase")) == str(phase)]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda task: PRIORITY_ORDER.get(str(task.get("priority", "low")), 9))
+    return candidates[0]
+
+
+def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = None) -> dict[str, Any]:
+    done_ids = completed_task_ids(tasks)
+    unresolved = [task for task in tasks if task.get("status") not in COMPLETED_STATUSES]
+    if phase is not None:
+        unresolved = [task for task in unresolved if str(task.get("phase")) == str(phase)]
+    pending = [task for task in unresolved if task.get("status") == "pending"]
+    blocked_pending = []
+    for task in pending:
+        unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
+        if unmet:
+            blocked_pending.append(
+                {
+                    "id": task.get("id", ""),
+                    "title": task.get("title", ""),
+                    "unmet_dependencies": unmet,
+                }
+            )
+    blocked_by_status = [
+        {
+            "id": task.get("id", ""),
+            "title": task.get("title", ""),
+            "status": task.get("status", ""),
+        }
+        for task in unresolved
+        if task.get("status") != "pending"
+    ]
+    reason = "no_pending"
+    if blocked_pending:
+        reason = "blocked_dependencies"
+    elif blocked_by_status:
+        reason = "blocked_statuses"
+    return {
+        "has_pending": bool(pending),
+        "has_unresolved": bool(unresolved),
+        "blocked_pending": blocked_pending,
+        "blocked_by_status": blocked_by_status,
+        "reason": reason,
+    }
+
+
+def normalize_path(path: str) -> str:
+    return path.strip().replace("\\", "/").lstrip("./")
+
+
+def is_bookkeeping_file(path: str) -> bool:
+    normalized = normalize_path(path)
+    if normalized in BOOKKEEPING_EXACT:
+        return True
+    return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
+
+
+def is_bookkeeping(path: str) -> bool:
+    return is_bookkeeping_file(path)
+
+
+def extract_path_candidates(task: dict[str, Any]) -> list[str]:
+    texts: list[str] = [task.get("title", ""), task.get("description", "")]
+
+exec
+/bin/zsh -lc "sed -n '1,220p' scripts/re_audit_tasks.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Conservative re-audit of completed tasks using current repo truth."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+try:
+    from ralph_common import infer_task_context, load_tasks_data, resolve_project_dir, save_tasks_data
+except ImportError:
+    from scripts.ralph_common import infer_task_context, load_tasks_data, resolve_project_dir, save_tasks_data
+
+from verify_task_closure import (
+    extract_command_tokens,
+    extract_expected_test_names,
+    extract_path_candidates,
+    file_contains_required_content,
+    normalize_path,
+    read_text,
+)
+
+
+PROJECT_DIR = resolve_project_dir(script_path=__file__)
+TASKS_FILE = PROJECT_DIR / "tasks.json"
+AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
+BOT_FILE = PROJECT_DIR / "scripts" / "ralph_bot.py"
+REPORT_FILE = PROJECT_DIR / "audit_report.md"
+COMPLETE_STATUSES = {"done", "verified_done"}
+SAFE_AUTO_APPLY_VERDICTS = {"verified_done", "false_positive"}
+
+
+def load_tasks() -> dict[str, Any]:
+    return load_tasks_data(PROJECT_DIR)
+
+
+def load_audit(task_id: str) -> dict | None:
+    path = AUDIT_DIR / f"{task_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def infer_task_class(task: dict[str, Any]) -> tuple[str, list[str], list[str], list[str]]:
+    return infer_task_context(task)
+
+
+def classify_command(task: dict[str, Any], command_tokens: list[str]) -> tuple[str, str]:
+    if not command_tokens:
+        return "needs_human_review", "No explicit /command token found in task text."
+    bot_text = read_text(BOT_FILE)
+    if not bot_text:
+        return "false_positive", "scripts/ralph_bot.py is missing."
+
+    missing_handler = []
+    missing_routing = []
+    missing_help = []
+    resolved_handlers: dict[str, set[str]] = {}
+
+    def candidate_handlers(token: str) -> set[str]:
+        return {
+            f"cmd_{token}",
+            f"cmd_start_{token}",
+        }
+
+    def routed_handlers(token: str) -> set[str]:
+        pattern = re.compile(
+            rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
+            re.MULTILINE,
+        )
+        return set(pattern.findall(bot_text))
+
+    for token in command_tokens:
+        handlers = candidate_handlers(token) | routed_handlers(token)
+        resolved_handlers[token] = handlers
+        if not any(f"def {handler}(" in bot_text for handler in handlers):
+            missing_handler.append(token)
+        if not re.search(rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']', bot_text):
+            missing_routing.append(token)
+        if f"/{token}" not in bot_text:
+            missing_help.append(token)
+
+    tests_present = False
+    for test_file in PROJECT_DIR.glob("tests/test_*.py"):
+        text = read_text(test_file)
+        if any(
+            f"/{token}" in text or any(handler in text for handler in resolved_handlers.get(token, set()))
+            for token in command_tokens
+        ):
+            tests_present = True
+            break
+
+    if (
+        len(missing_handler) == len(command_tokens)
+        and len(missing_routing) == len(command_tokens)
+        and len(missing_help) == len(command_tokens)
+    ):
+        return "false_positive", f"Command implementation missing: {', '.join('/' + token for token in command_tokens)}."
+    if missing_handler or missing_routing or missing_help or not tests_present:
+        parts = []
+        if missing_handler:
+            parts.append("missing handlers: " + ", ".join("/" + token for token in missing_handler))
+        if missing_routing:
+            parts.append("missing routing: " + ", ".join(f"/{token}" for token in missing_routing))
+        if missing_help:
+            parts.append("missing command/help evidence: " + ", ".join(f"/{token}" for token in missing_help))
+        if not tests_present:
+            parts.append("missing command test evidence")
+        return "partial", "; ".join(parts)
+    return "verified_done", "Command routing, handler alias, help text, and test evidence exist."
+
+
+def classify_script(task: dict[str, Any], expected_paths: list[str]) -> tuple[str, str]:
+    script_paths = [path for path in expected_paths if path.startswith("scripts/")]
+    if not script_paths:
+        return "needs_human_review", "No explicit script path found in task text."
+
+    existing = [path for path in script_paths if (PROJECT_DIR / path).exists()]
+    if not existing:
+        return "false_positive", "Expected script is missing: " + ", ".join(script_paths)
+    if len(existing) != len(script_paths):
+        missing = [path for path in script_paths if path not in existing]
+        return "partial", "Some expected scripts are missing: " + ", ".join(missing)
+
+    return "verified_done", "Expected script paths exist in repository."
+
+
+def classify_template(task: dict[str, Any], expected_paths: list[str]) -> tuple[str, str]:
+    template_paths = [path for path in expected_paths if path.startswith("templates/")]
+    if not template_paths:
+        return "needs_human_review", "No explicit template path found in task text."
+
+    existing = [path for path in template_paths if (PROJECT_DIR / path).exists()]
+    if not existing:
+        return "false_positive", "Expected template is missing: " + ", ".join(template_paths)
+    if len(existing) != len(template_paths):
+        missing = [path for path in template_paths if path not in existing]
+        return "partial", "Some expected templates are missing: " + ", ".join(missing)
+
+    incomplete = []
+    for template_path in template_paths:
+        full_path = PROJECT_DIR / template_path
+        if not file_contains_required_content(task, full_path):
+            incomplete.append(template_path)
+    if incomplete:
+        return "partial", "Template exists but required content is incomplete: " + ", ".join(incomplete)
+    return "verified_done", "Expected template paths exist and match required content checks."
+
+
+def classify_docs(task: dict[str, Any], expected_paths: list[str], audit: dict | None) -> tuple[str, str]:
+    doc_paths = [path for path in expected_paths if path.startswith("docs/") or path.endswith(".md")]
+    if not doc_paths:
+        if audit and audit.get("verified_success") is True:
+            return "verified_done", "Audit artifact shows verified success for docs task."
+        return "needs_human_review", "No explicit docs path found in task text."
+
+    existing = [path for path in doc_paths if (PROJECT_DIR / path).exists()]
+    if not existing:
+        return "false_positive", "Expected document is missing: " + ", ".join(doc_paths)
+    if len(existing) != len(doc_paths):
+        missing = [path for path in doc_paths if path not in existing]
+        return "partial", "Some expected documents are missing: " + ", ".join(missing)
+    for doc_path in doc_paths:
+        if not file_contains_required_content(task, PROJECT_DIR / doc_path):
+            return "partial", f"Document exists but required content looks incomplete: {doc_path}"
+    return "verified_done", "Expected documentation exists and matches required content checks."
+
+
+def classify_tests(task: dict[str, Any], expected_paths: list[str], expected_tests: list[str]) -> tuple[str, str]:
+    test_files = [path for path in expected_paths if path.startswith("tests/")]
+    existing_test_files = [path for path in test_files if (PROJECT_DIR / path).exists()]
+
+    found_tests = []
+    for test_name in expected_tests:
+        for test_file in PROJECT_DIR.glob("tests/test_*.py"):
+            if test_name in read_text(test_file):
+                found_tests.append(test_name)
+                break
+
+    if not existing_test_files and not found_tests:
+        return "false_positive", "Expected test files or named tests are missing."
+    if expected_tests and len(found_tests) != len(expected_tests):
+        missing = [name for name in expected_tests if name not in found_tests]
+        return "partial", "Some expected tests are missing: " + ", ".join(missing)
+    return "verified_done", "Expected test files and named tests exist."
+
+
+def classify_implementation(task: dict[str, Any], audit: dict | None) -> tuple[str, str]:
+    if audit and audit.get("verified_success") is True:
+        return "verified_done", "Audit artifact shows verified success."
+    if audit and audit.get("runtime_success") is True and audit.get("verified_success") is False:
+        verification = audit.get("verification", {})
+        reason = str(verification.get("reason", "")).strip()
+        if reason:
+            return "needs_human_review", f"Runtime succeeded but verification failed: {reason}"
+        return "needs_human_review", "Runtime succeeded but verification did not pass."
+    return "needs_human_review", "Generic implementation task needs human review: repo truth is not strong enough."
+
+
+def classify_task(task: dict[str, Any]) -> dict[str, Any]:
+    task_class, expected_paths, command_tokens, expected_tests = infer_task_class(task)
+    audit = load_audit(task["id"])
+
+    if task_class == "command":
+        verdict, reason = classify_command(task, command_tokens)
+    elif task_class == "script":
+        verdict, reason = classify_script(task, expected_paths)
+    elif task_class == "template":
+        verdict, reason = classify_template(task, expected_paths)
+    elif task_class == "docs-only":
+        verdict, reason = classify_docs(task, expected_paths, audit)
+    elif task_class == "tests-only":
+
+exec
+/bin/zsh -lc "sed -n '1,220p' scripts/verify_task_closure.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Minimal trust-layer verification before task closure."""
+
+from __future__ import annotations
+
+import json
+import os
+import py_compile
+import re
+import sys
+from pathlib import Path
+
+try:
+    from ralph_common import (
+        detect_task_class,
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        infer_task_context,
+        is_bookkeeping,
+        is_bookkeeping_file,
+        normalize_path,
+        resolve_project_dir,
+    )
+except ImportError:
+    from scripts.ralph_common import (
+        detect_task_class,
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        infer_task_context,
+        is_bookkeeping,
+        is_bookkeeping_file,
+        normalize_path,
+        resolve_project_dir,
+    )
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def command_candidate_handlers(token: str) -> set[str]:
+    return {f"cmd_{token}", f"cmd_start_{token}"}
+
+
+def command_routed_handlers(bot_text: str, token: str) -> set[str]:
+    pattern = re.compile(
+        rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
+        re.MULTILINE,
+    )
+    return set(pattern.findall(bot_text))
+
+
+def file_contains_required_content(task: dict, path: Path) -> bool:
+    content = read_text(path).lower()
+    if not content:
+        return False
+    for criterion in task.get("acceptance_criteria", []) or []:
+        crit = criterion.strip()
+        if crit.lower().startswith("содержит "):
+            phrase = crit[9:].strip().lower()
+            if phrase and phrase not in content:
+                return False
+        if crit.lower().startswith("contains "):
+            phrase = crit[9:].strip().lower()
+            if phrase and phrase not in content:
+                return False
+    return True
+
+
+def result(result: str, task_class: str, reason: str, changed_files: list[str], non_bookkeeping: list[str]) -> dict:
+    return {
+        "result": result,
+        "task_class": task_class,
+        "reason": reason,
+        "changed_files": changed_files,
+        "changed_files_non_bookkeeping": non_bookkeeping,
+        "bookkeeping_only": bool(changed_files) and not non_bookkeeping,
+    }
+
+
+def verify_task_completion(task: dict, project_dir: Path, changed_files: list[str]) -> dict:
+    changed_files = [normalize_path(path) for path in changed_files if normalize_path(path)]
+    non_bookkeeping = [path for path in changed_files if not is_bookkeeping_file(path)]
+    task_class, expected_paths, command_tokens, expected_tests = infer_task_context(task)
+
+    if task_class == "reaudit-report":
+        script_path = project_dir / "scripts" / "re_audit_tasks.py"
+        test_path = project_dir / "tests" / "test_re_audit_tasks.py"
+        report_path = project_dir / "audit_report.md"
+
+        missing_parts: list[str] = []
+        script_text = read_text(script_path)
+        tests_text = read_text(test_path)
+        report_text = read_text(report_path)
+
+        if not script_text:
+            missing_parts.append("scripts/re_audit_tasks.py is missing")
+        if not tests_text:
+            missing_parts.append("tests/test_re_audit_tasks.py is missing")
+        if not report_text:
+            missing_parts.append("audit_report.md is missing")
+        if script_text:
+            if "audit_report.md" not in script_text or "Human-readable report saved to" not in script_text:
+                missing_parts.append("re-audit script does not persist human-readable report")
+            if "false positive" not in script_text or "unclear" not in script_text:
+                missing_parts.append("re-audit script does not expose human-readable classifications")
+        if tests_text:
+            if "audit_report.md" not in tests_text or "Classification: unclear" not in tests_text:
+                missing_parts.append("re-audit report path is not covered by targeted tests")
+        if report_text:
+            if "# Re-audit Report" not in report_text or "## Results" not in report_text:
+                missing_parts.append("audit_report.md does not contain saved re-audit report output")
+
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
+        return result(
+            "pass",
+            task_class,
+            "Re-audit reporting verification passed.",
+            changed_files,
+            non_bookkeeping,
+        )
+
+    if task_class not in {"docs-only", "template"} and not non_bookkeeping:
+        reason = "Verification failed: only bookkeeping/state/report files changed; no implementation evidence found."
+        return result("fail_fix", task_class, reason, changed_files, non_bookkeeping)
+
+    if task_class == "command":
+        bot_path = project_dir / "scripts" / "ralph_bot.py"
+        bot_text = read_text(bot_path)
+        missing_handler: list[str] = []
+        missing_routing: list[str] = []
+        missing_help: list[str] = []
+        resolved_handlers: dict[str, set[str]] = {}
+        if not any(path == "scripts/ralph_bot.py" or path.startswith("tests/") for path in non_bookkeeping):
+            return result("fail_fix", task_class, "Verification failed: command task changed no bot or test files.", changed_files, non_bookkeeping)
+        for token in command_tokens:
+            handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
+            resolved_handlers[token] = handlers
+            if not any(f"def {handler}(" in bot_text for handler in handlers):
+                missing_handler.append(token)
+            if not re.search(rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']', bot_text):
+                missing_routing.append(token)
+            if f"/{token}" not in bot_text:
+                missing_help.append(token)
+        tests_have_evidence = any(path.startswith("tests/") for path in non_bookkeeping)
+        if not tests_have_evidence:
+            for test_file in project_dir.glob("tests/test_*.py"):
+                test_text = read_text(test_file)
+                if any(
+                    f"/{token}" in test_text or any(handler in test_text for handler in resolved_handlers.get(token, set()))
+                    for token in command_tokens
+                ):
+                    tests_have_evidence = True
+                    break
+        missing_parts: list[str] = []
+        if missing_handler:
+            missing_parts.append("missing handlers: " + ", ".join("/" + token for token in missing_handler))
+        if missing_routing:
+            missing_parts.append("missing routing: " + ", ".join("/" + token for token in missing_routing))
+        if missing_help:
+            missing_parts.append("missing command/help evidence: " + ", ".join("/" + token for token in missing_help))
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
+        if not tests_have_evidence:
+            return result("fail_fix", task_class, "Verification failed: command task has no test or smoke evidence.", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Command verification passed.", changed_files, non_bookkeeping)
+
+    if task_class == "script":
+        script_paths = [path for path in expected_paths if path.startswith("scripts/")]
+        if not script_paths:
+            return result("needs_human_review", task_class, "Verification is uncertain: no explicit script path found in task text.", changed_files, non_bookkeeping)
+        if not any(path in non_bookkeeping for path in script_paths) and not any(
+            path in non_bookkeeping for path in ("ralph.sh", "scripts/ralph_bot.py")
+        ):
+            return result("fail_fix", task_class, "Verification failed: script task changed no script or integration files.", changed_files, non_bookkeeping)
+        for script_path in script_paths:
+            full_path = project_dir / script_path
+            if not full_path.exists():
+                return result("fail_fix", task_class, f"Verification failed: expected script missing: {script_path}", changed_files, non_bookkeeping)
+            if full_path.suffix == ".py":
+                try:
+                    py_compile.compile(str(full_path), doraise=True)
+                except Exception as exc:
+                    return result("fail_fix", task_class, f"Verification failed: script does not compile: {script_path} ({exc})", changed_files, non_bookkeeping)
+        text_blob = "\n".join([task.get("description", ""), *task.get("acceptance_criteria", [])])
+        if ("ralph.sh" in text_blob or "ralph_bot.py" in text_blob) and not any(
+            path in non_bookkeeping for path in ("ralph.sh", "scripts/ralph_bot.py")
+        ):
+            return result("fail_fix", task_class, "Verification failed: task requires integration hook but no integration file changed.", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Script verification passed.", changed_files, non_bookkeeping)
+
+    if task_class == "template":
+        template_paths = [path for path in expected_paths if path.startswith("templates/")]
+        if not template_paths:
+            return result("needs_human_review", task_class, "Verification is uncertain: no explicit template path found in task text.", changed_files, non_bookkeeping)
+        if not any(path in non_bookkeeping for path in template_paths):
+            return result("fail_fix", task_class, "Verification failed: template task changed no target template files.", changed_files, non_bookkeeping)
+        for template_path in template_paths:
+            full_path = project_dir / template_path
+            if not full_path.exists():
+                return result("fail_fix", task_class, f"Verification failed: expected template missing: {template_path}", changed_files, non_bookkeeping)
+            if not file_contains_required_content(task, full_path):
+                return result("fail_fix", task_class, f"Verification failed: required template content missing in {template_path}", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Template verification passed.", changed_files, non_bookkeeping)
+
+    if task_class == "docs-only":
+        doc_paths = expected_paths or [path for path in non_bookkeeping if path.endswith(".md")]
+        if not doc_paths:
+            return result("fail_fix", task_class, "Verification failed: docs-only task has no documentation evidence.", changed_files, non_bookkeeping)
+        if not any(path in non_bookkeeping for path in doc_paths) and not any(path.endswith(".md") for path in non_bookkeeping):
+            return result("fail_fix", task_class, "Verification failed: docs-only task changed no documentation files.", changed_files, non_bookkeeping)
+        for doc_path in doc_paths:
+            full_path = project_dir / doc_path
+            if not full_path.exists():
+
+exec
+/bin/zsh -lc "sed -n '1,220p' scripts/update_task.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Update task status in tasks.json."""
+import sys
+from datetime import datetime, timezone
+
+try:
+    from ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
+except ImportError:
+    from scripts.ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
+
+
+COMPLETED_STATUSES = {"done", "verified_done"}
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: update_task.py <task_id> <status> [revision_notes]")
+        sys.exit(1)
+    project_dir = resolve_project_dir(script_path=__file__)
+    task_id, status = sys.argv[1], sys.argv[2]
+    notes = sys.argv[3] if len(sys.argv) > 3 else None
+    data = load_tasks_data(project_dir)
+    for task in data["tasks"]:
+        if task["id"] == task_id:
+            task["status"] = status
+            if status in COMPLETED_STATUSES:
+                task["completed_at"] = datetime.now(timezone.utc).isoformat()
+            else:
+                task["completed_at"] = None
+            if notes:
+                task["revision_notes"] = notes
+            break
+    else:
+        print(f"Task {task_id} not found")
+        sys.exit(1)
+    save_tasks_data(project_dir, data)
+    print(f"Updated {task_id} -> {status}")
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/zsh -lc "sed -n '1,220p' scripts/update_progress.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Append entry to progress.md."""
+import sys
+from datetime import datetime, timezone
+
+try:
+    from ralph_common import resolve_project_dir
+except ImportError:
+    from scripts.ralph_common import resolve_project_dir
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: update_progress.py <task_id> <note>")
+        sys.exit(1)
+    project_dir = resolve_project_dir(script_path=__file__)
+    progress_file = project_dir / "progress.md"
+    task_id = sys.argv[1]
+    note = " ".join(sys.argv[2:])
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    entry = f"- **{task_id}** ({ts}): {note}\n"
+    content = progress_file.read_text(encoding="utf-8") if progress_file.exists() else ""
+    content += entry
+    progress_file.write_text(content, encoding="utf-8")
+    print(f"Progress updated: {task_id}")
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/zsh -lc "sed -n '1,220p' scripts/explain_task.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Explain current task truth for operator review."""
+
+from __future__ import annotations
+
+import argparse
+import os
+
+try:
+    from ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+except ImportError:
+    from scripts.ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+
+
+def suggested_next_action(task: dict, is_runnable: bool, reason: str, re_audit: dict) -> str:
+    status = str(task.get("status", ""))
+    verdict = str(re_audit.get("verdict", ""))
+    task_id = str(task.get("id", ""))
+
+    if is_runnable:
+        return f"Run ./ralph.sh task {task_id}"
+    if status == "pending":
+        return f"Do not run yet; resolve {reason}"
+    if status in {"partial", "needs_human_review", "false_positive"}:
+        return (
+            f"Review evidence, then use scripts/reopen_tasks.py --task {task_id} "
+            f"--to-status pending --note \"...\" if retry is justified"
+        )
+    if status in COMPLETED_STATUSES:
+        return "No reopen needed; task already counts as completed"
+    if verdict == "verified_done":
+        return "Status can be aligned via controlled re-audit/apply"
+    return "Review revision_notes and audit artifact before changing status"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Explain task status and operator options")
+    parser.add_argument("--project-dir", default=None, help="Project directory")
+    parser.add_argument("task_id", help="Task ID to explain")
+    args = parser.parse_args()
+
+    project_dir = resolve_project_dir(args.project_dir)
+    os.environ["RALPH_PROJECT_DIR"] = str(project_dir)
+
+    from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
+    from re_audit_tasks import classify_task
+
+    data = load_tasks_data(project_dir)
+    tasks = data.get("tasks", [])
+    task = next((item for item in tasks if item.get("id") == args.task_id), None)
+    if task is None:
+        print(f"Task not found: {args.task_id}")
+        return 1
+
+    is_runnable, reason = runnable_reason(task, tasks)
+    re_audit = classify_task(task)
+
+    lines = [
+        f"Task: {task['id']} — {task.get('title', '')}",
+        f"Status: {task.get('status', 'unknown')}",
+        "Dependencies: " + (", ".join(task.get("dependencies", [])) if task.get("dependencies") else "none"),
+        f"Runnable: {'yes' if is_runnable else 'no'}",
+        f"Why not runnable: {reason if not is_runnable else 'n/a'}",
+        f"Re-audit verdict: {re_audit['verdict']} ({re_audit['task_class']})",
+        f"Re-audit reason: {re_audit['reason']}",
+        "Suggested next action: " + suggested_next_action(task, is_runnable, reason, re_audit),
+    ]
+
+    audit_path = AUDIT_DIR / f"{task['id']}.json"
+    if audit_path.exists():
+        lines.append("")
+        lines.append("Audit summary:")
+        lines.append(format_audit_summary(load_artifact(task["id"]), fallback_task_id=task["id"]))
+    else:
+        lines.append("")
+        lines.append("Audit summary: none")
+
+    print("\n".join(lines))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+codex
+Нашёл конкретный незакрытый дефект в фактическом коде: рефакторинг сломал `scripts/explain_task.py`. Проверяю, нет ли ещё аналогичных разрывов по shared helper и control/task IO.
+exec
+/bin/zsh -lc "sed -n '220,420p' scripts/ralph_common.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+            )
+    blocked_by_status = [
+        {
+            "id": task.get("id", ""),
+            "title": task.get("title", ""),
+            "status": task.get("status", ""),
+        }
+        for task in unresolved
+        if task.get("status") != "pending"
+    ]
+    reason = "no_pending"
+    if blocked_pending:
+        reason = "blocked_dependencies"
+    elif blocked_by_status:
+        reason = "blocked_statuses"
+    return {
+        "has_pending": bool(pending),
+        "has_unresolved": bool(unresolved),
+        "blocked_pending": blocked_pending,
+        "blocked_by_status": blocked_by_status,
+        "reason": reason,
+    }
+
+
+def normalize_path(path: str) -> str:
+    return path.strip().replace("\\", "/").lstrip("./")
+
+
+def is_bookkeeping_file(path: str) -> bool:
+    normalized = normalize_path(path)
+    if normalized in BOOKKEEPING_EXACT:
+        return True
+    return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
+
+
+def is_bookkeeping(path: str) -> bool:
+    return is_bookkeeping_file(path)
+
+
+def extract_path_candidates(task: dict[str, Any]) -> list[str]:
+    texts: list[str] = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    texts.extend(task.get("test_steps", []) or [])
+    combined = "\n".join(texts)
+    matches = re.findall(
+        r"((?:scripts|templates|tests|docs)/[A-Za-z0-9_./-]+\.(?:py|md|json|sh|ts|tsx|js)|(?:README|PROMPT_CHANGELOG|AGENTS(?:_[A-Z]+)?|BLOG_DRAFTS|progress)\.md)",
+        combined,
+    )
+    seen: set[str] = set()
+    result: list[str] = []
+    for match in matches:
+        path = normalize_path(match)
+        if path in seen:
+            continue
+        seen.add(path)
+        result.append(path)
+    return result
+
+
+def extract_command_tokens(task: dict[str, Any]) -> list[str]:
+    texts: list[str] = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    tokens = re.findall(r"/([a-z][a-z0-9_]*)", "\n".join(texts).lower())
+    seen: set[str] = set()
+    result: list[str] = []
+    for token in tokens:
+        if token in seen:
+            continue
+        seen.add(token)
+        result.append(token)
+    return result
+
+
+def extract_expected_test_names(task: dict[str, Any]) -> list[str]:
+    texts = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    texts.extend(task.get("test_steps", []) or [])
+    names = re.findall(r"\b(test_[a-zA-Z0-9_]+)\b", "\n".join(texts))
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
+
+
+def detect_task_class(
+    task: dict[str, Any],
+    expected_paths: list[str],
+    command_tokens: list[str],
+    expected_tests: list[str],
+) -> str:
+    title = task.get("title", "").lower()
+    description = task.get("description", "").lower()
+    combined = "\n".join(
+        [title, description, *[item.lower() for item in task.get("acceptance_criteria", []) or []]]
+    )
+    if any(path.startswith("templates/") for path in expected_paths):
+        return "template"
+    if any(path.startswith("scripts/") for path in expected_paths):
+        return "script"
+    if command_tokens and ("bot" in title or "команда" in title or "telegram" in combined):
+        return "command"
+    if title.startswith("tests:") or expected_tests or "pytest" in combined:
+        return "tests-only"
+    if (
+        "re-audit" in combined
+        and "report" in combined
+        and any(keyword in combined for keyword in ("verified", "partial", "false positive", "unclear"))
+    ):
+        return "reaudit-report"
+    if any(path.startswith("docs/") for path in expected_paths) or any(path.endswith(".md") for path in expected_paths):
+        return "docs-only"
+    if any(keyword in combined for keyword in DOC_KEYWORDS):
+        return "docs-only"
+    return "implementation"
+
+
+def infer_task_context(task: dict[str, Any]) -> tuple[str, list[str], list[str], list[str]]:
+    expected_paths = extract_path_candidates(task)
+    command_tokens = extract_command_tokens(task)
+    expected_tests = extract_expected_test_names(task)
+    task_class = detect_task_class(task, expected_paths, command_tokens, expected_tests)
+    return task_class, expected_paths, command_tokens, expected_tests
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Shared Ralph control-file helpers.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    read_parser = subparsers.add_parser("control-read")
+    read_parser.add_argument("--project-dir", default=None)
+
+    write_parser = subparsers.add_parser("control-write")
+    write_parser.add_argument("action")
+    write_parser.add_argument("comment", nargs="?", default="")
+    write_parser.add_argument("--project-dir", default=None)
+
+    clear_parser = subparsers.add_parser("control-clear")
+    clear_parser.add_argument("--project-dir", default=None)
+
+    consume_parser = subparsers.add_parser("control-consume-comment")
+    consume_parser.add_argument("--project-dir", default=None)
+
+    return parser
+
+
+def main() -> int:
+    parser = _build_parser()
+    args = parser.parse_args()
+    project_dir = resolve_project_dir(getattr(args, "project_dir", None))
+
+    if args.command == "control-read":
+        data = read_control_data(project_dir)
+        print(data.get("action", DEFAULT_CONTROL_ACTION))
+        print(data.get("comment", ""))
+        return 0
+
+    if args.command == "control-write":
+        write_control_data(project_dir, args.action, args.comment)
+        return 0
+
+    if args.command == "control-clear":
+        clear_control_action(project_dir)
+        return 0
+
+    if args.command == "control-consume-comment":
+        comment = consume_control_comment(project_dir)
+        if comment:
+            print(comment)
+        return 0
+
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+exec
+/bin/zsh -lc "sed -n '220,420p' scripts/verify_task_closure.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+            if not full_path.exists():
+                return result("fail_fix", task_class, f"Verification failed: expected document missing: {doc_path}", changed_files, non_bookkeeping)
+            if not file_contains_required_content(task, full_path):
+                return result("fail_fix", task_class, f"Verification failed: required document content missing in {doc_path}", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Docs verification passed.", changed_files, non_bookkeeping)
+
+    if task_class == "tests-only":
+        test_files = [path for path in non_bookkeeping if path.startswith("tests/")]
+        if not test_files:
+            return result("fail_fix", task_class, "Verification failed: tests-only task has no changed test files.", changed_files, non_bookkeeping)
+        for test_name in expected_tests:
+            found = False
+            for test_file in project_dir.glob("tests/test_*.py"):
+                if test_name in read_text(test_file):
+                    found = True
+                    break
+            if not found:
+                return result("fail_fix", task_class, f"Verification failed: expected test not found: {test_name}", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Tests verification passed.", changed_files, non_bookkeeping)
+
+    return result("pass", task_class, "Generic implementation verification passed.", changed_files, non_bookkeeping)
+
+
+def main() -> None:
+    raw_task = sys.stdin.read().strip() or "{}"
+    task = json.loads(raw_task)
+    project_dir = resolve_project_dir(os.environ.get("RALPH_PROJECT_DIR"), script_path=__file__)
+    changed_files = json.loads(os.environ.get("RALPH_CHANGED_FILES_JSON", "[]"))
+    print(json.dumps(verify_task_completion(task, project_dir, changed_files), ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/zsh -lc "sed -n '220,360p' scripts/re_audit_tasks.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+    elif task_class == "tests-only":
+        verdict, reason = classify_tests(task, expected_paths, expected_tests)
+    else:
+        verdict, reason = classify_implementation(task, audit)
+
+    return {
+        "task_id": task["id"],
+        "current_status": task.get("status", ""),
+        "task_class": task_class,
+        "verdict": verdict,
+        "reason": reason,
+        "expected_paths": [normalize_path(path) for path in expected_paths],
+        "has_audit": audit is not None,
+    }
+
+
+def select_tasks(data: dict[str, Any], last: int | None, task_id: str | None) -> list[dict[str, Any]]:
+    tasks = data.get("tasks", [])
+    if task_id:
+        return [task for task in tasks if task.get("id") == task_id]
+    completed = [task for task in tasks if task.get("status") in COMPLETE_STATUSES]
+    if last is None:
+        return completed
+    return completed[-last:]
+
+
+def summarize_verdicts(results: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {
+        "total_checked": len(results),
+        "verified_done": 0,
+        "false_positive": 0,
+        "partial": 0,
+        "needs_human_review": 0,
+        "applyable": 0,
+    }
+    for item in results:
+        verdict = item["verdict"]
+        if verdict in counts:
+            counts[verdict] += 1
+        if verdict in SAFE_AUTO_APPLY_VERDICTS:
+            counts["applyable"] += 1
+    return counts
+
+
+def clear_stale_audit_artifact(task_id: str, verdict: str) -> None:
+    """Remove stale latest-run truth when re-audit downgrades a task."""
+    if verdict != "false_positive":
+        return
+    path = AUDIT_DIR / f"{task_id}.json"
+    if path.exists():
+        path.unlink()
+
+
+def apply_verdicts(data: dict[str, Any], results: list[dict[str, Any]]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    applied: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    by_id = {item["task_id"]: item for item in results}
+    now = datetime.now(timezone.utc).isoformat()
+    for task in data.get("tasks", []):
+        result = by_id.get(task.get("id"))
+        if not result:
+            continue
+        verdict = result["verdict"]
+        if verdict not in SAFE_AUTO_APPLY_VERDICTS:
+            skipped.append(
+                {
+                    "task_id": task["id"],
+                    "verdict": verdict,
+                    "reason": "report-only in apply mode",
+                }
+            )
+            continue
+        if task.get("status") == verdict:
+            skipped.append(
+                {
+                    "task_id": task["id"],
+                    "verdict": verdict,
+                    "reason": "already aligned",
+                }
+            )
+            continue
+        task["status"] = verdict
+        if verdict == "verified_done":
+            task["completed_at"] = task.get("completed_at") or now
+        else:
+            task["completed_at"] = None
+        task["revision_notes"] = f"Re-audit {now}: {verdict} — {result['reason']}"
+        clear_stale_audit_artifact(task["id"], verdict)
+        applied.append(
+            {
+                "task_id": task["id"],
+                "verdict": verdict,
+                "reason": result["reason"],
+            }
+        )
+    return applied, skipped
+
+
+def format_summary_block(results: list[dict[str, Any]]) -> list[str]:
+    summary = summarize_verdicts(results)
+    return [
+        "",
+        "=== Re-audit Summary ===",
+        f"Total checked: {summary['total_checked']}",
+        f"verified_done: {summary['verified_done']}",
+        f"false_positive: {summary['false_positive']}",
+        f"partial: {summary['partial']}",
+        f"needs_human_review: {summary['needs_human_review']}",
+        f"applyable: {summary['applyable']}",
+    ]
+
+
+def format_results(results: list[dict[str, Any]], apply: bool) -> str:
+    lines = ["=== Re-audit Report ===", f"Mode: {'apply' if apply else 'dry-run'}"]
+    if not results:
+        lines.append("No tasks selected.")
+        return "\n".join(lines)
+    lines.extend(format_summary_block(results))
+    lines.append("")
+    lines.append("Results:")
+    for item in results:
+        lines.append(
+            f"{item['task_id']} | {item['current_status']} -> {item['verdict']} | "
+            f"{item['task_class']} | {item['reason']}"
+        )
+    return "\n".join(lines)
+
+
+def human_verdict(verdict: str) -> str:
+    mapping = {
+        "verified_done": "verified",
+        "false_positive": "false positive",
+        "partial": "partial",
+        "needs_human_review": "unclear",
+    }
+    return mapping.get(verdict, verdict)
+
+
+def scope_label(last: int | None, task_id: str | None) -> str:
+    if task_id:
+        return f"task {task_id}"
+
+exec
+/bin/zsh -lc "sed -n '1,140p' scripts/next_task.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Pick next pending task from tasks.json."""
+import argparse
+import json
+import sys
+try:
+    from ralph_common import explain_non_runnable, load_tasks_data, pick_next_task, resolve_project_dir
+except ImportError:
+    from scripts.ralph_common import explain_non_runnable, load_tasks_data, pick_next_task, resolve_project_dir
+
+
+pick_next = pick_next_task
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--task", default=None)
+    parser.add_argument("--phase", default=None)
+    parser.add_argument("--explain", action="store_true")
+    args = parser.parse_args()
+    project_dir = resolve_project_dir(script_path=__file__)
+    data = load_tasks_data(project_dir)
+    if args.explain:
+        print(json.dumps(explain_non_runnable(data["tasks"], phase=args.phase), indent=2, ensure_ascii=False))
+        sys.exit(0)
+    task = pick_next_task(data["tasks"], task_id=args.task, phase=args.phase)
+    if task is None:
+        print("null")
+        sys.exit(0)
+    print(json.dumps(task, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/zsh -lc "python3 scripts/explain_task.py R13-03 >/tmp/explain.out 2>/tmp/explain.err; printf 'exit=%s\\n' "'$?; sed -n '"'1,80p' /tmp/explain.err" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 185ms:
+exit=0
+
+codex
+Ошибка в `explain_task.py` не всплыла на `pending` задаче, потому что битая ветка не исполнилась. Проверяю поведение на завершённой задаче: если там падает, acceptance criteria про operator explanation считать закрытым нельзя.
+exec
+/bin/zsh -lc "sed -n '1040,1105p' ralph.sh" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+}
+fd, tmp_path = tempfile.mkstemp(prefix='ralph_state_', suffix='.tmp', dir='.')
+with os.fdopen(fd, 'w', encoding='utf-8') as f:
+    f.write(json.dumps(state, indent=2))
+os.replace(tmp_path, 'ralph_state.json')
+"
+}
+
+CONTROL_ACTION="continue"
+CONTROL_TARGET=""
+read_control_file() {
+    python3 "$RALPH_DIR/scripts/ralph_common.py" control-read 2>/dev/null || printf "continue\n\n"
+}
+
+apply_timeout_override() {
+    local control_data action raw_value
+    control_data=$(read_control_file)
+    action=$(printf '%s\n' "$control_data" | sed -n '1p')
+    raw_value=$(printf '%s\n' "$control_data" | sed -n '2p')
+
+    case "$raw_value" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+
+    if [ "$action" = "timeout" ] && [ -n "$raw_value" ]; then
+        TASK_TIMEOUT="$raw_value"
+        TASK_LEAD_TIMEOUT="$raw_value"
+        log "⏱ Timeout override applied: coder=${TASK_TIMEOUT}s lead=${TASK_LEAD_TIMEOUT}s"
+        clear_control_action
+    fi
+}
+
+check_control() {
+    while true; do
+        if [ -f ralph_control.json ]; then
+            local control_data
+            control_data=$(read_control_file)
+            CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
+            CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+            if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
+                return 1
+            fi
+            if [ "$CONTROL_ACTION" = "skip" ]; then
+                return 2
+            fi
+            if [ "$CONTROL_ACTION" = "pause" ]; then
+                log "⏸ Paused by user, waiting for resume..."
+                write_state "paused" "" "" "Paused by user"
+                while [ "$CONTROL_ACTION" = "pause" ]; do
+                    sleep 5
+                    control_data=$(read_control_file)
+                    CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
+                    CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+                done
+                if [ "$CONTROL_ACTION" = "continue" ]; then
+                    write_state "running" "${TASK_ID:-}" "" "Resumed by user"
+                    CONTROL_TARGET=""
+                    return 0
+                fi
+                continue
+            fi
+        fi
+        CONTROL_ACTION="continue"
+        CONTROL_TARGET=""
+        return 0
+    done
+
+exec
+/bin/zsh -lc "sed -n '2190,2245p' ralph.sh" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+}
+
+file_mtime() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        echo 0
+        return 0
+    fi
+    stat -f %m "$file" 2>/dev/null || stat -c %Y "$file" 2>/dev/null || echo 0
+}
+
+terminate_codex_run() {
+    local target_pid="${1:-}"
+    local target_pgid="${2:-}"
+    local stale_pid=""
+    local stale_pgid=""
+
+    if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
+        stale_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
+        case "$stale_pid" in
+            ''|*[!0-9]*) stale_pid="" ;;
+        esac
+    fi
+    if [ -f "$PROJECT_DIR/ralph_codex.pgid" ]; then
+        stale_pgid=$(cat "$PROJECT_DIR/ralph_codex.pgid" 2>/dev/null || echo "")
+        case "$stale_pgid" in
+            ''|*[!0-9]*) stale_pgid="" ;;
+        esac
+    fi
+
+    if [ -n "$stale_pgid" ]; then
+        kill_process_group "$stale_pgid"
+    fi
+    if [ -n "$target_pgid" ] && [ "$target_pgid" != "$stale_pgid" ]; then
+        kill_process_group "$target_pgid"
+    fi
+
+    if [ -n "$stale_pid" ]; then
+        kill_tree "$stale_pid"
+    fi
+
+    if [ -n "$target_pid" ] && [ "$target_pid" != "$stale_pid" ]; then
+        kill_tree "$target_pid"
+    fi
+}
+
+run_codex_watchdog() {
+    local output_file="$1"
+    local target_pid="$2"
+    local stale_timeout="${3:-300}"
+    local fired_flag="$4"
+    local poll_interval=5
+    local last_activity
+    local last_mtime
+    local now
+
+
+exec
+/bin/zsh -lc "rg -n \"COMPLETED_STATUSES|runnable_reason|infer_task_context|write_control_data|load_tasks_data\\(|save_tasks_data\\(|resolve_project_dir\\(\" scripts ralph.sh tests" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+scripts/update_progress.py:16:    project_dir = resolve_project_dir(script_path=__file__)
+scripts/reopen_tasks.py:28:    project_dir = resolve_project_dir(args.project_dir)
+scripts/reopen_tasks.py:29:    data = load_tasks_data(project_dir)
+scripts/reopen_tasks.py:45:    save_tasks_data(project_dir, data)
+scripts/verify_task_closure.py:19:        infer_task_context,
+scripts/verify_task_closure.py:31:        infer_task_context,
+scripts/verify_task_closure.py:89:    task_class, expected_paths, command_tokens, expected_tests = infer_task_context(task)
+scripts/verify_task_closure.py:246:    project_dir = resolve_project_dir(os.environ.get("RALPH_PROJECT_DIR"), script_path=__file__)
+scripts/explain_task.py:10:    from ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+scripts/explain_task.py:12:    from scripts.ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+scripts/explain_task.py:29:    if status in COMPLETED_STATUSES:
+scripts/explain_task.py:42:    project_dir = resolve_project_dir(args.project_dir)
+scripts/explain_task.py:48:    data = load_tasks_data(project_dir)
+scripts/explain_task.py:55:    is_runnable, reason = runnable_reason(task, tasks)
+scripts/re_audit_tasks.py:15:    from ralph_common import infer_task_context, load_tasks_data, resolve_project_dir, save_tasks_data
+scripts/re_audit_tasks.py:17:    from scripts.ralph_common import infer_task_context, load_tasks_data, resolve_project_dir, save_tasks_data
+scripts/re_audit_tasks.py:29:PROJECT_DIR = resolve_project_dir(script_path=__file__)
+scripts/re_audit_tasks.py:39:    return load_tasks_data(PROJECT_DIR)
+scripts/re_audit_tasks.py:53:    return infer_task_context(task)
+scripts/re_audit_tasks.py:424:        save_tasks_data(PROJECT_DIR, data)
+scripts/bot_smoke_check.py:14:def resolve_project_dir(explicit: str | None = None) -> Path:
+scripts/bot_smoke_check.py:129:    project_dir = resolve_project_dir(args.project_dir)
+scripts/update_task.py:12:COMPLETED_STATUSES = {"done", "verified_done"}
+scripts/update_task.py:19:    project_dir = resolve_project_dir(script_path=__file__)
+scripts/update_task.py:22:    data = load_tasks_data(project_dir)
+scripts/update_task.py:26:            if status in COMPLETED_STATUSES:
+scripts/update_task.py:36:    save_tasks_data(project_dir, data)
+scripts/ralph_common.py:16:COMPLETED_STATUSES = {"done", "verified_done"}
+scripts/ralph_common.py:49:def resolve_project_dir(explicit: str | None = None, *, script_path: str | Path | None = None) -> Path:
+scripts/ralph_common.py:76:def load_tasks_data(project_dir: Path) -> dict[str, Any]:
+scripts/ralph_common.py:88:def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
+scripts/ralph_common.py:131:def write_control_data(project_dir: Path, action: str, comment: str = "") -> None:
+scripts/ralph_common.py:150:    write_control_data(project_dir, DEFAULT_CONTROL_ACTION, "")
+scripts/ralph_common.py:166:    return {str(task.get("id")) for task in tasks if task.get("status") in COMPLETED_STATUSES}
+scripts/ralph_common.py:169:def runnable_reason(task: dict[str, Any], tasks: list[dict[str, Any]]) -> tuple[bool, str]:
+scripts/ralph_common.py:206:    unresolved = [task for task in tasks if task.get("status") not in COMPLETED_STATUSES]
+scripts/ralph_common.py:340:def infer_task_context(task: dict[str, Any]) -> tuple[str, list[str], list[str], list[str]]:
+scripts/ralph_common.py:372:    project_dir = resolve_project_dir(getattr(args, "project_dir", None))
+scripts/ralph_common.py:381:        write_control_data(project_dir, args.action, args.comment)
+scripts/auto_update.py:16:COMPLETED_STATUSES = {"done", "verified_done"}
+scripts/auto_update.py:79:    if args.status in COMPLETED_STATUSES:
+tests/test_operator_helpers.py:13:from scripts.ralph_common import consume_control_comment, load_tasks_data, save_tasks_data, write_control_data
+tests/test_operator_helpers.py:122:def test_explain_task_shows_non_runnable_reason(tmp_path: Path) -> None:
+tests/test_operator_helpers.py:310:    assert smoke.resolve_project_dir() == project_dir
+tests/test_operator_helpers.py:315:    data = load_tasks_data(project_dir)
+tests/test_operator_helpers.py:327:    save_tasks_data(project_dir, data)
+tests/test_operator_helpers.py:329:    reloaded = load_tasks_data(project_dir)
+tests/test_operator_helpers.py:336:    write_control_data(project_dir, "comment", "Operator note")
+scripts/ralph_bot.py:30:    from ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
+scripts/ralph_bot.py:33:    from scripts.ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
+scripts/ralph_bot.py:260:    write_control_data(PROJECT_DIR, action, comment)
+scripts/ralph_bot.py:623:def load_tasks_data() -> dict:
+scripts/ralph_bot.py:625:    return shared_load_tasks_data(PROJECT_DIR)
+scripts/ralph_bot.py:628:def save_tasks_data(data: dict) -> None:
+scripts/ralph_bot.py:630:    shared_save_tasks_data(PROJECT_DIR, data)
+scripts/ralph_bot.py:1251:        data = load_tasks_data()
+scripts/ralph_bot.py:1281:        save_tasks_data(data)
+scripts/ralph_bot.py:1301:        data = load_tasks_data()
+scripts/ralph_bot.py:1314:        save_tasks_data(data)
+scripts/ralph_bot.py:2060:    PROJECT_DIR = resolve_project_dir(args.project_dir)
+scripts/next_task.py:21:    project_dir = resolve_project_dir(script_path=__file__)
+scripts/next_task.py:22:    data = load_tasks_data(project_dir)
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path('tasks.json')
+data=json.loads(p.read_text())
+for t in data['tasks']:
+    if t.get('status') in {'done','verified_done'}:
+        print(t['id'])
+        break
+PY" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+R0-01
+
+codex
+Сверил hot zone дальше. Общая схема в целом есть, но `operator explanation` сейчас небезопасен: выполненная задача пойдёт в ветку с `COMPLETED_STATUSES`, а константа после рефакторинга не импортируется. Սա уже достаточный blocker для `approve`.
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from scripts.explain_task import suggested_next_action
+try:
+    print(suggested_next_action({'id':'X','status':'done'}, False, 'status=done', {'verdict':'verified_done'}))
+except Exception as e:
+    import traceback
+    traceback.print_exc()
+PY" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/scripts/explain_task.py", line 29, in suggested_next_action
+    if status in COMPLETED_STATUSES:
+NameError: name 'COMPLETED_STATUSES' is not defined
+
+codex
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R13-03","summary":"Общий helper вынесен, но рефакторинг сломал ветку operator explanation для завершённых задач.","quality_score":82,"issues":["`scripts/explain_task.py` использует `COMPLETED_STATUSES` в `suggested_next_action()`, но после выноса логики в `ralph_common.py` эта константа больше не определена и вызывает `NameError` для задач со статусом `done`/`verified_done`."],"fix_instructions":"В `scripts/explain_task.py` импортируй `COMPLETED_STATUSES` из общего helper (`ralph_common`) или убери прямую зависимость от локальной константы, затем добавь точечный тест на completed-задачу, который проходит через `suggested_next_action()`/CLI и подтверждает, что explanation не падает для `done` или `verified_done`.","alert_reason":"","progress_note":"Shared task/control/task-classification refactor mostly landed, but operator explanation is not fully reusable yet because completed-task handling is broken."}
+END_RALPH_REVIEW_JSON
+tokens used
+82,924
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R13-03","summary":"Общий helper вынесен, но рефакторинг сломал ветку operator explanation для завершённых задач.","quality_score":82,"issues":["`scripts/explain_task.py` использует `COMPLETED_STATUSES` в `suggested_next_action()`, но после выноса логики в `ralph_common.py` эта константа больше не определена и вызывает `NameError` для задач со статусом `done`/`verified_done`."],"fix_instructions":"В `scripts/explain_task.py` импортируй `COMPLETED_STATUSES` из общего helper (`ralph_common`) или убери прямую зависимость от локальной константы, затем добавь точечный тест на completed-задачу, который проходит через `suggested_next_action()`/CLI и подтверждает, что explanation не падает для `done` или `verified_done`.","alert_reason":"","progress_note":"Shared task/control/task-classification refactor mostly landed, but operator explanation is not fully reusable yet because completed-task handling is broken."}
+END_RALPH_REVIEW_JSON

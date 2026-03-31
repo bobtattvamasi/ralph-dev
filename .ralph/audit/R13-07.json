@@ -1,0 +1,73 @@
+{
+  "task_id": "R13-07",
+  "title": "Consolidate runtime constants and gate destructive rollback",
+  "status": "done",
+  "verification": {
+    "result": "pass",
+    "reason": "Script verification passed.",
+    "task_class": "script",
+    "evidence_files": [
+      "ralph.sh",
+      "reports/chrome_extension_readiness.md",
+      "scripts/ralph_bot.py",
+      "scripts/ralph_common.py",
+      "scripts/ralph_notify.py",
+      "src/ralph/resources/ralph.sh",
+      "src/ralph/resources/scripts/ralph_bot.py",
+      "src/ralph/resources/scripts/ralph_common.py",
+      "src/ralph/resources/scripts/ralph_notify.py",
+      "tests/test_bot_commands.py",
+      "tests/test_integration.py",
+      "ralph/memory/recent.md"
+    ]
+  },
+  "changes": {
+    "all": [
+      "ralph.sh",
+      "reports/chrome_extension_readiness.md",
+      "scripts/ralph_bot.py",
+      "scripts/ralph_common.py",
+      "scripts/ralph_notify.py",
+      "src/ralph/resources/ralph.sh",
+      "src/ralph/resources/scripts/ralph_bot.py",
+      "src/ralph/resources/scripts/ralph_common.py",
+      "src/ralph/resources/scripts/ralph_notify.py",
+      "tests/test_bot_commands.py",
+      "tests/test_integration.py",
+      ".ralph/memory/recent.md",
+      "progress.md",
+      "tasks.json",
+      ".ralph/audit/R13-03.json",
+      ".ralph/audit/R13-04.json",
+      ".ralph/audit/lead_prompt_R13-03.txt",
+      ".ralph/audit/lead_prompt_R13-04.txt",
+      ".ralph/audit/lead_prompt_R13-07.txt",
+      ".ralph/audit/lead_reasoning_R13-03.txt",
+      ".ralph/audit/lead_reasoning_R13-04.txt",
+      ".ralph/audit/lead_reasoning_R13-07.txt"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "reports/chrome_extension_readiness.md",
+      "scripts/ralph_bot.py",
+      "scripts/ralph_common.py",
+      "scripts/ralph_notify.py",
+      "src/ralph/resources/ralph.sh",
+      "src/ralph/resources/scripts/ralph_bot.py",
+      "src/ralph/resources/scripts/ralph_common.py",
+      "src/ralph/resources/scripts/ralph_notify.py",
+      "tests/test_bot_commands.py",
+      "tests/test_integration.py",
+      "ralph/memory/recent.md"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"R13-07\",\"summary\":\"Rollback now requires an explicit reviewed policy flag, runtime timeouts/backoffs are centralized, and the relevant bot/notify flows use shared configurable values with the full test suite passing.\",\"quality_score\":94,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"R13-07 approved: destructive crash rollback is gated by RALPH_DESTRUCTIVE_ROLLBACK=reviewed, Telegram/article timeouts are centralized in ralph_common, and lead/retry/rate-limit defaults are named configuration in ralph.sh and mirrored resource script.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 10359,
+  "timestamp": "2026-03-31T10:50:01Z",
+  "runtime_success": true,
+  "verified_success": true
+}

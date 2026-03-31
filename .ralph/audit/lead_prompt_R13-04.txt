@@ -1,0 +1,626 @@
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R13-04",
+  "phase": "R13",
+  "category": "hardening",
+  "priority": "high",
+  "complexity": "moderate",
+  "title": "Harden silent error handling and malformed JSON paths",
+  "description": "Repair silent failure handling identified in BRITTLENESS_AUDIT.md: ralph.sh:2214 swallows comment-consumption errors, scripts/ralph_notify.py:30 suppresses notification failures, scripts/ralph_bot.py:247 / 1949 / 1962 / 1976 swallow crash-recovery errors, scripts/update_task.py:29, scripts/next_task.py:25, scripts/explain_task.py:28, scripts/reopen_tasks.py:41, and scripts/run_benchmark.py:49 parse tasks.json without guarded error reporting, and ralph.sh:1082 silently treats corrupted control JSON as continue.",
+  "acceptance_criteria": [
+    "Silent except/pass paths are replaced with typed handling and logging",
+    "Malformed tasks.json produces structured operator-visible errors in helper scripts",
+    "Control-file parse failures are logged instead of silently ignored",
+    "Notification failures are visible in logs without crashing runtime",
+    "Crash-recovery failures in bot paths are surfaced for debugging"
+  ],
+  "dependencies": [
+    "R13-01"
+  ],
+  "status": "pending"
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/scripts/explain_task.py b/scripts/explain_task.py
+index 8f41b29..7b0bd62 100644
+--- a/scripts/explain_task.py
++++ b/scripts/explain_task.py
+@@ -5,6 +5,7 @@ from __future__ import annotations
+ 
+ import argparse
+ import os
++import sys
+ 
+ try:
+     from ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+@@ -45,7 +46,11 @@ def main() -> int:
+     from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
+     from re_audit_tasks import classify_task
+ 
+-    data = load_tasks_data(project_dir)
++    try:
++        data = load_tasks_data(project_dir)
++    except ValueError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        return 1
+     tasks = data.get("tasks", [])
+     task = next((item for item in tasks if item.get("id") == args.task_id), None)
+     if task is None:
+diff --git a/scripts/next_task.py b/scripts/next_task.py
+index c413cf5..e3ef981 100755
+--- a/scripts/next_task.py
++++ b/scripts/next_task.py
+@@ -19,7 +19,11 @@ def main():
+     parser.add_argument("--explain", action="store_true")
+     args = parser.parse_args()
+     project_dir = resolve_project_dir(script_path=__file__)
+-    data = load_tasks_data(project_dir)
++    try:
++        data = load_tasks_data(project_dir)
++    except ValueError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        sys.exit(1)
+     if args.explain:
+         print(json.dumps(explain_non_runnable(data["tasks"], phase=args.phase), indent=2, ensure_ascii=False))
+         sys.exit(0)
+diff --git a/scripts/ralph_bot.py b/scripts/ralph_bot.py
+index 505611c..a4c92f0 100755
+--- a/scripts/ralph_bot.py
++++ b/scripts/ralph_bot.py
+@@ -251,8 +251,10 @@ def reset_stale_state() -> None:
+                     json.dumps(state, indent=2, ensure_ascii=False),
+                     encoding="utf-8",
+                 )
+-    except Exception:
+-        pass
++    except json.JSONDecodeError as exc:
++        log_bot(f"Failed to reset stale state: malformed {STATE_FILE.name}: {exc}")
++    except OSError as exc:
++        log_bot(f"Failed to reset stale state: {exc}")
+ 
+ 
+ def write_control(action: str, comment: str = "") -> None:
+@@ -1948,35 +1950,52 @@ async def watch_state() -> None:
+                 await safe_send(f"⚠️ Ralph exited with code {code}")
+             try:
+                 raw_state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
+-            except Exception:
++            except json.JSONDecodeError as exc:
++                log_bot(f"Crash recovery failed to read {STATE_FILE.name}: malformed JSON: {exc}")
++                raw_state = {}
++            except OSError as exc:
++                log_bot(f"Crash recovery failed to read {STATE_FILE.name}: {exc}")
+                 raw_state = {}
+ 
+             current_task = str(raw_state.get("current_task") or "").strip()
+             if raw_state.get("status") == "running" and current_task:
+                 try:
+-                    subprocess.run(
++                    update_result = subprocess.run(
+                         ["python3", "scripts/update_task.py", current_task, "pending"],
+                         cwd=str(PROJECT_DIR),
+                         check=True,
+                         capture_output=True,
+                         text=True,
+                     )
+-                except Exception:
+-                    pass
++                    if update_result.stderr.strip():
++                        log_bot(f"Crash recovery update_task stderr for {current_task}: {update_result.stderr.strip()}")
++                except subprocess.CalledProcessError as exc:
++                    stderr = (exc.stderr or "").strip()
++                    stdout = (exc.stdout or "").strip()
++                    detail = stderr or stdout or str(exc)
++                    log_bot(f"Crash recovery failed to reset task {current_task} to pending: {detail}")
++                except OSError as exc:
++                    log_bot(f"Crash recovery failed to launch update_task for {current_task}: {exc}")
+ 
+                 for rollback_cmd in (
+                     ["git", "-C", str(PROJECT_DIR), "reset", "HEAD", "--", "."],
+                     ["git", "-C", str(PROJECT_DIR), "checkout", "--", "."],
+                 ):
+                     try:
+-                        subprocess.run(
++                        rollback_result = subprocess.run(
+                             rollback_cmd,
+                             check=False,
+                             capture_output=True,
+                             text=True,
+                         )
+-                    except Exception:
+-                        pass
++                        if rollback_result.returncode != 0:
++                            detail = (rollback_result.stderr or rollback_result.stdout or "").strip()
++                            log_bot(
++                                f"Crash recovery rollback command failed ({' '.join(rollback_cmd)}): "
++                                f"{detail or f'exit {rollback_result.returncode}'}"
++                            )
++                    except OSError as exc:
++                        log_bot(f"Crash recovery rollback launch failed ({' '.join(rollback_cmd)}): {exc}")
+ 
+                 await safe_send(
+                     f"🔄 Ralph crashed during {current_task}. Task reset to pending, changes rolled back."
+diff --git a/scripts/ralph_common.py b/scripts/ralph_common.py
+index 8aa6668..ffca7af 100644
+--- a/scripts/ralph_common.py
++++ b/scripts/ralph_common.py
+@@ -7,6 +7,7 @@ import argparse
+ import json
+ import os
+ import re
++import sys
+ from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Any
+@@ -73,16 +74,31 @@ def control_file_path(project_dir: Path) -> Path:
+     return project_dir / "ralph_control.json"
+ 
+ 
++def format_tasks_data_error(path: Path, exc: Exception) -> str:
++    if isinstance(exc, FileNotFoundError):
++        detail = "file not found"
++    elif isinstance(exc, json.JSONDecodeError):
++        detail = f"malformed JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
++    elif isinstance(exc, ValueError):
++        detail = str(exc)
++    else:
++        detail = str(exc) or exc.__class__.__name__
++    return f"tasks.json error [{path}]: {detail}"
++
++
+ def load_tasks_data(project_dir: Path) -> dict[str, Any]:
+     """Load tasks.json through one validated code path."""
+     path = tasks_file_path(project_dir)
+-    data = json.loads(path.read_text(encoding="utf-8"))
+-    if not isinstance(data, dict):
+-        raise ValueError("tasks.json must contain a JSON object")
+-    tasks = data.get("tasks")
+-    if not isinstance(tasks, list):
+-        raise ValueError("tasks.json must contain a top-level 'tasks' list")
+-    return data
++    try:
++        data = json.loads(path.read_text(encoding="utf-8"))
++        if not isinstance(data, dict):
++            raise ValueError("tasks.json must contain a JSON object")
++        tasks = data.get("tasks")
++        if not isinstance(tasks, list):
++            raise ValueError("tasks.json must contain a top-level 'tasks' list")
++        return data
++    except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as exc:
++        raise ValueError(format_tasks_data_error(path, exc)) from exc
+ 
+ 
+ def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
+@@ -123,7 +139,12 @@ def read_control_data(project_dir: Path) -> dict[str, Any]:
+         return {"action": DEFAULT_CONTROL_ACTION, "comment": ""}
+     try:
+         data = json.loads(path.read_text(encoding="utf-8"))
+-    except Exception:
++    except (OSError, json.JSONDecodeError) as exc:
++        print(
++            f"ralph_control.json warning [{path}]: "
++            f"{'malformed JSON' if isinstance(exc, json.JSONDecodeError) else 'read failed'}: {exc}",
++            file=sys.stderr,
++        )
+         data = {}
+     return _normalize_control_data(data)
+ 
+diff --git a/scripts/ralph_notify.py b/scripts/ralph_notify.py
+index 6355a01..d2401ce 100755
+--- a/scripts/ralph_notify.py
++++ b/scripts/ralph_notify.py
+@@ -1,7 +1,9 @@
+ #!/usr/bin/env python3
+ """Send a Telegram notification from ralph.sh."""
++import logging
+ import os
+ import sys
++import urllib.error
+ import urllib.parse
+ import urllib.request
+ from pathlib import Path
+@@ -9,6 +11,7 @@ from pathlib import Path
+ from dotenv import load_dotenv
+ 
+ RALPH_VERSION = '0.1.0'
++LOGGER = logging.getLogger("ralph.notify")
+ 
+ load_dotenv(Path(__file__).parent.parent / ".env")
+ 
+@@ -18,6 +21,7 @@ CHAT_ID = os.environ.get("RALPH_TELEGRAM_CHAT_ID", "")
+ 
+ def send(text: str) -> None:
+     if not TOKEN or not CHAT_ID:
++        LOGGER.warning("Notification skipped: Telegram token/chat id not configured")
+         return
+     api = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+     data = urllib.parse.urlencode(
+@@ -29,9 +33,12 @@ def send(text: str) -> None:
+     ).encode()
+     try:
+         urllib.request.urlopen(urllib.request.Request(api, data=data), timeout=10)
+-    except Exception:
+-        pass
++    except urllib.error.URLError as exc:
++        LOGGER.error("Notification failed: %s", exc)
++    except OSError as exc:
++        LOGGER.error("Notification failed: %s", exc)
+ 
+ 
+ if __name__ == "__main__":
++    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+     send(" ".join(sys.argv[1:]) if len(sys.argv) > 1 else "ping")
+diff --git a/scripts/reopen_tasks.py b/scripts/reopen_tasks.py
+index e2b09b8..42e6f53 100644
+--- a/scripts/reopen_tasks.py
++++ b/scripts/reopen_tasks.py
+@@ -4,6 +4,7 @@
+ from __future__ import annotations
+ 
+ import argparse
++import sys
+ from datetime import datetime, timezone
+ 
+ try:
+@@ -26,7 +27,11 @@ def main() -> int:
+     args = parser.parse_args()
+ 
+     project_dir = resolve_project_dir(args.project_dir)
+-    data = load_tasks_data(project_dir)
++    try:
++        data = load_tasks_data(project_dir)
++    except ValueError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        return 1
+     task = next((item for item in data.get("tasks", []) if item.get("id") == args.task), None)
+     if task is None:
+         print(f"Task not found: {args.task}")
+diff --git a/scripts/run_benchmark.py b/scripts/run_benchmark.py
+index 790ccfa..715f922 100644
+--- a/scripts/run_benchmark.py
++++ b/scripts/run_benchmark.py
+@@ -9,6 +9,11 @@ import sys
+ from dataclasses import dataclass
+ from pathlib import Path
+ 
++try:
++    from ralph_common import format_tasks_data_error
++except ImportError:
++    from scripts.ralph_common import format_tasks_data_error
++
+ 
+ THRESHOLD_RATIO = 5.0
+ SAMPLE_SIZE = 3
+@@ -46,8 +51,16 @@ def read_csv_rows(path: Path) -> list[dict[str, str]]:
+ 
+ 
+ def load_tasks(path: Path) -> list[dict[str, object]]:
+-    data = json.loads(path.read_text(encoding="utf-8"))
+-    return list(data.get("tasks", []))
++    try:
++        data = json.loads(path.read_text(encoding="utf-8"))
++    except (OSError, json.JSONDecodeError, ValueError) as exc:
++        raise ValueError(format_tasks_data_error(path, exc)) from exc
++    if not isinstance(data, dict):
++        raise ValueError(format_tasks_data_error(path, ValueError("tasks.json must contain a JSON object")))
++    tasks = data.get("tasks", [])
++    if not isinstance(tasks, list):
++        raise ValueError(format_tasks_data_error(path, ValueError("tasks.json must contain a top-level 'tasks' list")))
++    return list(tasks)
+ 
+ 
+ def select_tasks(tasks: list[dict[str, object]], limit: int) -> list[dict[str, object]]:
+@@ -189,7 +202,11 @@ def format_table(results: list[TaskBenchmark], overall_ratio: float, threshold:
+ def main() -> int:
+     args = build_parser().parse_args()
+     project_dir = Path(args.project_dir).resolve()
+-    results, overall_ratio = benchmark_project(project_dir, limit=args.limit, threshold=args.threshold)
++    try:
++        results, overall_ratio = benchmark_project(project_dir, limit=args.limit, threshold=args.threshold)
++    except ValueError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        return 1
+     output = format_table(results, overall_ratio, args.threshold)
+     print(output)
+     return 0 if overall_ratio < args.threshold else 1
+diff --git a/scripts/update_task.py b/scripts/update_task.py
+index 87caeea..e83d3cd 100755
+--- a/scripts/update_task.py
++++ b/scripts/update_task.py
+@@ -19,7 +19,11 @@ def main():
+     project_dir = resolve_project_dir(script_path=__file__)
+     task_id, status = sys.argv[1], sys.argv[2]
+     notes = sys.argv[3] if len(sys.argv) > 3 else None
+-    data = load_tasks_data(project_dir)
++    try:
++        data = load_tasks_data(project_dir)
++    except ValueError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        sys.exit(1)
+     for task in data["tasks"]:
+         if task["id"] == task_id:
+             task["status"] = status
+diff --git a/src/ralph/resources/scripts/explain_task.py b/src/ralph/resources/scripts/explain_task.py
+index 8f41b29..7b0bd62 100644
+--- a/src/ralph/resources/scripts/explain_task.py
++++ b/src/ralph/resources/scripts/explain_task.py
+@@ -5,6 +5,7 @@ from __future__ import annotations
+ 
+ import argparse
+ import os
++import sys
+ 
+ try:
+     from ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+@@ -45,7 +46,11 @@ def main() -> int:
+     from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
+     from re_audit_tasks import classify_task
+ 
+-    data = load_tasks_data(project_dir)
++    try:
++        data = load_tasks_data(project_dir)
++    except ValueError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        return 1
+     tasks = data.get("tasks", [])
+     task = next((item for item in tasks if item.get("id") == args.task_id), None)
+     if task is None:
+diff --git a/src/ralph/resources/scripts/next_task.py b/src/ralph/resources/scripts/next_task.py
+index c413cf5..e3ef981 100755
+--- a/src/ralph/resources/scripts/next_task.py
++++ b/src/ralph/resources/scripts/next_task.py
+@@ -19,7 +19,11 @@ def main():
+     parser.add_argument("--explain", action="store_true")
+     args = parser.parse_args()
+     project_dir = resolve_project_dir(script_path=__file__)
+-    data = load_tasks_data(project_dir)
++    try:
++        data = load_tasks_data(project_dir)
++    except ValueError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        sys.exit(1)
+     if args.explain:
+         print(json.dumps(explain_non_runnable(data["tasks"], phase=args.phase), indent=2, ensure_ascii=False))
+         sys.exit(0)
+diff --git a/src/ralph/resources/scripts/ralph_bot.py b/src/ralph/resources/scripts/ralph_bot.py
+index 505611c..a4c92f0 100755
+--- a/src/ralph/resources/scripts/ralph_bot.py
++++ b/src/ralph/resources/scripts/ralph_bot.py
+@@ -251,8 +251,10 @@ def reset_stale_state() -> None:
+                     json.dumps(state, indent=2, ensure_ascii=False),
+                     encoding="utf-8",
+                 )
+-    except Exception:
+-        pass
++    except json.JSONDecodeError as exc:
++        log_bot(f"Failed to reset stale state: malformed {STATE_FILE.name}: {exc}")
++    except OSError as exc:
++        log_bot(f"Failed to reset stale state: {exc}")
+ 
+ 
+ def write_control(action: str, comment: str = "") -> None:
+@@ -1948,35 +1950,52 @@ async def watch_state() -> None:
+                 await safe_send(f"⚠️ Ralph exited with code {code}")
+             try:
+                 raw_state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
+-            except Exception:
++            except json.JSONDecodeError as exc:
++                log_bot(f"Crash recovery failed to read {STATE_FILE.name}: malformed JSON: {exc}")
++                raw_state = {}
++            except OSError as exc:
++                log_bot(f"Crash recovery failed to read {STATE_FILE.name}: {exc}")
+                 raw_state = {}
+ 
+             current_task = str(raw_state.get("current_task") or "").strip()
+             if raw_state.get("status") == "running" and current_task:
+                 try:
+-                    subprocess.run(
++                    update_result = subprocess.run(
+                         ["python3", "scripts/update_task.py", current_task, "pending"],
+                         cwd=str(PROJECT_DIR),
+                         check=True,
+                         capture_output=True,
+                         text=True,
+                     )
+-                except Exception:
+-                    pass
++                    if update_result.stderr.strip():
++                        log_bot(f"Crash recovery update_task stderr for {current_task}: {update_result.stderr.strip()}")
++                except subprocess.CalledProcessError as exc:
++                    stderr = (exc.stderr or "").strip()
++                    stdout = (exc.stdout or "").strip()
++                    detail = stderr or stdout or str(exc)
++                    log_bot(f"Crash recovery failed to reset task {current_task} to pending: {detail}")
++                except OSError as exc:
++                    log_bot(f"Crash recovery failed to launch update_task for {current_task}: {exc}")
+ 
+                 for rollback_cmd in (
+                     ["git", "-C", str(PROJECT_DIR), "reset", "HEAD", "--", "."],
+                     ["git", "-C", str(PROJECT_DIR), "checkout", "--", "."],
+                 ):
+                     try:
+-                        subprocess.run(
++                        rollback_result = subprocess.run(
+                             rollback_cmd,
+                             check=False,
+                             capture_output=True,
+                             text=True,
+                         )
+-                    except Exception:
+-                        pass
++                        if rollback_result.returncode != 0:
++                            detail = (rollback_result.stderr or rollback_result.stdout or "").strip()
++                            log_bot(
++                                f"Crash recovery rollback command failed ({' '.join(rollback_cmd)}): "
++                                f"{detail or f'exit {rollback_result.returncode}'}"
++                            )
++                    except OSError as exc:
++                        log_bot(f"Crash recovery rollback launch failed ({' '.join(rollback_cmd)}): {exc}")
+ 
+                 await safe_send(
+                     f"🔄 Ralph crashed during {current_task}. Task reset to pending, changes rolled back."
+diff --git a/src/ralph/resources/scripts/ralph_common.py b/src/ralph/resources/scripts/ralph_common.py
+index 8aa6668..ffca7af 100644
+--- a/src/ralph/resources/scripts/ralph_common.py
++++ b/src/ralph/resources/scripts/ralph_common.py
+@@ -7,6 +7,7 @@ import argparse
+ import json
+ import os
+ import re
++import sys
+ from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Any
+@@ -73,16 +74,31 @@ def control_file_path(project_dir: Path) -> Path:
+     return project_dir / "ralph_control.json"
+ 
+ 
++def format_tasks_data_error(path: Path, exc: Exception) -> str:
++    if isinstance(exc, FileNotFoundError):
++        detail = "file not found"
++    elif isinstance(exc, json.JSONDecodeError):
++        detail = f"malformed JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
++    elif isinstance(exc, ValueError):
++        detail = str(exc)
++    else:
++        detail = str(exc) or exc.__class__.__name__
++    return f"tasks.json error [{path}]: {detail}"
++
++
+ def load_tasks_data(project_dir: Path) -> dict[str, Any]:
+     """Load tasks.json through one validated code path."""
+     path = tasks_file_path(project_dir)
+-    data = json.loads(path.read_text(encoding="utf-8"))
+-    if not isinstance(data, dict):
+-        raise ValueError("tasks.json must contain a JSON object")
+-    tasks = data.get("tasks")
+-    if not isinstance(tasks, list):
+-        raise ValueError("tasks.json must contain a top-level 'tasks' list")
+-    return data
++    try:
++        data = json.loads(path.read_text(encoding="utf-8"))
++        if not isinstance(data, dict):
++            raise ValueError("tasks.json must contain a JSON object")
++        tasks = data.get("tasks")
++        if not isinstance(tasks, list):
++            raise ValueError("tasks.json must contain a top-level 'tasks' list")
++        return data
++    except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as exc:
++        raise ValueError(format_tasks_data_error(path, exc)) from exc
+ 
+ 
+ def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
+@@ -123,7 +139,12 @@ def read_control_data(project_dir: Path) -> dict[str, Any]:
+         return {"action": DEFAULT_CONTROL_ACTION, "comment": ""}
+     try:
+         data = json.loads(path.read_text(encoding="utf-8"))
+-    except Exception:
++    except (OSError, json.JSONDecodeError) as exc:
++        print(
++            f"ralph_control.json warning [{path}]: "
++            f"{'malformed JSON' if isinstance(exc, json.JSONDecodeError) else 'read failed'}: {exc}",
++            file=sys.stderr,
++        )
+```
+
+Previous diff snapshot: 32291 bytes
+
+## Tests
+```
+tests/test_operator_helpers.py::test_bot_smoke_check_collects_help_output PASSED [ 79%]
+tests/test_operator_helpers.py::test_bot_smoke_check_reports_send_failure PASSED [ 79%]
+tests/test_operator_helpers.py::test_bot_smoke_check_resolve_project_dir_prefers_cwd PASSED [ 80%]
+tests/test_operator_helpers.py::test_shared_tasks_io_round_trips_validated_payload PASSED [ 80%]
+tests/test_operator_helpers.py::test_shared_control_io_normalizes_and_consumes_comment PASSED [ 81%]
+tests/test_re_audit_tasks.py::test_reaudit_dry_run_classifies_obvious_false_positive PASSED [ 82%]
+tests/test_re_audit_tasks.py::test_reaudit_command_alias_handler_counts_as_verified_done PASSED [ 82%]
+tests/test_re_audit_tasks.py::test_reaudit_missing_command_still_becomes_false_positive PASSED [ 83%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_updates_tasks_for_strong_case PASSED [ 83%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_false_positive_keeps_reason_and_clears_stale_latest_run_truth PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_ambiguous_case_becomes_needs_human_review PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_report_stays_task_scoped PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_verified_case_becomes_verified_done PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_partial_case_is_reported PASSED [ 86%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_partial_and_needs_human_review PASSED [ 87%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_tasks_already_aligned_to_verified_done PASSED [ 87%]
+tests/test_re_audit_tasks.py::test_next_task_still_only_picks_pending PASSED [ 88%]
+tests/test_run_eval.py::test_load_fixture_reads_basic_eval_source PASSED [ 88%]
+tests/test_run_eval.py::test_evaluate_fixture_applies_bounded_limit PASSED [ 89%]
+tests/test_run_eval.py::test_run_eval_cli_emits_json_result PASSED       [ 89%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_full_tasks PASSED [ 90%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_minimal_tasks PASSED [ 91%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_priority_uses_default PASSED [ 91%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_dependencies_uses_default PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_timeout_uses_default PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_completed_at PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_required_fields_exist PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_empty_tasks_file PASSED [ 94%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_no_tasks_key PASSED   [ 94%]
+tests/test_verify_task_closure.py::test_bookkeeping_only_diff_blocks_implementation_task PASSED [ 95%]
+tests/test_verify_task_closure.py::test_missing_script_file_blocks_closure PASSED [ 96%]
+tests/test_verify_task_closure.py::test_missing_command_handler_blocks_closure PASSED [ 96%]
+tests/test_verify_task_closure.py::test_command_alias_handler_counts_as_valid_runtime_evidence PASSED [ 97%]
+tests/test_verify_task_closure.py::test_missing_template_file_blocks_closure PASSED [ 97%]
+tests/test_verify_task_closure.py::test_docs_only_task_can_pass_with_docs_evidence PASSED [ 98%]
+tests/test_verify_task_closure.py::test_tests_only_task_requires_actual_test_evidence PASSED [ 98%]
+tests/test_verify_task_closure.py::test_reaudit_reporting_task_passes_with_saved_report_evidence PASSED [ 99%]
+tests/test_verify_task_closure.py::test_generic_implementation_task_still_fails_on_report_and_state_files_only PASSED [100%]
+
+================== 178 passed, 1 skipped in 700.74s (0:11:40) ==================
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.

@@ -1,0 +1,24 @@
+{
+  "task_id": "R13-03",
+  "title": "Consolidate duplicated task and control logic",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "R13-03 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R13-03\",\"summary\":\"Общий helper вынесен, но рефакторинг сломал ветку operator explanation для завершённых задач.\",\"quality_score\":82,\"issues\":[\"`scripts/explain_task.py` использует `COMPLETED_STATUSES` в `suggested_next_action()`, но после выноса логики в `ralph_common.py` эта константа больше не определена и вызывает `NameError` для задач со статусом `done`/`verified_done`.\"],\"fix_instructions\":\"В `scripts/explain_task.py` импортируй `COMPLETED_STATUSES` из общего helper (`ralph_common`) или убери прямую зависимость от локальной константы, затем добавь точечный тест на completed-задачу, который проходит через `suggested_next_action()`/CLI и подтверждает, что explanation не падает для `done` или `verified_done`.\",\"alert_reason\":\"\",\"progress_note\":\"Shared task/control/task-classification refactor mostly landed, but operator explanation is not fully reusable yet because completed-task handling is broken.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 2940,
+  "timestamp": "2026-03-31T07:07:34Z",
+  "runtime_success": false,
+  "verified_success": false
+}

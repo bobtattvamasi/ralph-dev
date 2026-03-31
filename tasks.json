@@ -2952,7 +2952,9 @@
       "dependencies": [
         "R13-01"
       ],
-      "status": "pending"
+      "status": "blocked",
+      "completed_at": null,
+      "revision_notes": "R13-03 failed after 2 retries"
     },
     {
       "id": "R13-04",
@@ -2972,7 +2974,8 @@
       "dependencies": [
         "R13-01"
       ],
-      "status": "pending"
+      "status": "verified_done",
+      "completed_at": "2026-03-31T07:57:20.695658+00:00"
     },
     {
       "id": "R13-05",
@@ -3031,7 +3034,8 @@
       "dependencies": [
         "R13-01"
       ],
-      "status": "pending"
+      "status": "verified_done",
+      "completed_at": "2026-03-31T10:50:01.097853+00:00"
     },
     {
       "id": "BUG-05",
