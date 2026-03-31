@@ -2547,7 +2547,7 @@
       "id": "JOUR-01",
       "phase": "JOUR",
       "title": "Publish INTERVIEW_PREP.md as structured article in docs/articles/",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "simple",
       "category": "content",
       "priority": "low",
@@ -2555,7 +2555,7 @@
         "docs/articles/interview_prep.md exists",
         "INTERVIEW_PREP.md moved or symlinked"
       ],
-      "completed_at": null,
+      "completed_at": "2026-03-31T03:48:51.849101+00:00",
       "revision_notes": "Unblocked: false positive guard removed"
     },
     {
