@@ -2217,10 +2217,11 @@ get_human_comment() {
 import json
 try:
     d = json.load(open('ralph_control.json'))
-    c = d.get('comment', '')
+    c = d.get('comment', '') or d.get('value', '')
     if c:
         print(c)
         d['comment'] = ''
+        d.pop('value', None)
         open('ralph_control.json','w').write(json.dumps(d))
 except: pass
 " 2>/dev/null || true
