@@ -13,6 +13,9 @@ except ImportError:
     from scripts.ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
 
 
+COMPLETED_STATUSES = {"done", "verified_done", "false_positive"}
+
+
 def suggested_next_action(task: dict, is_runnable: bool, reason: str, re_audit: dict) -> str:
     status = str(task.get("status", ""))
     verdict = str(re_audit.get("verdict", ""))

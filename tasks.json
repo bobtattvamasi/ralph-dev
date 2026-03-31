@@ -2952,8 +2952,8 @@
       "dependencies": [
         "R13-01"
       ],
-      "status": "blocked",
-      "completed_at": null,
+      "status": "verified_done",
+      "completed_at": "2026-03-31T15:57:15.853023+00:00",
       "revision_notes": "R13-03 failed after 2 retries"
     },
     {
