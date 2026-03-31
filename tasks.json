@@ -2657,7 +2657,7 @@
       "id": "OPS-13",
       "phase": "OPS",
       "title": "Pass: include failed attempt context in retry prompt (lead feedback + test failures)",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "enhance",
       "priority": "high",
@@ -2669,7 +2669,7 @@
         "regression test verifies context is present in retry prompt"
       ],
       "revision_notes": "Unblocked: false positive guard removed",
-      "completed_at": null
+      "completed_at": "2026-03-31T03:06:52.574419+00:00"
     },
     {
       "id": "OPS-14",
@@ -2817,8 +2817,8 @@
         "No impact on existing Lead output or JSON format"
       ],
       "dependencies": [],
-      "status": "pending",
-      "completed_at": null,
+      "status": "verified_done",
+      "completed_at": "2026-03-31T02:59:48.718513+00:00",
       "revision_notes": "Discovered during R12-03 run: Lead review is opaque, hard to debug false negatives",
       "timeout": 300,
       "role": "coder"
