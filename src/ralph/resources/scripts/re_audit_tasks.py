@@ -11,8 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from ralph_common import infer_task_context, load_tasks_data, resolve_project_dir, save_tasks_data
+except ImportError:
+    from scripts.ralph_common import infer_task_context, load_tasks_data, resolve_project_dir, save_tasks_data
+
 from verify_task_closure import (
-    detect_task_class,
     extract_command_tokens,
     extract_expected_test_names,
     extract_path_candidates,
@@ -22,7 +26,7 @@ from verify_task_closure import (
 )
 
 
-PROJECT_DIR = Path(os.environ.get("RALPH_PROJECT_DIR", Path(__file__).resolve().parent.parent))
+PROJECT_DIR = resolve_project_dir(script_path=__file__)
 TASKS_FILE = PROJECT_DIR / "tasks.json"
 AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
 BOT_FILE = PROJECT_DIR / "scripts" / "ralph_bot.py"
@@ -32,7 +36,7 @@ SAFE_AUTO_APPLY_VERDICTS = {"verified_done", "false_positive"}
 
 
 def load_tasks() -> dict[str, Any]:
-    return json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+    return load_tasks_data(PROJECT_DIR)
 
 
 def load_audit(task_id: str) -> dict | None:
@@ -46,11 +50,7 @@ def load_audit(task_id: str) -> dict | None:
 
 
 def infer_task_class(task: dict[str, Any]) -> tuple[str, list[str], list[str], list[str]]:
-    expected_paths = extract_path_candidates(task)
-    command_tokens = extract_command_tokens(task)
-    expected_tests = extract_expected_test_names(task)
-    task_class = detect_task_class(task, expected_paths, command_tokens, expected_tests)
-    return task_class, expected_paths, command_tokens, expected_tests
+    return infer_task_context(task)
 
 
 def classify_command(task: dict[str, Any], command_tokens: list[str]) -> tuple[str, str]:
@@ -421,7 +421,7 @@ def main() -> int:
 
     if args.apply:
         applied, skipped = apply_verdicts(data, results)
-        TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        save_tasks_data(PROJECT_DIR, data)
         print(format_results(results, apply=True))
         print(f"Human-readable report saved to {REPORT_FILE.name}")
         print("")

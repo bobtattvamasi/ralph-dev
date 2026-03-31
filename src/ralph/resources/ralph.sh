@@ -1048,20 +1048,7 @@ os.replace(tmp_path, 'ralph_state.json')
 CONTROL_ACTION="continue"
 CONTROL_TARGET=""
 read_control_file() {
-    if [ -f ralph_control.json ]; then
-        python3 -c "
-import json
-try:
-    d = json.load(open('ralph_control.json'))
-    print(d.get('action', 'continue'))
-    print(d.get('comment', ''))
-except Exception:
-    print('continue')
-    print('')
-" 2>/dev/null || printf "continue\n\n"
-    else
-        printf "continue\n\n"
-    fi
+    python3 "$RALPH_DIR/scripts/ralph_common.py" control-read 2>/dev/null || printf "continue\n\n"
 }
 
 apply_timeout_override() {
@@ -1158,31 +1145,13 @@ wait_for_high_risk_approval() {
 }
 
 clear_control_action() {
-    python3 -c "
-import json
-from pathlib import Path
-p = Path('ralph_control.json')
-if p.exists():
-    try:
-        d = json.loads(p.read_text(encoding='utf-8'))
-    except Exception:
-        d = {}
-    d['action'] = 'continue'
-    d['comment'] = ''
-    p.write_text(json.dumps(d, indent=2), encoding='utf-8')
-" 2>/dev/null || true
+    python3 "$RALPH_DIR/scripts/ralph_common.py" control-clear 2>/dev/null || true
 }
 
 set_control_action() {
     local action="$1"
     local comment="${2:-}"
-    python3 -c "
-import json
-from pathlib import Path
-p = Path('ralph_control.json')
-payload = {'action': '$action', 'comment': '''$comment'''}
-p.write_text(json.dumps(payload, indent=2), encoding='utf-8')
-" 2>/dev/null || true
+    python3 "$RALPH_DIR/scripts/ralph_common.py" control-write "$action" "$comment" 2>/dev/null || true
 }
 
 skip_current_task() {
@@ -2123,20 +2092,7 @@ PY
 }
 
 get_human_comment() {
-    if [ -f ralph_control.json ]; then
-        python3 -c "
-import json
-try:
-    d = json.load(open('ralph_control.json'))
-    c = d.get('comment', '') or d.get('value', '')
-    if c:
-        print(c)
-        d['comment'] = ''
-        d.pop('value', None)
-        open('ralph_control.json','w').write(json.dumps(d))
-except: pass
-" 2>/dev/null || true
-    fi
+    python3 "$RALPH_DIR/scripts/ralph_common.py" control-consume-comment 2>/dev/null || true
 }
 
 notify() {

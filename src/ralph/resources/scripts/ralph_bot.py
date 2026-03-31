@@ -25,6 +25,13 @@ try:
 except ImportError:
     from models import RalphState
 
+try:
+    from ralph_common import load_tasks_data as shared_load_tasks_data
+    from ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
+except ImportError:
+    from scripts.ralph_common import load_tasks_data as shared_load_tasks_data
+    from scripts.ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
+
 RALPH_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path.cwd()  # overridden in __main__
 STATE_FILE = PROJECT_DIR / "ralph_state.json"
@@ -250,12 +257,7 @@ def reset_stale_state() -> None:
 
 def write_control(action: str, comment: str = "") -> None:
     """Write control signal for ralph."""
-    data = {
-        "action": action,
-        "comment": comment,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    CONTROL_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    write_control_data(PROJECT_DIR, action, comment)
 
 
 def get_tasks_summary(phase: str | None = None) -> str:
@@ -620,12 +622,12 @@ def get_log_tail(n: int = 15) -> str:
 
 def load_tasks_data() -> dict:
     """Load tasks.json as a dict."""
-    return json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+    return shared_load_tasks_data(PROJECT_DIR)
 
 
 def save_tasks_data(data: dict) -> None:
     """Persist tasks.json with stable formatting."""
-    TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    shared_save_tasks_data(PROJECT_DIR, data)
 
 
 def get_audit_summary(task_id: str) -> str:
@@ -2055,12 +2057,7 @@ if __name__ == "__main__":
     RALPH_DIR = Path(__file__).resolve().parent.parent
 
     # PROJECT_DIR priority: --project-dir > RALPH_PROJECT_DIR env > cwd
-    if args.project_dir:
-        PROJECT_DIR = Path(args.project_dir).resolve()
-    elif os.environ.get("RALPH_PROJECT_DIR"):
-        PROJECT_DIR = Path(os.environ["RALPH_PROJECT_DIR"]).resolve()
-    else:
-        PROJECT_DIR = Path.cwd()
+    PROJECT_DIR = resolve_project_dir(args.project_dir)
 
     if not (PROJECT_DIR / "tasks.json").exists():
         print(f"❌ No tasks.json in {PROJECT_DIR}")

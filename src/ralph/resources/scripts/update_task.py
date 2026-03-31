@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
 """Update task status in tasks.json."""
-import json
-import os
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+
+try:
+    from ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
+except ImportError:
+    from scripts.ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
 
 
-def get_project_dir() -> Path:
-    """Get project directory from env or default to script parent."""
-    env = os.environ.get("RALPH_PROJECT_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).parent.parent
-
-
-PROJECT_DIR = get_project_dir()
-TASKS_FILE = PROJECT_DIR / "tasks.json"
 COMPLETED_STATUSES = {"done", "verified_done"}
 
 
@@ -24,9 +16,10 @@ def main():
     if len(sys.argv) < 3:
         print("Usage: update_task.py <task_id> <status> [revision_notes]")
         sys.exit(1)
+    project_dir = resolve_project_dir(script_path=__file__)
     task_id, status = sys.argv[1], sys.argv[2]
     notes = sys.argv[3] if len(sys.argv) > 3 else None
-    data = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+    data = load_tasks_data(project_dir)
     for task in data["tasks"]:
         if task["id"] == task_id:
             task["status"] = status
@@ -40,7 +33,7 @@ def main():
     else:
         print(f"Task {task_id} not found")
         sys.exit(1)
-    TASKS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    save_tasks_data(project_dir, data)
     print(f"Updated {task_id} -> {status}")
 
 
