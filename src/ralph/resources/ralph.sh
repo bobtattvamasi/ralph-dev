@@ -589,26 +589,6 @@ handoff_unrelated_worktree_tracked_changes() {
     done <<< "$tracked_paths"
 }
 
-handoff_unrelated_repo_backed_changes() {
-    local task_json="$1"
-    local candidate_paths=""
-    local head_changed=""
-    local path=""
-
-    git rev-parse --verify HEAD^ >/dev/null 2>&1 || return 0
-    candidate_paths=$(handoff_candidate_paths "$task_json")
-    head_changed=$(git diff --name-only HEAD^ HEAD 2>/dev/null || true)
-    [ -n "$head_changed" ] || return 0
-
-    while IFS= read -r path; do
-        [ -n "$path" ] || continue
-        handoff_is_runtime_owned_path "$path" && continue
-        if ! printf '%s\n' "$candidate_paths" | grep -Fxq "$path"; then
-            printf '%s\n' "$path"
-        fi
-    done <<< "$head_changed"
-}
-
 # Prevent duplicate ralph instances
 if { is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
     _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
@@ -834,13 +814,6 @@ PY
 }
 
 ensure_metrics_schema
-
-is_completed_task_status() {
-    case "${1:-}" in
-        done|verified_done) return 0 ;;
-        *) return 1 ;;
-    esac
-}
 
 validate_requested_task() {
     python3 - "$TARGET" <<'PY'
@@ -1378,32 +1351,6 @@ text = sys.stdin.read()
 tokens = re.findall(r"\S+", text)
 print(len(tokens))
 '
-}
-
-clip_prompt_tokens() {
-    local max_tokens="$1"
-    python3 - "$max_tokens" <<'PY'
-from __future__ import annotations
-
-import re
-import sys
-
-limit = int(sys.argv[1])
-text = sys.stdin.read()
-
-if limit <= 0:
-    print("... [truncated by token budget]", end="")
-    raise SystemExit(0)
-
-matches = list(re.finditer(r"\S+", text))
-if len(matches) <= limit:
-    print(text, end="")
-    raise SystemExit(0)
-
-cutoff = matches[limit - 1].end()
-trimmed = text[:cutoff].rstrip()
-print(f"{trimmed}\n... [truncated by token budget]", end="")
-PY
 }
 
 get_coder_prompt_token_budget() {
@@ -1965,42 +1912,6 @@ coder_role_content:${RALPH_ROLE_MAX_CHARS_BROAD_FALLBACK:-5000}"
 
     printf '__TOKENS__:%s\n' "$prompt_tokens"
     printf '%s' "$coder_prompt"
-}
-
-extract_task_keywords() {
-    python3 -c "
-import json
-import re
-import sys
-
-task = json.load(sys.stdin)
-parts = [
-    task.get('id', ''),
-    task.get('title', ''),
-    task.get('description', ''),
-    ' '.join(task.get('acceptance_criteria', []) or []),
-]
-text = ' '.join(parts).lower()
-tokens = re.findall(r'[a-z0-9_./-]{4,}', text)
-stopwords = {
-    'task', 'tasks', 'phase', 'high', 'medium', 'low', 'done', 'pending',
-    'with', 'from', 'that', 'this', 'into', 'only', 'must', 'then', 'than',
-    'when', 'uses', 'use', 'read', 'file', 'files', 'coder', 'prompt',
-    'before', 'after', 'based', 'large', 'overly', 'size', 'guard', 'includes',
-    'include', 'inject', 'injection', 'context', 'relevant', 'source',
-    'keyword', 'keywords', 'matching', 'project', 'agent', 'quality'
-}
-seen = []
-for token in tokens:
-    if token in stopwords:
-        continue
-    if token.startswith('r') and '-' in token:
-        continue
-    if token not in seen:
-        seen.append(token)
-for token in seen[:12]:
-    print(token)
-" 2>/dev/null || true
 }
 
 build_relevant_context() {
@@ -2808,16 +2719,6 @@ stage_changed_paths() {
     done <<< "$changed_paths"
 }
 
-task_scoped_name_only_between_refs() {
-    local base_hash="$1"
-    local target_hash="$2"
-    git diff --name-only "$base_hash" "$target_hash" -- \
-        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
-        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
-        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
-        2>/dev/null || true
-}
-
 task_scoped_diff_between_refs() {
     local base_hash="$1"
     local target_hash="$2"
@@ -2853,14 +2754,6 @@ task_scoped_worktree_diff_from_ref() {
         ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
         ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
         2>/dev/null || true
-}
-
-task_scoped_current_diff() {
-    local cached_diff=""
-    local worktree_diff=""
-    cached_diff=$(task_scoped_cached_diff_from_ref "HEAD")
-    worktree_diff=$(task_scoped_worktree_diff_from_ref "HEAD")
-    printf '%s%s' "$cached_diff" "$worktree_diff"
 }
 
 format_diff_summary() {
