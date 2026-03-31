@@ -61,8 +61,8 @@ DESTRUCTIVE_ROLLBACK_POLICY_NOTICE = (
     f"Set {DESTRUCTIVE_ROLLBACK_ENV}={DESTRUCTIVE_ROLLBACK_REVIEWED} after review to allow destructive rollback."
 )
 CRASH_ROLLBACK_COMMANDS: tuple[tuple[str, ...], ...] = (
-    ("git", "reset", "HEAD", "--", "."),
-    ("git", "checkout", "--", "."),
+    ("reset", "HEAD", "--", "."),
+    ("checkout", "--", "."),
 )
 
 
