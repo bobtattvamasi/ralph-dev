@@ -26,11 +26,37 @@ except ImportError:
     from models import RalphState
 
 try:
-    from ralph_common import load_tasks_data as shared_load_tasks_data
-    from ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
+    from ralph_common import (
+        CRASH_ROLLBACK_COMMANDS,
+        DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
+        get_article_generation_timeout_sec,
+        get_telegram_poll_backoff_initial_sec,
+        get_telegram_poll_backoff_max_sec,
+        get_telegram_poll_request_timeout_sec,
+        get_telegram_poll_timeout_sec,
+        get_telegram_timeout_sec,
+        load_tasks_data as shared_load_tasks_data,
+        resolve_project_dir,
+        save_tasks_data as shared_save_tasks_data,
+        write_control_data,
+        destructive_rollback_enabled,
+    )
 except ImportError:
-    from scripts.ralph_common import load_tasks_data as shared_load_tasks_data
-    from scripts.ralph_common import resolve_project_dir, save_tasks_data as shared_save_tasks_data, write_control_data
+    from scripts.ralph_common import (
+        CRASH_ROLLBACK_COMMANDS,
+        DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
+        get_article_generation_timeout_sec,
+        get_telegram_poll_backoff_initial_sec,
+        get_telegram_poll_backoff_max_sec,
+        get_telegram_poll_request_timeout_sec,
+        get_telegram_poll_timeout_sec,
+        get_telegram_timeout_sec,
+        load_tasks_data as shared_load_tasks_data,
+        resolve_project_dir,
+        save_tasks_data as shared_save_tasks_data,
+        write_control_data,
+        destructive_rollback_enabled,
+    )
 
 RALPH_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path.cwd()  # overridden in __main__
@@ -70,6 +96,12 @@ ASK_CONTEXT_MAX_CHARS = 4000
 ASK_TASKS_CONTEXT_MAX_CHARS = 1800
 ASK_LOG_CONTEXT_LINES = 20
 ASK_CODE_SNIPPET_MAX_LINES = 20
+TELEGRAM_TIMEOUT_SEC = get_telegram_timeout_sec()
+TELEGRAM_POLL_TIMEOUT_SEC = get_telegram_poll_timeout_sec()
+TELEGRAM_POLL_REQUEST_TIMEOUT_SEC = get_telegram_poll_request_timeout_sec()
+TELEGRAM_POLL_BACKOFF_INITIAL_SEC = get_telegram_poll_backoff_initial_sec()
+TELEGRAM_POLL_BACKOFF_MAX_SEC = get_telegram_poll_backoff_max_sec()
+ARTICLE_GENERATION_TIMEOUT_SEC = get_article_generation_timeout_sec()
 
 HOT_RELOAD_EXPORTS = [
     "read_state",
@@ -932,7 +964,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
                 data=data,
                 headers={"Content-Type": "application/json"},
             )
-            urllib.request.urlopen(req, timeout=10)
+            urllib.request.urlopen(req, timeout=TELEGRAM_TIMEOUT_SEC)
             if CURRENT_HANDLER_NAME:
                 CURRENT_HANDLER_SEND_COUNT += 1
         except Exception as exc1:  # noqa: BLE001
@@ -951,7 +983,7 @@ async def send_message(text: str, reply_markup: dict | None = None) -> None:
                     data=data,
                     headers={"Content-Type": "application/json"},
                 )
-                urllib.request.urlopen(req, timeout=10)
+                urllib.request.urlopen(req, timeout=TELEGRAM_TIMEOUT_SEC)
                 if CURRENT_HANDLER_NAME:
                     CURRENT_HANDLER_SEND_COUNT += 1
             except Exception as exc2:  # noqa: BLE001
@@ -1524,9 +1556,14 @@ async def cmd_article(mode: str = "") -> None:
                     stderr=asyncio.subprocess.PIPE,
                 )
                 try:
-                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(),
+                        timeout=ARTICLE_GENERATION_TIMEOUT_SEC,
+                    )
                 except asyncio.TimeoutError:
-                    await safe_send("❌ Таймаут: скрипт работал дольше 5 минут")
+                    await safe_send(
+                        f"❌ Таймаут: скрипт работал дольше {ARTICLE_GENERATION_TIMEOUT_SEC} секунд"
+                    )
                     return
                 if process.returncode != 0:
                     err_text = html.escape(stderr.decode("utf-8", errors="replace")[:3500])
@@ -1901,17 +1938,17 @@ async def poll_updates() -> None:
 
     offset = 0
     consecutive_errors = 0
-    backoff_seconds = 5
+    backoff_seconds = TELEGRAM_POLL_BACKOFF_INITIAL_SEC
     while True:
         try:
-            url = f"{API}/getUpdates?offset={offset}&timeout=30"
-            resp = urllib.request.urlopen(url, timeout=35)
+            url = f"{API}/getUpdates?offset={offset}&timeout={TELEGRAM_POLL_TIMEOUT_SEC}"
+            resp = urllib.request.urlopen(url, timeout=TELEGRAM_POLL_REQUEST_TIMEOUT_SEC)
             data = json.loads(resp.read())
 
             if consecutive_errors > 0:
                 await safe_send(f"⚠️ Bot reconnected after {consecutive_errors} poll errors")
                 consecutive_errors = 0
-                backoff_seconds = 5
+                backoff_seconds = TELEGRAM_POLL_BACKOFF_INITIAL_SEC
 
             for update in data.get("result", []):
                 offset = update["update_id"] + 1
@@ -1922,10 +1959,10 @@ async def poll_updates() -> None:
                     traceback.print_exc(file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
             consecutive_errors += 1
-            delay = min(backoff_seconds, 60)
+            delay = min(backoff_seconds, TELEGRAM_POLL_BACKOFF_MAX_SEC)
             log_bot(f"Poll error #{consecutive_errors}, retry in {delay}s: {exc}")
             await asyncio.sleep(delay)
-            backoff_seconds = min(backoff_seconds * 2, 60)
+            backoff_seconds = min(backoff_seconds * 2, TELEGRAM_POLL_BACKOFF_MAX_SEC)
 
 
 async def watch_state() -> None:
@@ -1977,29 +2014,39 @@ async def watch_state() -> None:
                 except OSError as exc:
                     log_bot(f"Crash recovery failed to launch update_task for {current_task}: {exc}")
 
-                for rollback_cmd in (
-                    ["git", "-C", str(PROJECT_DIR), "reset", "HEAD", "--", "."],
-                    ["git", "-C", str(PROJECT_DIR), "checkout", "--", "."],
-                ):
-                    try:
-                        rollback_result = subprocess.run(
-                            rollback_cmd,
-                            check=False,
-                            capture_output=True,
-                            text=True,
-                        )
-                        if rollback_result.returncode != 0:
-                            detail = (rollback_result.stderr or rollback_result.stdout or "").strip()
-                            log_bot(
-                                f"Crash recovery rollback command failed ({' '.join(rollback_cmd)}): "
-                                f"{detail or f'exit {rollback_result.returncode}'}"
+                rollback_performed = False
+                if destructive_rollback_enabled():
+                    for rollback_args in CRASH_ROLLBACK_COMMANDS:
+                        rollback_cmd = ["git", "-C", str(PROJECT_DIR), *rollback_args]
+                        try:
+                            rollback_result = subprocess.run(
+                                rollback_cmd,
+                                check=False,
+                                capture_output=True,
+                                text=True,
                             )
-                    except OSError as exc:
-                        log_bot(f"Crash recovery rollback launch failed ({' '.join(rollback_cmd)}): {exc}")
+                            if rollback_result.returncode != 0:
+                                detail = (rollback_result.stderr or rollback_result.stdout or "").strip()
+                                log_bot(
+                                    f"Crash recovery rollback command failed ({' '.join(rollback_cmd)}): "
+                                    f"{detail or f'exit {rollback_result.returncode}'}"
+                                )
+                            else:
+                                rollback_performed = True
+                        except OSError as exc:
+                            log_bot(f"Crash recovery rollback launch failed ({' '.join(rollback_cmd)}): {exc}")
+                else:
+                    log_bot(f"Crash recovery rollback skipped. {DESTRUCTIVE_ROLLBACK_POLICY_NOTICE}")
 
-                await safe_send(
-                    f"🔄 Ralph crashed during {current_task}. Task reset to pending, changes rolled back."
-                )
+                if rollback_performed:
+                    await safe_send(
+                        f"🔄 Ralph crashed during {current_task}. Task reset to pending, changes rolled back."
+                    )
+                else:
+                    await safe_send(
+                        f"🔄 Ralph crashed during {current_task}. Task reset to pending. "
+                        "Worktree rollback skipped by policy."
+                    )
             last_exit_code = code
             set_idle_state(f"Ralph exited with code {code}")
             if caffeinate_process:

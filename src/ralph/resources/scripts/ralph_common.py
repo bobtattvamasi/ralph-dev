@@ -45,6 +45,81 @@ DOC_KEYWORDS = (
     "prompt_version",
     "changelog",
 )
+DEFAULT_CODER_TIMEOUT_SEC = 900
+DEFAULT_LEAD_TIMEOUT_SEC = 300
+DEFAULT_TELEGRAM_TIMEOUT_SEC = 10
+DEFAULT_TELEGRAM_POLL_TIMEOUT_SEC = 30
+DEFAULT_TELEGRAM_POLL_REQUEST_TIMEOUT_SEC = 35
+DEFAULT_TELEGRAM_POLL_BACKOFF_INITIAL_SEC = 5
+DEFAULT_TELEGRAM_POLL_BACKOFF_MAX_SEC = 60
+DEFAULT_ARTICLE_TIMEOUT_SEC = 300
+DEFAULT_CODEX_RETRY_DELAYS = (60, 120, 300)
+DEFAULT_RATE_LIMIT_PAUSE_SEC = 1800
+DESTRUCTIVE_ROLLBACK_REVIEWED = "reviewed"
+DESTRUCTIVE_ROLLBACK_ENV = "RALPH_DESTRUCTIVE_ROLLBACK"
+DESTRUCTIVE_ROLLBACK_POLICY_NOTICE = (
+    f"Set {DESTRUCTIVE_ROLLBACK_ENV}={DESTRUCTIVE_ROLLBACK_REVIEWED} after review to allow destructive rollback."
+)
+CRASH_ROLLBACK_COMMANDS: tuple[tuple[str, ...], ...] = (
+    ("git", "reset", "HEAD", "--", "."),
+    ("git", "checkout", "--", "."),
+)
+
+
+def env_int(name: str, default: int) -> int:
+    """Return integer env override or a safe default."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def get_telegram_timeout_sec() -> int:
+    """Shared Telegram transport timeout for bot sends and notifications."""
+    return env_int("RALPH_TELEGRAM_TIMEOUT_SEC", DEFAULT_TELEGRAM_TIMEOUT_SEC)
+
+
+def get_telegram_poll_timeout_sec() -> int:
+    """Shared Telegram long-poll timeout."""
+    return env_int("RALPH_TELEGRAM_POLL_TIMEOUT_SEC", DEFAULT_TELEGRAM_POLL_TIMEOUT_SEC)
+
+
+def get_telegram_poll_request_timeout_sec() -> int:
+    """Shared HTTP timeout for Telegram long-poll requests."""
+    return env_int(
+        "RALPH_TELEGRAM_POLL_REQUEST_TIMEOUT_SEC",
+        DEFAULT_TELEGRAM_POLL_REQUEST_TIMEOUT_SEC,
+    )
+
+
+def get_telegram_poll_backoff_initial_sec() -> int:
+    """Shared initial backoff after Telegram poll failures."""
+    return env_int(
+        "RALPH_TELEGRAM_POLL_BACKOFF_INITIAL_SEC",
+        DEFAULT_TELEGRAM_POLL_BACKOFF_INITIAL_SEC,
+    )
+
+
+def get_telegram_poll_backoff_max_sec() -> int:
+    """Shared max backoff after Telegram poll failures."""
+    return env_int(
+        "RALPH_TELEGRAM_POLL_BACKOFF_MAX_SEC",
+        DEFAULT_TELEGRAM_POLL_BACKOFF_MAX_SEC,
+    )
+
+
+def get_article_generation_timeout_sec() -> int:
+    """Shared timeout for article generation subprocesses."""
+    return env_int("RALPH_ARTICLE_TIMEOUT_SEC", DEFAULT_ARTICLE_TIMEOUT_SEC)
+
+
+def destructive_rollback_enabled() -> bool:
+    """Allow destructive crash rollback only when explicitly reviewed."""
+    return os.environ.get(DESTRUCTIVE_ROLLBACK_ENV, "").strip().lower() == DESTRUCTIVE_ROLLBACK_REVIEWED
 
 
 def resolve_project_dir(explicit: str | None = None, *, script_path: str | Path | None = None) -> Path:

@@ -148,9 +148,15 @@ trap handle_interrupt INT TERM
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
 MAX_CODEX_RETRIES=3
-RALPH_TIMEOUT_LEAD="${RALPH_TIMEOUT_LEAD:-300}"
-CODEX_RETRY_DELAYS=(${RALPH_CODEX_RETRY_DELAYS:-60 120 300})
-RATE_LIMIT_PAUSE="${RALPH_RATE_LIMIT_PAUSE:-1800}"
+DEFAULT_CODER_TIMEOUT_SEC="${RALPH_DEFAULT_CODER_TIMEOUT_SEC:-900}"
+DEFAULT_LEAD_TIMEOUT_SEC="${RALPH_DEFAULT_LEAD_TIMEOUT_SEC:-300}"
+DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC:-$DEFAULT_CODER_TIMEOUT_SEC}"
+DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC:-120}"
+DEFAULT_CODEX_RETRY_DELAYS="${RALPH_DEFAULT_CODEX_RETRY_DELAYS:-60 120 300}"
+DEFAULT_RATE_LIMIT_PAUSE_SEC="${RALPH_DEFAULT_RATE_LIMIT_PAUSE_SEC:-1800}"
+RALPH_TIMEOUT_LEAD="${RALPH_TIMEOUT_LEAD:-$DEFAULT_LEAD_TIMEOUT_SEC}"
+CODEX_RETRY_DELAYS=(${RALPH_CODEX_RETRY_DELAYS:-$DEFAULT_CODEX_RETRY_DELAYS})
+RATE_LIMIT_PAUSE="${RALPH_RATE_LIMIT_PAUSE:-$DEFAULT_RATE_LIMIT_PAUSE_SEC}"
 CONSECUTIVE_FAILURES=0
 MAX_CONSECUTIVE_FAILURES=3
 DEFAULT_MODEL=""
@@ -2923,7 +2929,7 @@ payload = {
   "status": "pending",
   "priority": "critical",
   "complexity": "moderate",
-  "timeout": 900,
+  "timeout": $DEFAULT_CODER_TIMEOUT_SEC,
   "required_context": [],
 }
 print(json.dumps(payload))
@@ -2945,8 +2951,8 @@ PY
     TASK_JSON="$HEAL_TASK_JSON"
     TASK_ID="ENV-FIX"
     TASK_TITLE="Fix broken pre-task validation"
-    TASK_TIMEOUT=900
-    TASK_LEAD_TIMEOUT=120
+    TASK_TIMEOUT="$DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC"
+    TASK_LEAD_TIMEOUT="$DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC"
     TASK_COMPLEXITY="moderate"
     TASK_CONTEXT_FILES=""
     TASK_RISK="medium"
@@ -3591,15 +3597,15 @@ import sys, json
 task = json.load(sys.stdin)
 complexity = task.get('complexity', 'moderate')
 defaults = {'simple': 900, 'moderate': 900, 'complex': 900, 'critical': 900}
-default_timeout = defaults.get(complexity, 900)
+default_timeout = defaults.get(complexity, $DEFAULT_CODER_TIMEOUT_SEC)
 print(task.get('timeout', default_timeout))
-" 2>/dev/null || echo "900")
+" 2>/dev/null || echo "$DEFAULT_CODER_TIMEOUT_SEC")
 
     # Extract lead timeout with a higher default for heavier review tasks.
     TASK_LEAD_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
 import os, sys, json
 task = json.load(sys.stdin)
-default_lead = int(os.environ.get('RALPH_TIMEOUT_LEAD', '300'))
+default_lead = int(os.environ.get('RALPH_TIMEOUT_LEAD', '$DEFAULT_LEAD_TIMEOUT_SEC'))
 print(task.get('lead_timeout', task.get('timeout', default_lead)))
 " 2>/dev/null || echo "$RALPH_TIMEOUT_LEAD")
 
