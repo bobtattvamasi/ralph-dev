@@ -9,6 +9,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from ralph_common import format_tasks_data_error
+except ImportError:
+    from scripts.ralph_common import format_tasks_data_error
+
 
 THRESHOLD_RATIO = 5.0
 SAMPLE_SIZE = 3
@@ -46,8 +51,16 @@ def read_csv_rows(path: Path) -> list[dict[str, str]]:
 
 
 def load_tasks(path: Path) -> list[dict[str, object]]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return list(data.get("tasks", []))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(format_tasks_data_error(path, exc)) from exc
+    if not isinstance(data, dict):
+        raise ValueError(format_tasks_data_error(path, ValueError("tasks.json must contain a JSON object")))
+    tasks = data.get("tasks", [])
+    if not isinstance(tasks, list):
+        raise ValueError(format_tasks_data_error(path, ValueError("tasks.json must contain a top-level 'tasks' list")))
+    return list(tasks)
 
 
 def select_tasks(tasks: list[dict[str, object]], limit: int) -> list[dict[str, object]]:
@@ -189,7 +202,11 @@ def format_table(results: list[TaskBenchmark], overall_ratio: float, threshold: 
 def main() -> int:
     args = build_parser().parse_args()
     project_dir = Path(args.project_dir).resolve()
-    results, overall_ratio = benchmark_project(project_dir, limit=args.limit, threshold=args.threshold)
+    try:
+        results, overall_ratio = benchmark_project(project_dir, limit=args.limit, threshold=args.threshold)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     output = format_table(results, overall_ratio, args.threshold)
     print(output)
     return 0 if overall_ratio < args.threshold else 1

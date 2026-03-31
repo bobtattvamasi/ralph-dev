@@ -251,8 +251,10 @@ def reset_stale_state() -> None:
                     json.dumps(state, indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
-    except Exception:
-        pass
+    except json.JSONDecodeError as exc:
+        log_bot(f"Failed to reset stale state: malformed {STATE_FILE.name}: {exc}")
+    except OSError as exc:
+        log_bot(f"Failed to reset stale state: {exc}")
 
 
 def write_control(action: str, comment: str = "") -> None:
@@ -1948,35 +1950,52 @@ async def watch_state() -> None:
                 await safe_send(f"⚠️ Ralph exited with code {code}")
             try:
                 raw_state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
-            except Exception:
+            except json.JSONDecodeError as exc:
+                log_bot(f"Crash recovery failed to read {STATE_FILE.name}: malformed JSON: {exc}")
+                raw_state = {}
+            except OSError as exc:
+                log_bot(f"Crash recovery failed to read {STATE_FILE.name}: {exc}")
                 raw_state = {}
 
             current_task = str(raw_state.get("current_task") or "").strip()
             if raw_state.get("status") == "running" and current_task:
                 try:
-                    subprocess.run(
+                    update_result = subprocess.run(
                         ["python3", "scripts/update_task.py", current_task, "pending"],
                         cwd=str(PROJECT_DIR),
                         check=True,
                         capture_output=True,
                         text=True,
                     )
-                except Exception:
-                    pass
+                    if update_result.stderr.strip():
+                        log_bot(f"Crash recovery update_task stderr for {current_task}: {update_result.stderr.strip()}")
+                except subprocess.CalledProcessError as exc:
+                    stderr = (exc.stderr or "").strip()
+                    stdout = (exc.stdout or "").strip()
+                    detail = stderr or stdout or str(exc)
+                    log_bot(f"Crash recovery failed to reset task {current_task} to pending: {detail}")
+                except OSError as exc:
+                    log_bot(f"Crash recovery failed to launch update_task for {current_task}: {exc}")
 
                 for rollback_cmd in (
                     ["git", "-C", str(PROJECT_DIR), "reset", "HEAD", "--", "."],
                     ["git", "-C", str(PROJECT_DIR), "checkout", "--", "."],
                 ):
                     try:
-                        subprocess.run(
+                        rollback_result = subprocess.run(
                             rollback_cmd,
                             check=False,
                             capture_output=True,
                             text=True,
                         )
-                    except Exception:
-                        pass
+                        if rollback_result.returncode != 0:
+                            detail = (rollback_result.stderr or rollback_result.stdout or "").strip()
+                            log_bot(
+                                f"Crash recovery rollback command failed ({' '.join(rollback_cmd)}): "
+                                f"{detail or f'exit {rollback_result.returncode}'}"
+                            )
+                    except OSError as exc:
+                        log_bot(f"Crash recovery rollback launch failed ({' '.join(rollback_cmd)}): {exc}")
 
                 await safe_send(
                     f"🔄 Ralph crashed during {current_task}. Task reset to pending, changes rolled back."

@@ -1048,7 +1048,10 @@ os.replace(tmp_path, 'ralph_state.json')
 CONTROL_ACTION="continue"
 CONTROL_TARGET=""
 read_control_file() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-read 2>/dev/null || printf "continue\n\n"
+    python3 "$RALPH_DIR/scripts/ralph_common.py" control-read || {
+        log "⚠️ Failed to read ralph_control.json via ralph_common.py; defaulting to continue"
+        printf "continue\n\n"
+    }
 }
 
 apply_timeout_override() {
@@ -2092,11 +2095,21 @@ PY
 }
 
 get_human_comment() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-consume-comment 2>/dev/null || true
+    python3 "$RALPH_DIR/scripts/ralph_common.py" control-consume-comment || {
+        log "⚠️ Failed to consume operator comment from ralph_control.json"
+        return 0
+    }
 }
 
 notify() {
-    python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" >/dev/null 2>&1 || true
+    local notify_output=""
+    if ! notify_output=$(python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" 2>&1 >/dev/null); then
+        log "⚠️ Notification helper exited with error: ${notify_output:-unknown error}"
+        return 0
+    fi
+    if [ -n "$notify_output" ]; then
+        log "⚠️ Notification helper: $notify_output"
+    fi
 }
 
 RECOVERY_MODE=0
