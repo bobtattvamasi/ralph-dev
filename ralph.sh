@@ -2197,6 +2197,11 @@ check_and_recover_state() {
     fi
 
     if [ -n "$state_file" ]; then
+        local prev_status_stderr=""
+        prev_status_stderr=$(mktemp "${TMPDIR:-/tmp}/ralph_prev_status_stderr.XXXXXX") || {
+            log "⚠️ Failed to allocate temp file for state recovery logging"
+            prev_status_stderr=""
+        }
         PREV_STATUS=$(python3 -c "
 import json, sys
 from pathlib import Path
@@ -2204,9 +2209,19 @@ p = Path(sys.argv[1])
 try:
     d = json.loads(p.read_text(encoding='utf-8'))
     print(d.get('status', 'unknown'))
-except Exception:
+except json.JSONDecodeError as exc:
+    print(f'malformed state JSON [{p}]: {exc}', file=sys.stderr)
     print('unknown')
-" "$state_file" 2>/dev/null || echo "unknown")
+except OSError as exc:
+    print(f'failed to read state file [{p}]: {exc}', file=sys.stderr)
+    print('unknown')
+" "$state_file" 2>"${prev_status_stderr:-/dev/null}" || echo "unknown")
+        if [ -n "$prev_status_stderr" ] && [ -s "$prev_status_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "⚠️ Auto-recovery state read: $line"
+            done < "$prev_status_stderr"
+        fi
+        [ -n "$prev_status_stderr" ] && rm -f "$prev_status_stderr"
     fi
 
     if [ -n "$PREV_STATUS" ] && [ "$PREV_STATUS" != "idle" ] && [ "$PREV_STATUS" != "stopped" ]; then

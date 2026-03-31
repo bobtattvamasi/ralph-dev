@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime, timezone
 
 try:
@@ -26,7 +27,11 @@ def main() -> int:
     args = parser.parse_args()
 
     project_dir = resolve_project_dir(args.project_dir)
-    data = load_tasks_data(project_dir)
+    try:
+        data = load_tasks_data(project_dir)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     task = next((item for item in data.get("tasks", []) if item.get("id") == args.task), None)
     if task is None:
         print(f"Task not found: {args.task}")

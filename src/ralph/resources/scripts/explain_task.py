@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 
 try:
     from ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
@@ -45,7 +46,11 @@ def main() -> int:
     from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
     from re_audit_tasks import classify_task
 
-    data = load_tasks_data(project_dir)
+    try:
+        data = load_tasks_data(project_dir)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     tasks = data.get("tasks", [])
     task = next((item for item in tasks if item.get("id") == args.task_id), None)
     if task is None:

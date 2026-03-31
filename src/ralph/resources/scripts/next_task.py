@@ -19,7 +19,11 @@ def main():
     parser.add_argument("--explain", action="store_true")
     args = parser.parse_args()
     project_dir = resolve_project_dir(script_path=__file__)
-    data = load_tasks_data(project_dir)
+    try:
+        data = load_tasks_data(project_dir)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     if args.explain:
         print(json.dumps(explain_non_runnable(data["tasks"], phase=args.phase), indent=2, ensure_ascii=False))
         sys.exit(0)

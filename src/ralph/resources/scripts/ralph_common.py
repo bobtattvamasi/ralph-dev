@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -73,16 +74,31 @@ def control_file_path(project_dir: Path) -> Path:
     return project_dir / "ralph_control.json"
 
 
+def format_tasks_data_error(path: Path, exc: Exception) -> str:
+    if isinstance(exc, FileNotFoundError):
+        detail = "file not found"
+    elif isinstance(exc, json.JSONDecodeError):
+        detail = f"malformed JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
+    elif isinstance(exc, ValueError):
+        detail = str(exc)
+    else:
+        detail = str(exc) or exc.__class__.__name__
+    return f"tasks.json error [{path}]: {detail}"
+
+
 def load_tasks_data(project_dir: Path) -> dict[str, Any]:
     """Load tasks.json through one validated code path."""
     path = tasks_file_path(project_dir)
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError("tasks.json must contain a JSON object")
-    tasks = data.get("tasks")
-    if not isinstance(tasks, list):
-        raise ValueError("tasks.json must contain a top-level 'tasks' list")
-    return data
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("tasks.json must contain a JSON object")
+        tasks = data.get("tasks")
+        if not isinstance(tasks, list):
+            raise ValueError("tasks.json must contain a top-level 'tasks' list")
+        return data
+    except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(format_tasks_data_error(path, exc)) from exc
 
 
 def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
@@ -123,7 +139,12 @@ def read_control_data(project_dir: Path) -> dict[str, Any]:
         return {"action": DEFAULT_CONTROL_ACTION, "comment": ""}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, json.JSONDecodeError) as exc:
+        print(
+            f"ralph_control.json warning [{path}]: "
+            f"{'malformed JSON' if isinstance(exc, json.JSONDecodeError) else 'read failed'}: {exc}",
+            file=sys.stderr,
+        )
         data = {}
     return _normalize_control_data(data)
 

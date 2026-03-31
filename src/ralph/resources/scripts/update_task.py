@@ -19,7 +19,11 @@ def main():
     project_dir = resolve_project_dir(script_path=__file__)
     task_id, status = sys.argv[1], sys.argv[2]
     notes = sys.argv[3] if len(sys.argv) > 3 else None
-    data = load_tasks_data(project_dir)
+    try:
+        data = load_tasks_data(project_dir)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     for task in data["tasks"]:
         if task["id"] == task_id:
             task["status"] = status
