@@ -1034,27 +1034,118 @@ except Exception:
 # State management
 write_state() {
     local status="$1" task="${2:-}" step="${3:-}" message="${4:-}"
-    python3 -c "
-import json, os, tempfile
-from datetime import datetime, timezone
-state = {
-    'status': '$status',
-    'current_task': '$task',
-    'current_phase_step': '$step',
-    'last_update': datetime.now(timezone.utc).isoformat(),
-    'message': '''$message''',
-}
-fd, tmp_path = tempfile.mkstemp(prefix='ralph_state_', suffix='.tmp', dir='.')
-with os.fdopen(fd, 'w', encoding='utf-8') as f:
-    f.write(json.dumps(state, indent=2))
-os.replace(tmp_path, 'ralph_state.json')
-"
+    local helper_output=""
+    local helper_stderr=""
+    helper_stderr=$(mktemp "${TMPDIR:-/tmp}/ralph_state_stderr.XXXXXX") || {
+        log "⚠️ State helper failed: unable to allocate temp file for stderr capture"
+        return 1
+    }
+
+    if ! helper_output=$(python3 "$RALPH_DIR/scripts/ralph_common.py" state-write "$status" "$task" "$step" "$message" 2>"$helper_stderr"); then
+        if [ -s "$helper_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "⚠️ State helper: $line"
+            done < "$helper_stderr"
+        fi
+        rm -f "$helper_stderr"
+        log "⚠️ Failed to write ralph_state.json"
+        return 1
+    fi
+
+    if [ -s "$helper_stderr" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] && log "⚠️ State helper: $line"
+        done < "$helper_stderr"
+    fi
+    rm -f "$helper_stderr"
+
+    printf '%s' "$helper_output" >/dev/null
 }
 
 CONTROL_ACTION="continue"
 CONTROL_TARGET=""
+run_control_helper() {
+    local subcommand="$1"
+    shift || true
+
+    local helper_output=""
+    local helper_stderr=""
+    helper_stderr=$(mktemp "${TMPDIR:-/tmp}/ralph_control_stderr.XXXXXX") || {
+        log "⚠️ Control helper '${subcommand}' failed: unable to allocate temp file for stderr capture"
+        return 1
+    }
+
+    if ! helper_output=$(python3 "$RALPH_DIR/scripts/ralph_common.py" "$subcommand" "$@" 2>"$helper_stderr"); then
+        if [ -s "$helper_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "⚠️ Control helper '${subcommand}': $line"
+            done < "$helper_stderr"
+        fi
+        rm -f "$helper_stderr"
+        log "⚠️ Control helper '${subcommand}' failed"
+        return 1
+    fi
+
+    if [ -s "$helper_stderr" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] && log "⚠️ Control helper '${subcommand}': $line"
+        done < "$helper_stderr"
+    fi
+    rm -f "$helper_stderr"
+
+    printf '%s' "$helper_output"
+    return 0
+}
+
 read_control_file() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-read 2>/dev/null || printf "continue\n\n"
+    local helper_output=""
+    if ! helper_output=$(run_control_helper control-read); then
+        log "⚠️ Failed to read ralph_control.json; defaulting to continue"
+        printf "continue\n\n"
+        return 0
+    fi
+    if [ -z "$helper_output" ]; then
+        log "⚠️ Control helper returned empty control payload; defaulting to continue"
+        printf "continue\n\n"
+        return 0
+    fi
+    printf '%s\n' "$helper_output"
+}
+
+parse_control_data() {
+    local context="$1"
+    local control_data="$2"
+    local action target
+
+    action=$(printf '%s\n' "$control_data" | sed -n '1p')
+    target=$(printf '%s\n' "$control_data" | sed -n '2p')
+
+    if [ -z "$action" ]; then
+        log "⚠️ ${context}: empty control action from ralph_control.json; defaulting to continue"
+        CONTROL_ACTION="continue"
+        CONTROL_TARGET=""
+        return 1
+    fi
+
+    CONTROL_ACTION="$action"
+    CONTROL_TARGET="$target"
+    return 0
+}
+
+apply_control_action_snapshot() {
+    local context="$1"
+    local control_data=""
+
+    control_data=$(read_control_file)
+    parse_control_data "$context" "$control_data" || return 1
+    return 0
+}
+
+clear_control_action() {
+    run_control_helper control-clear >/dev/null || {
+        log "⚠️ Failed to clear control action in ralph_control.json"
+        return 1
+    }
 }
 
 apply_timeout_override() {
@@ -1078,10 +1169,7 @@ apply_timeout_override() {
 check_control() {
     while true; do
         if [ -f ralph_control.json ]; then
-            local control_data
-            control_data=$(read_control_file)
-            CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
-            CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+            apply_control_action_snapshot "check_control" || true
             if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
                 return 1
             fi
@@ -1093,9 +1181,7 @@ check_control() {
                 write_state "paused" "" "" "Paused by user"
                 while [ "$CONTROL_ACTION" = "pause" ]; do
                     sleep 5
-                    control_data=$(read_control_file)
-                    CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
-                    CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+                    apply_control_action_snapshot "check_control pause loop" || true
                 done
                 if [ "$CONTROL_ACTION" = "continue" ]; then
                     write_state "running" "${TASK_ID:-}" "" "Resumed by user"
@@ -1120,9 +1206,7 @@ wait_for_high_risk_approval() {
             CONTROL_ACTION="pause"
             CONTROL_TARGET=""
         else
-            control_data=$(read_control_file)
-            CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
-            CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+            apply_control_action_snapshot "wait_for_high_risk_approval" || true
         fi
 
         if [ "$CONTROL_ACTION" = "continue" ]; then
@@ -1150,14 +1234,13 @@ wait_for_high_risk_approval() {
     done
 }
 
-clear_control_action() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-clear 2>/dev/null || true
-}
-
 set_control_action() {
     local action="$1"
     local comment="${2:-}"
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-write "$action" "$comment" 2>/dev/null || true
+    run_control_helper control-write "$action" "$comment" >/dev/null || {
+        log "⚠️ Failed to write control action '${action}' to ralph_control.json"
+        return 1
+    }
 }
 
 skip_current_task() {
@@ -2098,11 +2181,21 @@ PY
 }
 
 get_human_comment() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-consume-comment 2>/dev/null || true
+    if ! run_control_helper control-consume-comment; then
+        log "⚠️ Failed to consume operator comment from ralph_control.json"
+        return 0
+    fi
 }
 
 notify() {
-    python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" >/dev/null 2>&1 || true
+    local notify_output=""
+    if ! notify_output=$(python3 "$RALPH_DIR/scripts/ralph_notify.py" "$*" 2>&1 >/dev/null); then
+        log "⚠️ Notification helper exited with error: ${notify_output:-unknown error}"
+        return 0
+    fi
+    if [ -n "$notify_output" ]; then
+        log "⚠️ Notification helper: $notify_output"
+    fi
 }
 
 RECOVERY_MODE=0
@@ -2121,6 +2214,11 @@ check_and_recover_state() {
     fi
 
     if [ -n "$state_file" ]; then
+        local prev_status_stderr=""
+        prev_status_stderr=$(mktemp "${TMPDIR:-/tmp}/ralph_prev_status_stderr.XXXXXX") || {
+            log "⚠️ Failed to allocate temp file for state recovery logging"
+            prev_status_stderr=""
+        }
         PREV_STATUS=$(python3 -c "
 import json, sys
 from pathlib import Path
@@ -2128,9 +2226,19 @@ p = Path(sys.argv[1])
 try:
     d = json.loads(p.read_text(encoding='utf-8'))
     print(d.get('status', 'unknown'))
-except Exception:
+except json.JSONDecodeError as exc:
+    print(f'malformed state JSON [{p}]: {exc}', file=sys.stderr)
     print('unknown')
-" "$state_file" 2>/dev/null || echo "unknown")
+except OSError as exc:
+    print(f'failed to read state file [{p}]: {exc}', file=sys.stderr)
+    print('unknown')
+" "$state_file" 2>"${prev_status_stderr:-/dev/null}" || echo "unknown")
+        if [ -n "$prev_status_stderr" ] && [ -s "$prev_status_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "⚠️ Auto-recovery state read: $line"
+            done < "$prev_status_stderr"
+        fi
+        [ -n "$prev_status_stderr" ] && rm -f "$prev_status_stderr"
     fi
 
     if [ -n "$PREV_STATUS" ] && [ "$PREV_STATUS" != "idle" ] && [ "$PREV_STATUS" != "stopped" ]; then
@@ -3221,20 +3329,7 @@ with path.open("a", encoding="utf-8") as fh:
     fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 PY
     if [ "$codex_status" -eq 0 ]; then
-        python3 - "$task_id" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-task_id = sys.argv[1]
-path = Path("tasks.json")
-data = json.loads(path.read_text(encoding="utf-8"))
-for task in data.get("tasks", []):
-    if task.get("id") == task_id:
-        task["status"] = "verified_done"
-        break
-path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-PY
+        python3 "$RALPH_DIR/scripts/update_task.py" "$task_id" done >/dev/null 2>&1 || true
     fi
     rm -f "$coder_output"
     return "$codex_status"

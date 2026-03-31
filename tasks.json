@@ -2932,7 +2932,8 @@
       "dependencies": [
         "R13-03"
       ],
-      "status": "pending"
+      "status": "verified_done",
+      "completed_at": "2026-03-31T16:41:56.979957+00:00"
     },
     {
       "id": "R13-03",

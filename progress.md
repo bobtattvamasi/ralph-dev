@@ -99,3 +99,5 @@
 - **R13-06** (2026-03-31 05:52 UTC): R13-06 закрывается по диффу: удалены неиспользуемые helper-функции, acceptance criteria выполнены, 175 тестов прошли.
 - **R13-04** (2026-03-31 07:57 UTC): R13-04 hardens the cited silent-failure paths and makes malformed operator/runtime inputs visible without crashing the main flow.
 - **R13-07** (2026-03-31 10:50 UTC): R13-07 approved: destructive crash rollback is gated by RALPH_DESTRUCTIVE_ROLLBACK=reviewed, Telegram/article timeouts are centralized in ralph_common, and lead/retry/rate-limit defaults are named configuration in ralph.sh and mirrored resource script.
+- **T01** (2026-03-31 16:22 UTC): First note
+- **T02** (2026-03-31 16:22 UTC): Second note

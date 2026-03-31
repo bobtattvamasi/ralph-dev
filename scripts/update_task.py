@@ -4,9 +4,9 @@ import sys
 from datetime import datetime, timezone
 
 try:
-    from ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
+    from ralph_common import mutate_tasks_data, resolve_project_dir
 except ImportError:
-    from scripts.ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
+    from scripts.ralph_common import mutate_tasks_data, resolve_project_dir
 
 
 COMPLETED_STATUSES = {"done", "verified_done"}
@@ -20,24 +20,26 @@ def main():
     task_id, status = sys.argv[1], sys.argv[2]
     notes = sys.argv[3] if len(sys.argv) > 3 else None
     try:
-        data = load_tasks_data(project_dir)
+        def apply_update(data):
+            for task in data["tasks"]:
+                if task["id"] == task_id:
+                    task["status"] = status
+                    if status in COMPLETED_STATUSES:
+                        task["completed_at"] = datetime.now(timezone.utc).isoformat()
+                    else:
+                        task["completed_at"] = None
+                    if notes:
+                        task["revision_notes"] = notes
+                    return
+            raise LookupError(task_id)
+
+        mutate_tasks_data(project_dir, apply_update)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-    for task in data["tasks"]:
-        if task["id"] == task_id:
-            task["status"] = status
-            if status in COMPLETED_STATUSES:
-                task["completed_at"] = datetime.now(timezone.utc).isoformat()
-            else:
-                task["completed_at"] = None
-            if notes:
-                task["revision_notes"] = notes
-            break
-    else:
+    except LookupError:
         print(f"Task {task_id} not found")
         sys.exit(1)
-    save_tasks_data(project_dir, data)
     print(f"Updated {task_id} -> {status}")
 
 

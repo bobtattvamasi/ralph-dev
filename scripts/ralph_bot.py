@@ -36,8 +36,10 @@ try:
         get_telegram_poll_timeout_sec,
         get_telegram_timeout_sec,
         load_tasks_data as shared_load_tasks_data,
+        mutate_tasks_data as shared_mutate_tasks_data,
         resolve_project_dir,
         save_tasks_data as shared_save_tasks_data,
+        write_state_payload,
         write_control_data,
         destructive_rollback_enabled,
     )
@@ -52,8 +54,10 @@ except ImportError:
         get_telegram_poll_timeout_sec,
         get_telegram_timeout_sec,
         load_tasks_data as shared_load_tasks_data,
+        mutate_tasks_data as shared_mutate_tasks_data,
         resolve_project_dir,
         save_tasks_data as shared_save_tasks_data,
+        write_state_payload,
         write_control_data,
         destructive_rollback_enabled,
     )
@@ -279,10 +283,7 @@ def reset_stale_state() -> None:
                 state["step"] = ""
                 state["current_phase_step"] = ""
                 state["message"] = "Auto-reset stale state on /auto"
-                STATE_FILE.write_text(
-                    json.dumps(state, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
+                write_state_payload(STATE_FILE, state)
     except json.JSONDecodeError as exc:
         log_bot(f"Failed to reset stale state: malformed {STATE_FILE.name}: {exc}")
     except OSError as exc:
@@ -664,6 +665,11 @@ def save_tasks_data(data: dict) -> None:
     shared_save_tasks_data(PROJECT_DIR, data)
 
 
+def mutate_tasks_data(mutator):
+    """Load, mutate, and persist tasks.json under one shared lock."""
+    return shared_mutate_tasks_data(PROJECT_DIR, mutator)
+
+
 def get_audit_summary(task_id: str) -> str:
     """Return a human-readable audit summary for a task."""
     result = subprocess.run(
@@ -1031,7 +1037,7 @@ def set_idle_state(message: str = "Idle") -> None:
         "message": message,
     }
     try:
-        STATE_FILE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        write_state_payload(STATE_FILE, payload)
     except OSError as exc:
         print(f"[bot] State write error: {exc}", file=sys.stderr)
 
@@ -1282,37 +1288,35 @@ async def cmd_add(args: str) -> None:
         return
 
     try:
-        data = load_tasks_data()
-    except Exception as exc:  # noqa: BLE001
-        await safe_send(f"❌ Error reading tasks.json: {exc}")
-        return
+        phase_pattern = re.compile(rf"^{re.escape(phase)}-(\d+)$")
 
-    tasks = data.get("tasks", [])
-    phase_pattern = re.compile(rf"^{re.escape(phase)}-(\d+)$")
-    next_num = 1
-    for task in tasks:
-        match = phase_pattern.match(str(task.get("id", "")))
-        if match:
-            next_num = max(next_num, int(match.group(1)) + 1)
+        def add_task(data: dict) -> str:
+            tasks = data.get("tasks", [])
+            next_num = 1
+            for task in tasks:
+                match = phase_pattern.match(str(task.get("id", "")))
+                if match:
+                    next_num = max(next_num, int(match.group(1)) + 1)
 
-    task_id = f"{phase}-{next_num:02d}"
-    new_task = {
-        "id": task_id,
-        "phase": phase,
-        "category": "feature",
-        "priority": "medium",
-        "title": title,
-        "description": title,
-        "acceptance_criteria": [],
-        "test_steps": [],
-        "dependencies": [],
-        "status": "pending",
-    }
-    tasks.append(new_task)
-    data["tasks"] = tasks
+            task_id = f"{phase}-{next_num:02d}"
+            tasks.append(
+                {
+                    "id": task_id,
+                    "phase": phase,
+                    "category": "feature",
+                    "priority": "medium",
+                    "title": title,
+                    "description": title,
+                    "acceptance_criteria": [],
+                    "test_steps": [],
+                    "dependencies": [],
+                    "status": "pending",
+                }
+            )
+            data["tasks"] = tasks
+            return task_id
 
-    try:
-        save_tasks_data(data)
+        task_id = mutate_tasks_data(add_task)
     except Exception as exc:  # noqa: BLE001
         await safe_send(f"❌ Error saving tasks.json: {exc}")
         return
@@ -1332,22 +1336,21 @@ async def cmd_rm(args: str) -> None:
         return
 
     try:
-        data = load_tasks_data()
-    except Exception as exc:  # noqa: BLE001
-        await safe_send(f"❌ Error reading tasks.json: {exc}")
-        return
+        def remove_task(data: dict) -> bool:
+            tasks = data.get("tasks", [])
+            filtered_tasks = [task for task in tasks if task.get("id") != task_id]
+            if len(filtered_tasks) == len(tasks):
+                return False
+            data["tasks"] = filtered_tasks
+            return True
 
-    tasks = data.get("tasks", [])
-    filtered_tasks = [task for task in tasks if task.get("id") != task_id]
-    if len(filtered_tasks) == len(tasks):
-        await safe_send(f"❌ Task {task_id} not found")
-        return
-
-    data["tasks"] = filtered_tasks
-    try:
-        save_tasks_data(data)
+        removed = mutate_tasks_data(remove_task)
     except Exception as exc:  # noqa: BLE001
         await safe_send(f"❌ Error saving tasks.json: {exc}")
+        return
+
+    if not removed:
+        await safe_send(f"❌ Task {task_id} not found")
         return
 
     await safe_send(f"🗑 Task {task_id} removed")

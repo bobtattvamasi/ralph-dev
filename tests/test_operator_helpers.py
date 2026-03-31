@@ -4,18 +4,29 @@ import asyncio
 import json
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import scripts.bot_smoke_check as smoke
-from scripts.ralph_common import consume_control_comment, load_tasks_data, save_tasks_data, write_control_data
+from scripts.ralph_common import (
+    consume_control_comment,
+    load_tasks_data,
+    locked_path,
+    save_tasks_data,
+    write_control_data,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPLAIN_TASK = ROOT / "scripts" / "explain_task.py"
 REOPEN_TASKS = ROOT / "scripts" / "reopen_tasks.py"
+RALPH_COMMON = ROOT / "scripts" / "ralph_common.py"
+UPDATE_TASK = ROOT / "scripts" / "update_task.py"
+UPDATE_PROGRESS = ROOT / "scripts" / "update_progress.py"
 
 
 def create_project(tmp_path: Path) -> Path:
@@ -344,3 +355,150 @@ def test_shared_control_io_normalizes_and_consumes_comment(tmp_path: Path) -> No
     cleared = json.loads((project_dir / "ralph_control.json").read_text(encoding="utf-8"))
     assert cleared["action"] == "comment"
     assert cleared["comment"] == ""
+
+
+def test_control_write_waits_for_lock(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+    control_path = project_dir / "ralph_control.json"
+
+    with locked_path(control_path):
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(RALPH_COMMON),
+                "control-write",
+                "pause",
+                "Operator note",
+                "--project-dir",
+                str(project_dir),
+            ],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        time.sleep(0.2)
+        assert not control_path.exists()
+
+    stdout, stderr = proc.communicate(timeout=5)
+    assert proc.returncode == 0, stdout + stderr
+    control = json.loads(control_path.read_text(encoding="utf-8"))
+    assert control["action"] == "pause"
+    assert control["comment"] == "Operator note"
+
+
+def test_state_write_waits_for_lock_and_replaces_atomically(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+    state_path = project_dir / "ralph_state.json"
+    state_path.write_text('{"status":"idle"}\n', encoding="utf-8")
+
+    with locked_path(state_path):
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(RALPH_COMMON),
+                "state-write",
+                "running",
+                "T01",
+                "coder",
+                "Locked write",
+                "--project-dir",
+                str(project_dir),
+            ],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        time.sleep(0.2)
+        assert json.loads(state_path.read_text(encoding="utf-8")) == {"status": "idle"}
+
+    stdout, stderr = proc.communicate(timeout=5)
+    assert proc.returncode == 0, stdout + stderr
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["status"] == "running"
+    assert state["current_task"] == "T01"
+    assert state["current_phase_step"] == "coder"
+    assert state["message"] == "Locked write"
+
+
+def test_update_task_preserves_concurrent_task_status_changes(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+    env = {**os.environ, "RALPH_PROJECT_DIR": str(project_dir), "PYTHONPATH": str(ROOT)}
+    slow_update = (
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        "from scripts.ralph_common import mutate_tasks_data\n"
+        "project_dir = Path(sys.argv[1])\n"
+        "task_id = sys.argv[2]\n"
+        "status = sys.argv[3]\n"
+        "def apply(data):\n"
+        "    for task in data['tasks']:\n"
+        "        if task['id'] == task_id:\n"
+        "            time.sleep(0.3)\n"
+        "            task['status'] = status\n"
+        "            return\n"
+        "    raise SystemExit(f'missing task {task_id}')\n"
+        "mutate_tasks_data(project_dir, apply)\n"
+    )
+    slow_proc = subprocess.Popen(
+        [sys.executable, "-c", slow_update, str(project_dir), "T01", "done"],
+        cwd=project_dir,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    time.sleep(0.05)
+    fast_result = subprocess.run(
+        [sys.executable, str(UPDATE_TASK), "T02", "blocked", "Concurrent update"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    slow_stdout, slow_stderr = slow_proc.communicate(timeout=5)
+
+    assert slow_proc.returncode == 0, slow_stdout + slow_stderr
+    assert fast_result.returncode == 0, fast_result.stdout + fast_result.stderr
+
+    tasks = {task["id"]: task for task in load_tasks_data(project_dir)["tasks"]}
+    assert tasks["T01"]["status"] == "done"
+    assert tasks["T02"]["status"] == "blocked"
+    assert tasks["T02"]["revision_notes"] == "Concurrent update"
+
+
+def test_update_progress_serializes_concurrent_appends(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+    (project_dir / "progress.md").write_text("# Progress\n", encoding="utf-8")
+    env = {**os.environ, "RALPH_PROJECT_DIR": str(project_dir)}
+
+    proc_a = subprocess.Popen(
+        [sys.executable, str(UPDATE_PROGRESS), "T01", "First note"],
+        cwd=project_dir,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    proc_b = subprocess.Popen(
+        [sys.executable, str(UPDATE_PROGRESS), "T02", "Second note"],
+        cwd=project_dir,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    stdout_a, stderr_a = proc_a.communicate(timeout=5)
+    stdout_b, stderr_b = proc_b.communicate(timeout=5)
+
+    assert proc_a.returncode == 0, stdout_a + stderr_a
+    assert proc_b.returncode == 0, stdout_b + stderr_b
+
+    progress = (project_dir / "progress.md").read_text(encoding="utf-8")
+    assert progress.count("**T01**") == 1
+    assert progress.count("**T02**") == 1
+    assert "First note" in progress
+    assert "Second note" in progress

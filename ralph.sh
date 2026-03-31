@@ -1034,21 +1034,32 @@ except Exception:
 # State management
 write_state() {
     local status="$1" task="${2:-}" step="${3:-}" message="${4:-}"
-    python3 -c "
-import json, os, tempfile
-from datetime import datetime, timezone
-state = {
-    'status': '$status',
-    'current_task': '$task',
-    'current_phase_step': '$step',
-    'last_update': datetime.now(timezone.utc).isoformat(),
-    'message': '''$message''',
-}
-fd, tmp_path = tempfile.mkstemp(prefix='ralph_state_', suffix='.tmp', dir='.')
-with os.fdopen(fd, 'w', encoding='utf-8') as f:
-    f.write(json.dumps(state, indent=2))
-os.replace(tmp_path, 'ralph_state.json')
-"
+    local helper_output=""
+    local helper_stderr=""
+    helper_stderr=$(mktemp "${TMPDIR:-/tmp}/ralph_state_stderr.XXXXXX") || {
+        log "⚠️ State helper failed: unable to allocate temp file for stderr capture"
+        return 1
+    }
+
+    if ! helper_output=$(python3 "$RALPH_DIR/scripts/ralph_common.py" state-write "$status" "$task" "$step" "$message" 2>"$helper_stderr"); then
+        if [ -s "$helper_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "⚠️ State helper: $line"
+            done < "$helper_stderr"
+        fi
+        rm -f "$helper_stderr"
+        log "⚠️ Failed to write ralph_state.json"
+        return 1
+    fi
+
+    if [ -s "$helper_stderr" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] && log "⚠️ State helper: $line"
+        done < "$helper_stderr"
+    fi
+    rm -f "$helper_stderr"
+
+    printf '%s' "$helper_output" >/dev/null
 }
 
 CONTROL_ACTION="continue"
@@ -3318,20 +3329,7 @@ with path.open("a", encoding="utf-8") as fh:
     fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 PY
     if [ "$codex_status" -eq 0 ]; then
-        python3 - "$task_id" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-task_id = sys.argv[1]
-path = Path("tasks.json")
-data = json.loads(path.read_text(encoding="utf-8"))
-for task in data.get("tasks", []):
-    if task.get("id") == task_id:
-        task["status"] = "verified_done"
-        break
-path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-PY
+        python3 "$RALPH_DIR/scripts/update_task.py" "$task_id" done >/dev/null 2>&1 || true
     fi
     rm -f "$coder_output"
     return "$codex_status"

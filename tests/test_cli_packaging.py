@@ -139,7 +139,10 @@ def test_packaged_trust_and_runtime_resources_match_root_sources() -> None:
         ("scripts/extract_json.py", "src/ralph/resources/scripts/extract_json.py"),
         ("scripts/verify_task_closure.py", "src/ralph/resources/scripts/verify_task_closure.py"),
         ("scripts/models.py", "src/ralph/resources/scripts/models.py"),
+        ("scripts/ralph_common.py", "src/ralph/resources/scripts/ralph_common.py"),
         ("scripts/ralph_bot.py", "src/ralph/resources/scripts/ralph_bot.py"),
+        ("scripts/update_progress.py", "src/ralph/resources/scripts/update_progress.py"),
+        ("scripts/update_task.py", "src/ralph/resources/scripts/update_task.py"),
         ("templates/AGENTS_CODER.md", "src/ralph/resources/templates/AGENTS_CODER.md"),
     ]
 

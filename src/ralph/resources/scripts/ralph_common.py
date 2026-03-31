@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
 import sys
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 DEFAULT_CONTROL_ACTION = "continue"
@@ -149,6 +152,50 @@ def control_file_path(project_dir: Path) -> Path:
     return project_dir / "ralph_control.json"
 
 
+def state_file_path(project_dir: Path) -> Path:
+    return project_dir / "ralph_state.json"
+
+
+def progress_file_path(project_dir: Path) -> Path:
+    return project_dir / "progress.md"
+
+
+def file_lock_path(path: Path) -> Path:
+    return path.parent / f"{path.name}.lock"
+
+
+@contextmanager
+def locked_path(path: Path):
+    """Serialize multi-process mutations for a project-local file."""
+    lock_path = file_lock_path(path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    """Write a file via temp file + replace so readers never see partial content."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+def atomic_write_json(path: Path, payload: Any) -> None:
+    atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+
+
 def format_tasks_data_error(path: Path, exc: Exception) -> str:
     if isinstance(exc, FileNotFoundError):
         detail = "file not found"
@@ -164,6 +211,10 @@ def format_tasks_data_error(path: Path, exc: Exception) -> str:
 def load_tasks_data(project_dir: Path) -> dict[str, Any]:
     """Load tasks.json through one validated code path."""
     path = tasks_file_path(project_dir)
+    return _load_tasks_data_unlocked(path)
+
+
+def _load_tasks_data_unlocked(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -178,15 +229,28 @@ def load_tasks_data(project_dir: Path) -> dict[str, Any]:
 
 def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
     """Persist tasks.json through one validated code path."""
+    path = tasks_file_path(project_dir)
+    with locked_path(path):
+        _save_tasks_data_unlocked(path, data)
+
+
+def _save_tasks_data_unlocked(path: Path, data: dict[str, Any]) -> None:
     if not isinstance(data, dict):
         raise ValueError("tasks payload must be a dict")
     tasks = data.get("tasks")
     if not isinstance(tasks, list):
         raise ValueError("tasks payload must contain a top-level 'tasks' list")
-    tasks_file_path(project_dir).write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(path, data)
+
+
+def mutate_tasks_data(project_dir: Path, mutator: Callable[[dict[str, Any]], Any]) -> Any:
+    """Load, mutate, and persist tasks.json under one file lock."""
+    path = tasks_file_path(project_dir)
+    with locked_path(path):
+        data = _load_tasks_data_unlocked(path)
+        result = mutator(data)
+        _save_tasks_data_unlocked(path, data)
+        return result
 
 
 def _normalize_control_data(data: Any) -> dict[str, Any]:
@@ -212,6 +276,56 @@ def read_control_data(project_dir: Path) -> dict[str, Any]:
     path = control_file_path(project_dir)
     if not path.exists():
         return {"action": DEFAULT_CONTROL_ACTION, "comment": ""}
+    return _read_control_data_unlocked(path)
+
+
+def write_control_data(project_dir: Path, action: str, comment: str = "") -> None:
+    """Persist normalized control-file schema."""
+    path = control_file_path(project_dir)
+    with locked_path(path):
+        payload = _read_control_data_unlocked(path) if path.exists() else {}
+        payload.update(
+            {
+                "action": action or DEFAULT_CONTROL_ACTION,
+                "comment": comment or "",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        atomic_write_json(path, _normalize_control_data(payload))
+
+
+def clear_control_action(project_dir: Path) -> None:
+    """Reset control action while preserving file ownership to shared IO."""
+    path = control_file_path(project_dir)
+    if not path.exists():
+        return
+    with locked_path(path):
+        payload = _read_control_data_unlocked(path)
+        payload.update(
+            {
+                "action": DEFAULT_CONTROL_ACTION,
+                "comment": "",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        atomic_write_json(path, _normalize_control_data(payload))
+
+
+def consume_control_comment(project_dir: Path) -> str:
+    """Return and clear operator comment payload."""
+    path = control_file_path(project_dir)
+    with locked_path(path):
+        data = _read_control_data_unlocked(path) if path.exists() else {}
+        data = _normalize_control_data(data)
+        comment = str(data.get("comment", "")).strip()
+        if path.exists() and comment:
+            data["comment"] = ""
+            data["timestamp"] = datetime.now(timezone.utc).isoformat()
+            atomic_write_json(path, _normalize_control_data(data))
+        return comment
+
+
+def _read_control_data_unlocked(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -224,38 +338,38 @@ def read_control_data(project_dir: Path) -> dict[str, Any]:
     return _normalize_control_data(data)
 
 
-def write_control_data(project_dir: Path, action: str, comment: str = "") -> None:
-    """Persist normalized control-file schema."""
-    path = control_file_path(project_dir)
-    payload = read_control_data(project_dir) if path.exists() else {}
-    payload.update(
-        {
-            "action": action or DEFAULT_CONTROL_ACTION,
-            "comment": comment or "",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-    )
-    path.write_text(json.dumps(_normalize_control_data(payload), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+def write_state_payload(path: Path, payload: dict[str, Any]) -> None:
+    """Persist a state payload atomically under a per-file lock."""
+    with locked_path(path):
+        atomic_write_json(path, payload)
 
 
-def clear_control_action(project_dir: Path) -> None:
-    """Reset control action while preserving file ownership to shared IO."""
-    path = control_file_path(project_dir)
-    if not path.exists():
-        return
-    write_control_data(project_dir, DEFAULT_CONTROL_ACTION, "")
+def write_state_data(
+    project_dir: Path,
+    status: str,
+    current_task: str = "",
+    current_phase_step: str = "",
+    message: str = "",
+) -> None:
+    payload = {
+        "status": status,
+        "current_task": current_task,
+        "current_phase_step": current_phase_step,
+        "last_update": datetime.now(timezone.utc).isoformat(),
+        "message": message,
+    }
+    write_state_payload(state_file_path(project_dir), payload)
 
 
-def consume_control_comment(project_dir: Path) -> str:
-    """Return and clear operator comment payload."""
-    path = control_file_path(project_dir)
-    data = read_control_data(project_dir)
-    comment = str(data.get("comment", "")).strip()
-    if path.exists() and comment:
-        data["comment"] = ""
-        data["timestamp"] = datetime.now(timezone.utc).isoformat()
-        path.write_text(json.dumps(_normalize_control_data(data), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return comment
+def append_progress_entry(project_dir: Path, entry: str) -> None:
+    """Append one progress entry without lost writes from concurrent updaters."""
+    path = progress_file_path(project_dir)
+    with locked_path(path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(entry)
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 def completed_task_ids(tasks: list[dict[str, Any]]) -> set[str]:
@@ -459,6 +573,13 @@ def _build_parser() -> argparse.ArgumentParser:
     consume_parser = subparsers.add_parser("control-consume-comment")
     consume_parser.add_argument("--project-dir", default=None)
 
+    state_parser = subparsers.add_parser("state-write")
+    state_parser.add_argument("status")
+    state_parser.add_argument("current_task", nargs="?", default="")
+    state_parser.add_argument("current_phase_step", nargs="?", default="")
+    state_parser.add_argument("message", nargs="?", default="")
+    state_parser.add_argument("--project-dir", default=None)
+
     return parser
 
 
@@ -485,6 +606,16 @@ def main() -> int:
         comment = consume_control_comment(project_dir)
         if comment:
             print(comment)
+        return 0
+
+    if args.command == "state-write":
+        write_state_data(
+            project_dir,
+            args.status,
+            args.current_task,
+            args.current_phase_step,
+            args.message,
+        )
         return 0
 
     return 1
