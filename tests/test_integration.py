@@ -659,6 +659,53 @@ def test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry(tmp_p
     assert "limit=15000" in log_text
 
 
+def test_ralph_injects_human_comment_into_coder_prompt_and_consumes_it(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    prompt_file = tmp_path / "coder_prompt_human_comment.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    (project_dir / "ralph_control.json").write_text(
+        json.dumps({"action": "comment", "comment": "Keep the patch minimal and avoid repo-wide cleanup."}, indent=2),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "## Human Comment (from project owner via Telegram)" in prompt
+    assert "Keep the patch minimal and avoid repo-wide cleanup." in prompt
+    control = json.loads((project_dir / "ralph_control.json").read_text(encoding="utf-8"))
+    assert control["comment"] == ""
+
+
+def test_ralph_injects_local_first_constraint_when_web_search_is_disabled(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    prompt_file = tmp_path / "coder_prompt_local_first.txt"
+    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
+    env["RALPH_WEB_SEARCH_POLICY"] = "disabled"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    prompt = prompt_file.read_text(encoding="utf-8")
+    assert "Do NOT use web search. Search locally first with rg." in prompt
+    assert "Injected local-first prompt constraint" in result.stdout
+
+
 def test_ralph_rejects_oversized_prompt(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     env["RALPH_CODER_PROMPT_MAX_TOKENS"] = "20"
