@@ -10,127 +10,30 @@ import re
 import sys
 from pathlib import Path
 
-
-BOOKKEEPING_EXACT = {
-    "tasks.json",
-    "progress.md",
-    "audit_report.md",
-    "ralph_state.json",
-    "ralph_control.json",
-    "ralph_alerts.log",
-    "ralph_main.pid",
-    "ralph_codex.pid",
-    "ralph_codex.pgid",
-    ".ralph/memory/recent.md",
-    ".ralph/memory/decisions.md",
-    ".ralph/memory/patterns.md",
-}
-BOOKKEEPING_PREFIXES = (
-    "logs/",
-    ".pytest_cache/",
-    "__pycache__/",
-    ".ralph/audit/",
-    "ralph/audit/",
-)
-DOC_KEYWORDS = (
-    "readme",
-    "documentation",
-    "docs/",
-    "postmortem",
-    "prompt_version",
-    "changelog",
-)
-
-
-def normalize_path(path: str) -> str:
-    return path.strip().replace("\\", "/").lstrip("./")
-
-
-def is_bookkeeping_file(path: str) -> bool:
-    normalized = normalize_path(path)
-    if normalized in BOOKKEEPING_EXACT:
-        return True
-    return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
-
-
-def is_bookkeeping(path: str) -> bool:
-    return is_bookkeeping_file(path)
-
-
-def extract_path_candidates(task: dict) -> list[str]:
-    texts: list[str] = [task.get("title", ""), task.get("description", "")]
-    texts.extend(task.get("acceptance_criteria", []) or [])
-    texts.extend(task.get("test_steps", []) or [])
-    combined = "\n".join(texts)
-    matches = re.findall(
-        r"((?:scripts|templates|tests|docs)/[A-Za-z0-9_./-]+\.(?:py|md|json|sh|ts|tsx|js)|(?:README|PROMPT_CHANGELOG|AGENTS(?:_[A-Z]+)?|BLOG_DRAFTS|progress)\.md)",
-        combined,
+try:
+    from ralph_common import (
+        detect_task_class,
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        infer_task_context,
+        is_bookkeeping,
+        is_bookkeeping_file,
+        normalize_path,
+        resolve_project_dir,
     )
-    seen: set[str] = set()
-    result: list[str] = []
-    for match in matches:
-        path = normalize_path(match)
-        if path in seen:
-            continue
-        seen.add(path)
-        result.append(path)
-    return result
-
-
-def extract_command_tokens(task: dict) -> list[str]:
-    texts: list[str] = [task.get("title", ""), task.get("description", "")]
-    texts.extend(task.get("acceptance_criteria", []) or [])
-    tokens = re.findall(r"/([a-z][a-z0-9_]*)", "\n".join(texts).lower())
-    seen: set[str] = set()
-    result: list[str] = []
-    for token in tokens:
-        if token in seen:
-            continue
-        seen.add(token)
-        result.append(token)
-    return result
-
-
-def extract_expected_test_names(task: dict) -> list[str]:
-    texts = [task.get("title", ""), task.get("description", "")]
-    texts.extend(task.get("acceptance_criteria", []) or [])
-    texts.extend(task.get("test_steps", []) or [])
-    names = re.findall(r"\b(test_[a-zA-Z0-9_]+)\b", "\n".join(texts))
-    seen: set[str] = set()
-    result: list[str] = []
-    for name in names:
-        if name in seen:
-            continue
-        seen.add(name)
-        result.append(name)
-    return result
-
-
-def detect_task_class(task: dict, expected_paths: list[str], command_tokens: list[str], expected_tests: list[str]) -> str:
-    title = task.get("title", "").lower()
-    description = task.get("description", "").lower()
-    combined = "\n".join(
-        [title, description, *[item.lower() for item in task.get("acceptance_criteria", []) or []]]
+except ImportError:
+    from scripts.ralph_common import (
+        detect_task_class,
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        infer_task_context,
+        is_bookkeeping,
+        is_bookkeeping_file,
+        normalize_path,
+        resolve_project_dir,
     )
-    if any(path.startswith("templates/") for path in expected_paths):
-        return "template"
-    if any(path.startswith("scripts/") for path in expected_paths):
-        return "script"
-    if command_tokens and ("bot" in title or "команда" in title or "telegram" in combined):
-        return "command"
-    if title.startswith("tests:") or expected_tests or "pytest" in combined:
-        return "tests-only"
-    if (
-        "re-audit" in combined
-        and "report" in combined
-        and any(keyword in combined for keyword in ("verified", "partial", "false positive", "unclear"))
-    ):
-        return "reaudit-report"
-    if any(path.startswith("docs/") for path in expected_paths) or any(path.endswith(".md") for path in expected_paths):
-        return "docs-only"
-    if any(keyword in combined for keyword in DOC_KEYWORDS):
-        return "docs-only"
-    return "implementation"
 
 
 def read_text(path: Path) -> str:
@@ -183,10 +86,7 @@ def result(result: str, task_class: str, reason: str, changed_files: list[str], 
 def verify_task_completion(task: dict, project_dir: Path, changed_files: list[str]) -> dict:
     changed_files = [normalize_path(path) for path in changed_files if normalize_path(path)]
     non_bookkeeping = [path for path in changed_files if not is_bookkeeping_file(path)]
-    expected_paths = extract_path_candidates(task)
-    command_tokens = extract_command_tokens(task)
-    expected_tests = extract_expected_test_names(task)
-    task_class = detect_task_class(task, expected_paths, command_tokens, expected_tests)
+    task_class, expected_paths, command_tokens, expected_tests = infer_task_context(task)
 
     if task_class == "reaudit-report":
         script_path = project_dir / "scripts" / "re_audit_tasks.py"
@@ -343,7 +243,7 @@ def verify_task_completion(task: dict, project_dir: Path, changed_files: list[st
 def main() -> None:
     raw_task = sys.stdin.read().strip() or "{}"
     task = json.loads(raw_task)
-    project_dir = Path(os.environ.get("RALPH_PROJECT_DIR", ".")).resolve()
+    project_dir = resolve_project_dir(os.environ.get("RALPH_PROJECT_DIR"), script_path=__file__)
     changed_files = json.loads(os.environ.get("RALPH_CHANGED_FILES_JSON", "[]"))
     print(json.dumps(verify_task_completion(task, project_dir, changed_files), ensure_ascii=False))
 
