@@ -1,15 +1,15 @@
+#!/usr/bin/env python3
+"""Minimal trust-layer verification before task closure."""
+
 from __future__ import annotations
 
 import json
 import os
+import py_compile
 import re
 import sys
 from pathlib import Path
-from typing import Any
 
-
-PROJECT_DIR = Path(os.environ.get("RALPH_PROJECT_DIR", Path(__file__).resolve().parent.parent))
-CHANGED_FILES_JSON = os.environ.get("RALPH_CHANGED_FILES_JSON", "[]")
 
 BOOKKEEPING_EXACT = {
     "tasks.json",
@@ -18,14 +18,13 @@ BOOKKEEPING_EXACT = {
     "ralph_state.json",
     "ralph_control.json",
     "ralph_alerts.log",
-    "logs/metrics.csv",
     "ralph_main.pid",
     "ralph_codex.pid",
+    "ralph_codex.pgid",
     ".ralph/memory/recent.md",
-    ".ralph/memory/patterns.md",
     ".ralph/memory/decisions.md",
+    ".ralph/memory/patterns.md",
 }
-
 BOOKKEEPING_PREFIXES = (
     "logs/",
     ".pytest_cache/",
@@ -33,20 +32,18 @@ BOOKKEEPING_PREFIXES = (
     ".ralph/audit/",
     "ralph/audit/",
 )
+DOC_KEYWORDS = (
+    "readme",
+    "documentation",
+    "docs/",
+    "postmortem",
+    "prompt_version",
+    "changelog",
+)
 
 
 def normalize_path(path: str) -> str:
-    return path.replace("\\", "/").lstrip("./")
-
-
-def load_changed_files() -> list[str]:
-    try:
-        raw = json.loads(CHANGED_FILES_JSON)
-        if isinstance(raw, list):
-            return [normalize_path(str(item)) for item in raw]
-    except Exception:
-        pass
-    return []
+    return path.strip().replace("\\", "/").lstrip("./")
 
 
 def is_bookkeeping_file(path: str) -> bool:
@@ -60,88 +57,80 @@ def is_bookkeeping(path: str) -> bool:
     return is_bookkeeping_file(path)
 
 
-def extract_path_candidates(task: dict[str, Any]) -> list[str]:
-    text_parts = [
-        str(task.get("title", "")),
-        str(task.get("description", "")),
-        *[str(item) for item in task.get("acceptance_criteria", [])],
-        *[str(item) for item in task.get("test_steps", [])],
-    ]
-    combined = "\n".join(text_parts)
-    matches = re.findall(r"([A-Za-z0-9_./-]+\.[A-Za-z0-9_]+)", combined)
-    paths = []
+def extract_path_candidates(task: dict) -> list[str]:
+    texts: list[str] = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    texts.extend(task.get("test_steps", []) or [])
+    combined = "\n".join(texts)
+    matches = re.findall(
+        r"((?:scripts|templates|tests|docs)/[A-Za-z0-9_./-]+\.(?:py|md|json|sh|ts|tsx|js)|(?:README|PROMPT_CHANGELOG|AGENTS(?:_[A-Z]+)?|BLOG_DRAFTS|progress)\.md)",
+        combined,
+    )
+    seen: set[str] = set()
+    result: list[str] = []
     for match in matches:
-        normalized = normalize_path(match)
-        if "/" in normalized or normalized.endswith(".md") or normalized.endswith(".py"):
-            paths.append(normalized)
-    seen = []
-    for path in paths:
-        if path not in seen:
-            seen.append(path)
-    return seen
+        path = normalize_path(match)
+        if path in seen:
+            continue
+        seen.add(path)
+        result.append(path)
+    return result
 
 
-def extract_command_tokens(task: dict[str, Any]) -> list[str]:
-    text_parts = [
-        str(task.get("title", "")),
-        str(task.get("description", "")),
-        *[str(item) for item in task.get("acceptance_criteria", [])],
-        *[str(item) for item in task.get("test_steps", [])],
-    ]
-    combined = "\n".join(text_parts)
-    tokens = re.findall(r"/([a-zA-Z0-9_]+)", combined)
-    seen = []
+def extract_command_tokens(task: dict) -> list[str]:
+    texts: list[str] = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    tokens = re.findall(r"/([a-z][a-z0-9_]*)", "\n".join(texts).lower())
+    seen: set[str] = set()
+    result: list[str] = []
     for token in tokens:
-        if token not in seen:
-            seen.append(token)
-    return seen
+        if token in seen:
+            continue
+        seen.add(token)
+        result.append(token)
+    return result
 
 
-def extract_expected_test_names(task: dict[str, Any]) -> list[str]:
-    text_parts = [*[str(item) for item in task.get("acceptance_criteria", [])], *[str(item) for item in task.get("test_steps", [])]]
-    combined = "\n".join(text_parts)
-    names = re.findall(r"\b(test_[A-Za-z0-9_]+)\b", combined)
-    seen = []
+def extract_expected_test_names(task: dict) -> list[str]:
+    texts = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    texts.extend(task.get("test_steps", []) or [])
+    names = re.findall(r"\b(test_[a-zA-Z0-9_]+)\b", "\n".join(texts))
+    seen: set[str] = set()
+    result: list[str] = []
     for name in names:
-        if name not in seen:
-            seen.append(name)
-    return seen
+        if name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
 
 
-def detect_task_class(
-    task: dict[str, Any],
-    expected_paths: list[str],
-    command_tokens: list[str],
-    expected_tests: list[str],
-) -> str:
-    task_id = str(task.get("id", ""))
-    title = str(task.get("title", "")).lower()
-    description = str(task.get("description", "")).lower()
-    acceptance = " ".join(str(item) for item in task.get("acceptance_criteria", [])).lower()
-    combined = " ".join([task_id.lower(), title, description, acceptance])
-
+def detect_task_class(task: dict, expected_paths: list[str], command_tokens: list[str], expected_tests: list[str]) -> str:
+    title = task.get("title", "").lower()
+    description = task.get("description", "").lower()
+    combined = "\n".join(
+        [title, description, *[item.lower() for item in task.get("acceptance_criteria", []) or []]]
+    )
     if any(path.startswith("templates/") for path in expected_paths):
         return "template"
     if any(path.startswith("scripts/") for path in expected_paths):
         return "script"
-    if command_tokens and ("bot" in combined or "telegram" in combined or "/" in combined):
+    if command_tokens and ("bot" in title or "команда" in title or "telegram" in combined):
         return "command"
-    if expected_tests and "tests" in combined:
+    if title.startswith("tests:") or expected_tests or "pytest" in combined:
         return "tests-only"
-    if "re-audit" in combined and "report" in combined and any(
-        keyword in combined for keyword in ("verified", "partial", "false positive", "unclear")
+    if (
+        "re-audit" in combined
+        and "report" in combined
+        and any(keyword in combined for keyword in ("verified", "partial", "false positive", "unclear"))
     ):
         return "reaudit-report"
-    if any(path.startswith("docs/") for path in expected_paths) or "docs:" in title or title.startswith("docs"):
+    if any(path.startswith("docs/") for path in expected_paths) or any(path.endswith(".md") for path in expected_paths):
+        return "docs-only"
+    if any(keyword in combined for keyword in DOC_KEYWORDS):
         return "docs-only"
     return "implementation"
-
-
-def is_bookkeeping(path: str) -> bool:
-    normalized = normalize_path(path)
-    if normalized in BOOKKEEPING_EXACT:
-        return True
-    return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
 
 
 def read_text(path: Path) -> str:
@@ -151,26 +140,49 @@ def read_text(path: Path) -> str:
         return ""
 
 
-def file_contains_required_content(task: dict[str, Any], path: Path) -> bool:
-    text = read_text(path)
-    if not text:
-        return False
+def command_candidate_handlers(token: str) -> set[str]:
+    return {f"cmd_{token}", f"cmd_start_{token}"}
 
-    checks = {
-        "AGENTS_COORDINATOR.md": ["question", "PROJECT_BRIEF"],
-        "AGENTS_ARCHITECT.md": ["stack", "ARCHITECTURE"],
-        "AGENTS_JOURNALIST.md": ["telegram", "post"],
-        "TRUST_LAYER.md": ["trust", "audit"],
-    }
-    for key, required_terms in checks.items():
-        if key in path.name:
-            return all(term.lower() in text.lower() for term in required_terms)
+
+def command_routed_handlers(bot_text: str, token: str) -> set[str]:
+    pattern = re.compile(
+        rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
+        re.MULTILINE,
+    )
+    return set(pattern.findall(bot_text))
+
+
+def file_contains_required_content(task: dict, path: Path) -> bool:
+    content = read_text(path).lower()
+    if not content:
+        return False
+    for criterion in task.get("acceptance_criteria", []) or []:
+        crit = criterion.strip()
+        if crit.lower().startswith("содержит "):
+            phrase = crit[9:].strip().lower()
+            if phrase and phrase not in content:
+                return False
+        if crit.lower().startswith("contains "):
+            phrase = crit[9:].strip().lower()
+            if phrase and phrase not in content:
+                return False
     return True
 
 
-def verify_task_completion(task: dict[str, Any], project_dir: Path, changed_files: list[str]) -> dict[str, Any]:
-    changed_files = [normalize_path(path) for path in changed_files]
-    non_bookkeeping = [path for path in changed_files if not is_bookkeeping(path)]
+def result(result: str, task_class: str, reason: str, changed_files: list[str], non_bookkeeping: list[str]) -> dict:
+    return {
+        "result": result,
+        "task_class": task_class,
+        "reason": reason,
+        "changed_files": changed_files,
+        "changed_files_non_bookkeeping": non_bookkeeping,
+        "bookkeeping_only": bool(changed_files) and not non_bookkeeping,
+    }
+
+
+def verify_task_completion(task: dict, project_dir: Path, changed_files: list[str]) -> dict:
+    changed_files = [normalize_path(path) for path in changed_files if normalize_path(path)]
+    non_bookkeeping = [path for path in changed_files if not is_bookkeeping_file(path)]
     expected_paths = extract_path_candidates(task)
     command_tokens = extract_command_tokens(task)
     expected_tests = extract_expected_test_names(task)
@@ -180,260 +192,161 @@ def verify_task_completion(task: dict[str, Any], project_dir: Path, changed_file
         script_path = project_dir / "scripts" / "re_audit_tasks.py"
         test_path = project_dir / "tests" / "test_re_audit_tasks.py"
         report_path = project_dir / "audit_report.md"
-        script_text = read_text(script_path)
-        test_text = read_text(test_path)
-        report_text = read_text(report_path)
-        missing_parts: list[str] = []
-        if not script_path.exists():
-            missing_parts.append("scripts/re_audit_tasks.py is missing")
-        if not test_path.exists():
-            missing_parts.append("tests/test_re_audit_tasks.py is missing")
-        if not report_path.exists():
-            missing_parts.append("audit_report.md is missing")
-        if script_text and "audit_report.md" not in script_text:
-            missing_parts.append("re_audit_tasks.py does not save audit_report.md")
-        if script_text and "Human-readable report saved to" not in script_text:
-            missing_parts.append("re_audit_tasks.py does not report saved human-readable output")
-        if script_text and "false positive" not in script_text:
-            missing_parts.append("re_audit_tasks.py is missing false positive report labeling")
-        if script_text and "unclear" not in script_text:
-            missing_parts.append("re_audit_tasks.py is missing unclear report labeling")
-        if test_text and "audit_report.md" not in test_text:
-            missing_parts.append("re_audit tests do not assert report persistence")
-        if test_text and "Classification: unclear" not in test_text:
-            missing_parts.append("re_audit tests do not cover unclear classification in report")
-        if report_text and "# Re-audit Report" not in report_text:
-            missing_parts.append("audit_report.md is not a re-audit report")
-        if report_text and "## Results" not in report_text:
-            missing_parts.append("audit_report.md is missing per-task results")
-        if missing_parts:
-            return {
-                "result": "fail_fix",
-                "task_class": task_class,
-                "reason": "; ".join(missing_parts),
-                "changed_files": changed_files,
-                "changed_files_non_bookkeeping": non_bookkeeping,
-                "bookkeeping_only": not non_bookkeeping,
-                "evidence_files": [path for path in ["scripts/re_audit_tasks.py", "tests/test_re_audit_tasks.py", "audit_report.md"] if (project_dir / path).exists()],
-            }
-        return {
-            "result": "pass",
-            "task_class": task_class,
-            "reason": "Re-audit reporting verification passed.",
-            "changed_files": changed_files,
-            "changed_files_non_bookkeeping": non_bookkeeping,
-            "bookkeeping_only": not non_bookkeeping,
-            "evidence_files": ["scripts/re_audit_tasks.py", "tests/test_re_audit_tasks.py", "audit_report.md"],
-        }
 
-    if not non_bookkeeping and task_class not in {"docs-only", "template"}:
-        return {
-            "result": "fail_fix",
-            "task_class": task_class,
-            "reason": "Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.",
-            "changed_files": changed_files,
-            "changed_files_non_bookkeeping": non_bookkeeping,
-            "bookkeeping_only": True,
-            "evidence_files": [],
-        }
+        missing_parts: list[str] = []
+        script_text = read_text(script_path)
+        tests_text = read_text(test_path)
+        report_text = read_text(report_path)
+
+        if not script_text:
+            missing_parts.append("scripts/re_audit_tasks.py is missing")
+        if not tests_text:
+            missing_parts.append("tests/test_re_audit_tasks.py is missing")
+        if not report_text:
+            missing_parts.append("audit_report.md is missing")
+        if script_text:
+            if "audit_report.md" not in script_text or "Human-readable report saved to" not in script_text:
+                missing_parts.append("re-audit script does not persist human-readable report")
+            if "false positive" not in script_text or "unclear" not in script_text:
+                missing_parts.append("re-audit script does not expose human-readable classifications")
+        if tests_text:
+            if "audit_report.md" not in tests_text or "Classification: unclear" not in tests_text:
+                missing_parts.append("re-audit report path is not covered by targeted tests")
+        if report_text:
+            if "# Re-audit Report" not in report_text or "## Results" not in report_text:
+                missing_parts.append("audit_report.md does not contain saved re-audit report output")
+
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
+        return result(
+            "pass",
+            task_class,
+            "Re-audit reporting verification passed.",
+            changed_files,
+            non_bookkeeping,
+        )
+
+    if task_class not in {"docs-only", "template"} and not non_bookkeeping:
+        reason = "Verification failed: only bookkeeping/state/report files changed; no implementation evidence found."
+        return result("fail_fix", task_class, reason, changed_files, non_bookkeeping)
 
     if task_class == "command":
-        bot_file = project_dir / "scripts" / "ralph_bot.py"
-        bot_text = read_text(bot_file)
-        missing_handlers = []
-        missing_routes = []
-        missing_help = []
-        evidence_files = []
-
+        bot_path = project_dir / "scripts" / "ralph_bot.py"
+        bot_text = read_text(bot_path)
+        missing_handler: list[str] = []
+        missing_routing: list[str] = []
+        missing_help: list[str] = []
+        resolved_handlers: dict[str, set[str]] = {}
+        if not any(path == "scripts/ralph_bot.py" or path.startswith("tests/") for path in non_bookkeeping):
+            return result("fail_fix", task_class, "Verification failed: command task changed no bot or test files.", changed_files, non_bookkeeping)
         for token in command_tokens:
-            handler_candidates = {
-                f"cmd_{token}",
-                f"cmd_start_{token}",
-            }
-            route_pattern = re.compile(
-                rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
-                re.MULTILINE,
-            )
-            routed_handlers = set(route_pattern.findall(bot_text))
-            handler_names = handler_candidates | routed_handlers
-            if not any(f"def {name}(" in bot_text for name in handler_names):
-                missing_handlers.append(f"/{token}")
+            handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
+            resolved_handlers[token] = handlers
+            if not any(f"def {handler}(" in bot_text for handler in handlers):
+                missing_handler.append(token)
             if not re.search(rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']', bot_text):
-                missing_routes.append(f"/{token}")
+                missing_routing.append(token)
             if f"/{token}" not in bot_text:
-                missing_help.append(f"/{token}")
-
-        for test_file in project_dir.glob("tests/test_*.py"):
-            test_text = read_text(test_file)
-            if any(f"/{token}" in test_text for token in command_tokens):
-                evidence_files.append(normalize_path(str(test_file.relative_to(project_dir))))
-
-        if bot_text:
-            evidence_files.append("scripts/ralph_bot.py")
-
-        if missing_handlers or missing_routes or missing_help:
-            details = []
-            if missing_handlers:
-                details.append("missing handlers: " + ", ".join(missing_handlers))
-            if missing_routes:
-                details.append("missing routing: " + ", ".join(missing_routes))
-            if missing_help:
-                details.append("missing command/help evidence: " + ", ".join(missing_help))
-            return {
-                "result": "fail_fix",
-                "task_class": task_class,
-                "reason": "; ".join(details),
-                "changed_files": changed_files,
-                "changed_files_non_bookkeeping": non_bookkeeping,
-                "bookkeeping_only": False,
-                "evidence_files": evidence_files,
-            }
-        if not any(path.startswith("tests/") for path in evidence_files):
-            return {
-                "result": "fail_fix",
-                "task_class": task_class,
-                "reason": "Verification failed: command task is missing test evidence.",
-                "changed_files": changed_files,
-                "changed_files_non_bookkeeping": non_bookkeeping,
-                "bookkeeping_only": False,
-                "evidence_files": evidence_files,
-            }
-        return {
-            "result": "pass",
-            "task_class": task_class,
-            "reason": "Command verification passed with handler, routing, help, and test evidence.",
-            "changed_files": changed_files,
-            "changed_files_non_bookkeeping": non_bookkeeping,
-            "bookkeeping_only": False,
-            "evidence_files": sorted(set(evidence_files)),
-        }
+                missing_help.append(token)
+        tests_have_evidence = any(path.startswith("tests/") for path in non_bookkeeping)
+        if not tests_have_evidence:
+            for test_file in project_dir.glob("tests/test_*.py"):
+                test_text = read_text(test_file)
+                if any(
+                    f"/{token}" in test_text or any(handler in test_text for handler in resolved_handlers.get(token, set()))
+                    for token in command_tokens
+                ):
+                    tests_have_evidence = True
+                    break
+        missing_parts: list[str] = []
+        if missing_handler:
+            missing_parts.append("missing handlers: " + ", ".join("/" + token for token in missing_handler))
+        if missing_routing:
+            missing_parts.append("missing routing: " + ", ".join("/" + token for token in missing_routing))
+        if missing_help:
+            missing_parts.append("missing command/help evidence: " + ", ".join("/" + token for token in missing_help))
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
+        if not tests_have_evidence:
+            return result("fail_fix", task_class, "Verification failed: command task has no test or smoke evidence.", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Command verification passed.", changed_files, non_bookkeeping)
 
     if task_class == "script":
-        expected_scripts = [path for path in expected_paths if path.startswith("scripts/")]
-        missing = [path for path in expected_scripts if not (project_dir / path).exists()]
-        if missing:
-            return {
-                "result": "fail_fix",
-                "task_class": task_class,
-                "reason": "Verification failed: expected script missing: " + ", ".join(missing),
-                "changed_files": changed_files,
-                "changed_files_non_bookkeeping": non_bookkeeping,
-                "bookkeeping_only": False,
-                "evidence_files": [],
-            }
-        return {
-            "result": "pass",
-            "task_class": task_class,
-            "reason": "Script verification passed.",
-            "changed_files": changed_files,
-            "changed_files_non_bookkeeping": non_bookkeeping,
-            "bookkeeping_only": False,
-            "evidence_files": expected_scripts,
-        }
+        script_paths = [path for path in expected_paths if path.startswith("scripts/")]
+        if not script_paths:
+            return result("needs_human_review", task_class, "Verification is uncertain: no explicit script path found in task text.", changed_files, non_bookkeeping)
+        if not any(path in non_bookkeeping for path in script_paths) and not any(
+            path in non_bookkeeping for path in ("ralph.sh", "scripts/ralph_bot.py")
+        ):
+            return result("fail_fix", task_class, "Verification failed: script task changed no script or integration files.", changed_files, non_bookkeeping)
+        for script_path in script_paths:
+            full_path = project_dir / script_path
+            if not full_path.exists():
+                return result("fail_fix", task_class, f"Verification failed: expected script missing: {script_path}", changed_files, non_bookkeeping)
+            if full_path.suffix == ".py":
+                try:
+                    py_compile.compile(str(full_path), doraise=True)
+                except Exception as exc:
+                    return result("fail_fix", task_class, f"Verification failed: script does not compile: {script_path} ({exc})", changed_files, non_bookkeeping)
+        text_blob = "\n".join([task.get("description", ""), *task.get("acceptance_criteria", [])])
+        if ("ralph.sh" in text_blob or "ralph_bot.py" in text_blob) and not any(
+            path in non_bookkeeping for path in ("ralph.sh", "scripts/ralph_bot.py")
+        ):
+            return result("fail_fix", task_class, "Verification failed: task requires integration hook but no integration file changed.", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Script verification passed.", changed_files, non_bookkeeping)
 
     if task_class == "template":
-        expected_templates = [path for path in expected_paths if path.startswith("templates/")]
-        missing = [path for path in expected_templates if not (project_dir / path).exists()]
-        if missing:
-            return {
-                "result": "fail_fix",
-                "task_class": task_class,
-                "reason": "Verification failed: expected template missing: " + ", ".join(missing),
-                "changed_files": changed_files,
-                "changed_files_non_bookkeeping": non_bookkeeping,
-                "bookkeeping_only": False,
-                "evidence_files": [],
-            }
-        return {
-            "result": "pass",
-            "task_class": task_class,
-            "reason": "Template verification passed.",
-            "changed_files": changed_files,
-            "changed_files_non_bookkeeping": non_bookkeeping,
-            "bookkeeping_only": False,
-            "evidence_files": expected_templates,
-        }
+        template_paths = [path for path in expected_paths if path.startswith("templates/")]
+        if not template_paths:
+            return result("needs_human_review", task_class, "Verification is uncertain: no explicit template path found in task text.", changed_files, non_bookkeeping)
+        if not any(path in non_bookkeeping for path in template_paths):
+            return result("fail_fix", task_class, "Verification failed: template task changed no target template files.", changed_files, non_bookkeeping)
+        for template_path in template_paths:
+            full_path = project_dir / template_path
+            if not full_path.exists():
+                return result("fail_fix", task_class, f"Verification failed: expected template missing: {template_path}", changed_files, non_bookkeeping)
+            if not file_contains_required_content(task, full_path):
+                return result("fail_fix", task_class, f"Verification failed: required template content missing in {template_path}", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Template verification passed.", changed_files, non_bookkeeping)
 
     if task_class == "docs-only":
-        expected_docs = [path for path in expected_paths if path.startswith("docs/") or path.endswith(".md")]
-        if expected_docs and not any((project_dir / path).exists() for path in expected_docs):
-            return {
-                "result": "fail_fix",
-                "task_class": task_class,
-                "reason": "Verification failed: expected documentation missing.",
-                "changed_files": changed_files,
-                "changed_files_non_bookkeeping": non_bookkeeping,
-                "bookkeeping_only": False,
-                "evidence_files": [],
-            }
-        evidence = expected_docs or non_bookkeeping
-        return {
-            "result": "pass",
-            "task_class": task_class,
-            "reason": "Documentation verification passed.",
-            "changed_files": changed_files,
-            "changed_files_non_bookkeeping": non_bookkeeping,
-            "bookkeeping_only": not non_bookkeeping,
-            "evidence_files": evidence,
-        }
+        doc_paths = expected_paths or [path for path in non_bookkeeping if path.endswith(".md")]
+        if not doc_paths:
+            return result("fail_fix", task_class, "Verification failed: docs-only task has no documentation evidence.", changed_files, non_bookkeeping)
+        if not any(path in non_bookkeeping for path in doc_paths) and not any(path.endswith(".md") for path in non_bookkeeping):
+            return result("fail_fix", task_class, "Verification failed: docs-only task changed no documentation files.", changed_files, non_bookkeeping)
+        for doc_path in doc_paths:
+            full_path = project_dir / doc_path
+            if not full_path.exists():
+                return result("fail_fix", task_class, f"Verification failed: expected document missing: {doc_path}", changed_files, non_bookkeeping)
+            if not file_contains_required_content(task, full_path):
+                return result("fail_fix", task_class, f"Verification failed: required document content missing in {doc_path}", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Docs verification passed.", changed_files, non_bookkeeping)
 
     if task_class == "tests-only":
-        changed_tests = [path for path in non_bookkeeping if path.startswith("tests/")]
-        if not changed_tests:
-            return {
-                "result": "fail_fix",
-                "task_class": task_class,
-                "reason": "Verification failed: no changed test files found for tests-only task.",
-                "changed_files": changed_files,
-                "changed_files_non_bookkeeping": non_bookkeeping,
-                "bookkeeping_only": not non_bookkeeping,
-                "evidence_files": [],
-            }
-        return {
-            "result": "pass",
-            "task_class": task_class,
-            "reason": "Tests-only verification passed.",
-            "changed_files": changed_files,
-            "changed_files_non_bookkeeping": non_bookkeeping,
-            "bookkeeping_only": False,
-            "evidence_files": changed_tests,
-        }
+        test_files = [path for path in non_bookkeeping if path.startswith("tests/")]
+        if not test_files:
+            return result("fail_fix", task_class, "Verification failed: tests-only task has no changed test files.", changed_files, non_bookkeeping)
+        for test_name in expected_tests:
+            found = False
+            for test_file in project_dir.glob("tests/test_*.py"):
+                if test_name in read_text(test_file):
+                    found = True
+                    break
+            if not found:
+                return result("fail_fix", task_class, f"Verification failed: expected test not found: {test_name}", changed_files, non_bookkeeping)
+        return result("pass", task_class, "Tests verification passed.", changed_files, non_bookkeeping)
 
-    return {
-        "result": "pass",
-        "task_class": task_class,
-        "reason": "Generic implementation evidence detected.",
-        "changed_files": changed_files,
-        "changed_files_non_bookkeeping": non_bookkeeping,
-        "bookkeeping_only": not non_bookkeeping,
-        "evidence_files": non_bookkeeping,
-    }
+    return result("pass", task_class, "Generic implementation verification passed.", changed_files, non_bookkeeping)
 
 
-def main() -> int:
-    try:
-        task = json.load(sys.stdin)
-    except Exception:
-        print(
-            json.dumps(
-                {
-                    "result": "needs_human_review",
-                    "task_class": "implementation",
-                    "reason": "Verification script could not parse task payload.",
-                    "changed_files": [],
-                    "changed_files_non_bookkeeping": [],
-                    "bookkeeping_only": False,
-                    "evidence_files": [],
-                },
-                ensure_ascii=False,
-            )
-        )
-        return 0
-
-    result = verify_task_completion(task, PROJECT_DIR, load_changed_files())
-    print(json.dumps(result, ensure_ascii=False))
-    return 0
+def main() -> None:
+    raw_task = sys.stdin.read().strip() or "{}"
+    task = json.loads(raw_task)
+    project_dir = Path(os.environ.get("RALPH_PROJECT_DIR", ".")).resolve()
+    changed_files = json.loads(os.environ.get("RALPH_CHANGED_FILES_JSON", "[]"))
+    print(json.dumps(verify_task_completion(task, project_dir, changed_files), ensure_ascii=False))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

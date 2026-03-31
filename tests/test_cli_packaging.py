@@ -132,3 +132,20 @@ def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Pat
     assert verify_result.returncode == 0, verify_result.stdout + verify_result.stderr
     assert '"result": "pass"' in verify_result.stdout
     assert '"task_class": "docs-only"' in verify_result.stdout
+
+
+def test_packaged_trust_and_runtime_resources_match_root_sources() -> None:
+    resource_pairs = [
+        ("scripts/extract_json.py", "src/ralph/resources/scripts/extract_json.py"),
+        ("scripts/verify_task_closure.py", "src/ralph/resources/scripts/verify_task_closure.py"),
+        ("scripts/models.py", "src/ralph/resources/scripts/models.py"),
+        ("scripts/ralph_bot.py", "src/ralph/resources/scripts/ralph_bot.py"),
+        ("templates/AGENTS_CODER.md", "src/ralph/resources/templates/AGENTS_CODER.md"),
+    ]
+
+    for root_rel, packaged_rel in resource_pairs:
+        root_path = REPO_ROOT / root_rel
+        packaged_path = REPO_ROOT / packaged_rel
+        assert packaged_path.read_text(encoding="utf-8") == root_path.read_text(encoding="utf-8"), (
+            f"Packaged resource drifted from root source: {root_rel} != {packaged_rel}"
+        )
