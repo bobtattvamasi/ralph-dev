@@ -20,9 +20,6 @@ else
     exit 1
 fi
 
-cd "$PROJECT_DIR"
-export RALPH_PROJECT_DIR="$PROJECT_DIR"
-
 kill_tree() {
     local pid="${1:-}"
 
@@ -142,8 +139,6 @@ handle_interrupt() {
     cleanup
     exit 130
 }
-trap cleanup EXIT
-trap handle_interrupt INT TERM
 
 MAX_FIX_RETRIES=2
 MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
@@ -164,12 +159,9 @@ MINI_MODEL=""
 SESSION_TOKENS=0
 SESSION_TASKS=0
 LOG_DIR="$PROJECT_DIR/logs"
-mkdir -p "$LOG_DIR"
 RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
 METRICS_FILE="$LOG_DIR/metrics.csv"
-[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
 PHASE_TIMINGS_FILE="$LOG_DIR/task_phase_timings.csv"
-[ ! -f "$PHASE_TIMINGS_FILE" ] && echo "timestamp,task_id,attempt,mode,phase,duration_s" > "$PHASE_TIMINGS_FILE"
 FINAL_STATE_STATUS="idle"
 FINAL_STATE_STEP="idle"
 FINAL_STATE_MESSAGE="All tasks complete"
@@ -177,8 +169,6 @@ FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
 QUEUE_EXIT_LOG="🎉 All tasks complete!"
 FINAL_EXIT_CODE=0
 REASON=""
-find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
-cleanup_orphan_coder_outputs
 
 is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
@@ -346,6 +336,7 @@ prepare_coder_prompt_for_task_json() {
     local previous_test_output=""
     local task_complexity=""
     local web_search_policy="default"
+    local inherited_web_search_policy="${RALPH_WEB_SEARCH_POLICY:-}"
 
     PROJECT_AGENTS=""
     PROJECT_ARCHITECTURE=""
@@ -359,8 +350,11 @@ prepare_coder_prompt_for_task_json() {
     CODER_PROMPT_BUDGET=0
     task_complexity=$(extract_task_field "$task_json" "print(task.get('complexity', 'moderate'))" || echo "moderate")
 
-    # Web search policy: simple tasks use local-first (no web search)
-    if [ "$task_complexity" = "simple" ]; then
+    # Respect an explicit external policy override before applying task defaults.
+    if [ -n "$inherited_web_search_policy" ] && [ "$inherited_web_search_policy" != "default" ]; then
+        web_search_policy="$inherited_web_search_policy"
+        log "🔍 Web search policy preserved from environment: $web_search_policy"
+    elif [ "$task_complexity" = "simple" ]; then
         web_search_policy="disabled"
         log "🔍 Web search disabled for simple task (local-first policy)"
     fi
@@ -594,19 +588,6 @@ handoff_unrelated_worktree_tracked_changes() {
         fi
     done <<< "$tracked_paths"
 }
-
-# Prevent duplicate ralph instances
-if { is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
-    _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
-    if [ -n "$_existing_pid" ] && kill -0 "$_existing_pid" 2>/dev/null; then
-        echo "⚠️  Ralph already running (PID $_existing_pid). Aborting duplicate launch."
-        exit 1
-    fi
-fi
-if is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
-    OWNS_MAIN_PID=1
-    echo "$$" > "$PROJECT_DIR/ralph_main.pid"
-fi
 
 log() {
     local msg="[ralph] $(date +%H:%M:%S) $*"
@@ -3563,6 +3544,33 @@ print_final_report() {
     echo ""
     print_task_progress_report
 }
+
+if [ "${BASH_SOURCE[0]:-$0}" != "$0" ]; then
+    return 0
+fi
+
+cd "$PROJECT_DIR"
+export RALPH_PROJECT_DIR="$PROJECT_DIR"
+mkdir -p "$LOG_DIR"
+[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
+[ ! -f "$PHASE_TIMINGS_FILE" ] && echo "timestamp,task_id,attempt,mode,phase,duration_s" > "$PHASE_TIMINGS_FILE"
+find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
+cleanup_orphan_coder_outputs
+trap cleanup EXIT
+trap handle_interrupt INT TERM
+
+# Prevent duplicate ralph instances
+if { is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+    _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
+    if [ -n "$_existing_pid" ] && kill -0 "$_existing_pid" 2>/dev/null; then
+        echo "⚠️  Ralph already running (PID $_existing_pid). Aborting duplicate launch."
+        exit 1
+    fi
+fi
+if is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
+    OWNS_MAIN_PID=1
+    echo "$$" > "$PROJECT_DIR/ralph_main.pid"
+fi
 
 if [ "$MODE" = "status" ]; then
     print_status_report
