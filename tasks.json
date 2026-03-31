@@ -101,6 +101,10 @@
     "R12": {
       "name": "Fresh Execution Canaries",
       "description": "Narrow replacement tasks for clean coder-first execution candidates"
+    },
+    "R13": {
+      "name": "Brittleness Fixes",
+      "description": "Drift repair, locking, consolidation, and hardening from brittleness audit"
     }
   },
   "tasks": [
@@ -2675,7 +2679,7 @@
       "id": "OPS-14",
       "phase": "OPS",
       "title": "Measure: benchmark auto vs manual execution time, target <5x gap",
-      "status": "pending",
+      "status": "verified_done",
       "complexity": "moderate",
       "category": "measure",
       "priority": "high",
@@ -2687,7 +2691,7 @@
         "integration test runs benchmark and reports metrics"
       ],
       "revision_notes": "Unblocked: false positive guard removed",
-      "completed_at": null
+      "completed_at": "2026-03-31T05:21:57.251989+00:00"
     },
     {
       "id": "R12-01a",
@@ -2887,6 +2891,130 @@
       "completed_at": "2026-03-31T02:41:02.137438+00:00",
       "timeout": 180,
       "role": "coder"
+    },
+    {
+      "id": "R13-01",
+      "phase": "R13",
+      "category": "hardening",
+      "priority": "critical",
+      "complexity": "moderate",
+      "title": "Sync root and packaged trust/runtime resources",
+      "description": "Eliminate root vs packaged resource drift found in BRITTLENESS_AUDIT.md: scripts/extract_json.py:12 vs src/ralph/resources/scripts/extract_json.py:22, scripts/verify_task_closure.py:14 vs src/ralph/resources/scripts/verify_task_closure.py:14, scripts/models.py:8 vs src/ralph/resources/scripts/models.py:8, scripts/ralph_bot.py:1075 vs src/ralph/resources/scripts/ralph_bot.py:1075, and templates/AGENTS_CODER.md:16 vs src/ralph/resources/templates/AGENTS_CODER.md:16.",
+      "acceptance_criteria": [
+        "Root and packaged copies for trust-critical scripts are behaviorally identical",
+        "RalphState schema is the same in root and packaged models",
+        "Packaged bot preserves blocked-state auto-start guard",
+        "Packaged coder template includes local-first discipline",
+        "A parity test or sync mechanism prevents future drift"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R13-02",
+      "phase": "R13",
+      "category": "hardening",
+      "priority": "critical",
+      "complexity": "complex",
+      "title": "Add locking and atomic writes for runtime shared files",
+      "description": "Harden concurrent file mutation paths identified in BRITTLENESS_AUDIT.md: scripts/ralph_bot.py:251 and ralph.sh:2214 race on ralph_control.json; scripts/ralph_bot.py:233 and ralph.sh:1056 race on ralph_state.json; scripts/update_task.py:29, scripts/ralph_bot.py:1198, and ralph.sh:4252 race on tasks.json; scripts/update_progress.py:29 and ralph.sh:4253 write progress.md non-atomically.",
+      "acceptance_criteria": [
+        "ralph_control.json mutations use locking or compare-and-swap semantics",
+        "ralph_state.json writes are atomic across bot and shell runtime",
+        "tasks.json updates cannot lose concurrent task status changes",
+        "progress.md appends are atomic or serialized",
+        "Regression coverage exists for concurrent control/state/task update scenarios"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R13-03",
+      "phase": "R13",
+      "category": "refactor",
+      "priority": "high",
+      "complexity": "moderate",
+      "title": "Consolidate duplicated task and control logic",
+      "description": "Remove duplicated project-dir, tasks.json, and control-file logic called out in BRITTLENESS_AUDIT.md: scripts/update_task.py:9, scripts/update_progress.py:9, scripts/next_task.py:9, scripts/explain_task.py:15, scripts/reopen_tasks.py:13, scripts/next_task.py:21, scripts/update_task.py:29, scripts/re_audit_tasks.py:34, scripts/explain_task.py:27, scripts/ralph_bot.py:623, ralph.sh:1077, ralph.sh:2214, and scripts/ralph_bot.py:251. Also unify verifier/re-audit classification split at scripts/verify_task_closure.py:60 and scripts/re_audit_tasks.py:48 plus runnable reasoning split at scripts/explain_task.py:31 and scripts/next_task.py:26.",
+      "acceptance_criteria": [
+        "Project-dir resolution is implemented in one shared helper",
+        "Task loading and saving go through one validated code path",
+        "Control-file schema and IO are shared between bot and runtime",
+        "Verifier and re-audit reuse a single task classification path",
+        "Operator explanation reuses scheduler runnable logic"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R13-04",
+      "phase": "R13",
+      "category": "hardening",
+      "priority": "high",
+      "complexity": "moderate",
+      "title": "Harden silent error handling and malformed JSON paths",
+      "description": "Repair silent failure handling identified in BRITTLENESS_AUDIT.md: ralph.sh:2214 swallows comment-consumption errors, scripts/ralph_notify.py:30 suppresses notification failures, scripts/ralph_bot.py:247 / 1949 / 1962 / 1976 swallow crash-recovery errors, scripts/update_task.py:29, scripts/next_task.py:25, scripts/explain_task.py:28, scripts/reopen_tasks.py:41, and scripts/run_benchmark.py:49 parse tasks.json without guarded error reporting, and ralph.sh:1082 silently treats corrupted control JSON as continue.",
+      "acceptance_criteria": [
+        "Silent except/pass paths are replaced with typed handling and logging",
+        "Malformed tasks.json produces structured operator-visible errors in helper scripts",
+        "Control-file parse failures are logged instead of silently ignored",
+        "Notification failures are visible in logs without crashing runtime",
+        "Crash-recovery failures in bot paths are surfaced for debugging"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R13-05",
+      "phase": "R13",
+      "category": "tests",
+      "priority": "high",
+      "complexity": "moderate",
+      "title": "Add coverage for untested mutators and trust helpers",
+      "description": "Close high and medium test gaps from BRITTLENESS_AUDIT.md covering scripts/auto_update.py:1, scripts/ralph_notify.py:1, scripts/check_prompt_budgets.py:1, scripts/update_memory.py:1, scripts/update_progress.py:1, and key ralph.sh helpers at 432, 480, 505, 2214, 2663, 2688, 2935, 3388, and 3504.",
+      "acceptance_criteria": [
+        "Legacy task/progress mutators have explicit tests or are safely deprecated",
+        "Telegram notifier has mocked transport coverage",
+        "Prompt budget validation has fixture-driven coverage",
+        "Memory and progress update helpers have direct tests",
+        "Focused tests cover handoff helpers, human comment injection, lead JSON parsing/validation, verifier failure paths, and benchmark helper edge cases"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R13-06",
+      "phase": "R13",
+      "category": "cleanup",
+      "priority": "medium",
+      "complexity": "simple",
+      "title": "Remove or wire up dead shell helpers",
+      "description": "Clean up dead or unreferenced helpers reported in BRITTLENESS_AUDIT.md: ralph.sh:592 handoff_unrelated_repo_backed_changes(), ralph.sh:838 is_completed_task_status(), and ralph.sh:1383 / 1970 / 2811 / 2858 for clip_prompt_tokens(), extract_task_keywords(), task_scoped_name_only_between_refs(), and task_scoped_current_diff().",
+      "acceptance_criteria": [
+        "Unused helpers are removed or reconnected to real call sites",
+        "If any helper is kept, there is an explicit test or documented call path",
+        "Shell script remains behaviorally unchanged for supported flows"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "R13-07",
+      "phase": "R13",
+      "category": "hardening",
+      "priority": "high",
+      "complexity": "moderate",
+      "title": "Consolidate runtime constants and gate destructive rollback",
+      "description": "Address hardcoded runtime values and unsafe rollback behavior from BRITTLENESS_AUDIT.md: scripts/ralph_bot.py:1956 uses hardcoded git reset/checkout rollback commands; ralph.sh:151 / 152 / 3100 / 3753 hardcode lead timeout and retry delays; scripts/ralph_bot.py:931 / 950 and scripts/ralph_notify.py:31 hardcode Telegram transport timeout; scripts/ralph_bot.py:1523 hardcodes article-generation subprocess timeout.",
+      "acceptance_criteria": [
+        "Destructive rollback commands are gated or moved behind an explicit reviewed policy",
+        "Lead timeout and retry delays are centralized in named configuration",
+        "Telegram transport timeout is shared through one constant/env override",
+        "Article-generation timeout is centralized and configurable",
+        "No behavior regression for normal operator flows"
+      ],
+      "dependencies": [],
+      "status": "pending"
     }
   ]
 }
