@@ -4140,6 +4140,10 @@ Do not ask the coder to update tasks.json, progress.md, final commits, final sta
             run_codex "$LEAD_PROMPT" "$LEAD_OUTPUT" "$REVIEW_FILE" "$TASK_LEAD_TIMEOUT" "$CODEX_MODEL"
             CODEX_EXIT=$?
             set -e
+            mkdir -p .ralph/audit
+            printf '%s' "$LEAD_PROMPT" > ".ralph/audit/lead_prompt_${TASK_ID}.txt"
+            cp "$LEAD_OUTPUT" ".ralph/audit/lead_reasoning_${TASK_ID}.txt"
+            log "📋 Lead review artifacts saved to .ralph/audit/"
             LEAD_TOKENS=$(extract_tokens "$LEAD_OUTPUT")
             TASK_TOKENS=$((TASK_TOKENS + ${LEAD_TOKENS:-0}))
             SESSION_TOKENS=$((SESSION_TOKENS + ${LEAD_TOKENS:-0}))
