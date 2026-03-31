@@ -460,13 +460,19 @@ for path in list(paths):
 
 if command_tokens:
     bot_path = project_dir / "scripts" / "ralph_bot.py"
-    bot_text = read_text(bot_path)
-    paths.add("scripts/ralph_bot.py")
     packaged_bot = project_dir / "src" / "ralph" / "resources" / "scripts" / "ralph_bot.py"
+    routing_texts: list[str] = []
+    if bot_path.exists():
+        paths.add("scripts/ralph_bot.py")
+        routing_texts.append(read_text(bot_path))
     if packaged_bot.exists():
         paths.add("src/ralph/resources/scripts/ralph_bot.py")
+        routing_texts.append(read_text(packaged_bot))
+    routing_text = "\n".join(text for text in routing_texts if text)
     for token in command_tokens:
-        handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
+        handlers = set(command_candidate_handlers(token))
+        if routing_text:
+            handlers |= command_routed_handlers(routing_text, token)
         for test_file in (project_dir / "tests").glob("test_*.py"):
             test_text = read_text(test_file)
             if f"/{token}" in test_text or any(handler in test_text for handler in handlers):
@@ -499,7 +505,14 @@ handoff_empty_tree_hash() {
 
 handoff_commit_parent_hash() {
     local commit_hash="$1"
-    git rev-parse "${commit_hash}^" 2>/dev/null || handoff_empty_tree_hash
+    local parent_hash=""
+
+    parent_hash=$(git rev-list --parents -n 1 "$commit_hash" 2>/dev/null | awk '{print $2}')
+    if [ -n "$parent_hash" ]; then
+        printf '%s\n' "$parent_hash"
+    else
+        handoff_empty_tree_hash
+    fi
 }
 
 handoff_latest_repo_candidate_commit() {
@@ -2877,11 +2890,16 @@ resolve_git_ref() {
 }
 
 run_task_closure_verification() {
+    local verifier_failed=0
+
     PRE_CLOSURE_CHANGED_FILES_JSON=$(collect_preclosure_changed_files_json)
-    VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
+    if ! VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
         RALPH_PROJECT_DIR="$PROJECT_DIR" \
         RALPH_CHANGED_FILES_JSON="$PRE_CLOSURE_CHANGED_FILES_JSON" \
-        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>/dev/null || echo '{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}')
+        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>/dev/null); then
+        verifier_failed=1
+        VERIFICATION_JSON='{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}'
+    fi
 
     VERIFICATION_RESULT=$(echo "$VERIFICATION_JSON" | python3 -c "
 import sys, json
@@ -2915,6 +2933,9 @@ try:
 except Exception:
     print('')
 " 2>/dev/null || echo "")
+    if [ "$verifier_failed" -eq 1 ]; then
+        VERIFICATION_NON_BOOKKEEPING=""
+    fi
 }
 
 run_coder_agent() {
