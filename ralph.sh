@@ -1047,10 +1047,87 @@ os.replace(tmp_path, 'ralph_state.json')
 
 CONTROL_ACTION="continue"
 CONTROL_TARGET=""
+run_control_helper() {
+    local subcommand="$1"
+    shift || true
+
+    local helper_output=""
+    local helper_stderr=""
+    helper_stderr=$(mktemp "${TMPDIR:-/tmp}/ralph_control_stderr.XXXXXX") || {
+        log "⚠️ Control helper '${subcommand}' failed: unable to allocate temp file for stderr capture"
+        return 1
+    }
+
+    if ! helper_output=$(python3 "$RALPH_DIR/scripts/ralph_common.py" "$subcommand" "$@" 2>"$helper_stderr"); then
+        if [ -s "$helper_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "⚠️ Control helper '${subcommand}': $line"
+            done < "$helper_stderr"
+        fi
+        rm -f "$helper_stderr"
+        log "⚠️ Control helper '${subcommand}' failed"
+        return 1
+    fi
+
+    if [ -s "$helper_stderr" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] && log "⚠️ Control helper '${subcommand}': $line"
+        done < "$helper_stderr"
+    fi
+    rm -f "$helper_stderr"
+
+    printf '%s' "$helper_output"
+    return 0
+}
+
 read_control_file() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-read || {
-        log "⚠️ Failed to read ralph_control.json via ralph_common.py; defaulting to continue"
+    local helper_output=""
+    if ! helper_output=$(run_control_helper control-read); then
+        log "⚠️ Failed to read ralph_control.json; defaulting to continue"
         printf "continue\n\n"
+        return 0
+    fi
+    if [ -z "$helper_output" ]; then
+        log "⚠️ Control helper returned empty control payload; defaulting to continue"
+        printf "continue\n\n"
+        return 0
+    fi
+    printf '%s\n' "$helper_output"
+}
+
+parse_control_data() {
+    local context="$1"
+    local control_data="$2"
+    local action target
+
+    action=$(printf '%s\n' "$control_data" | sed -n '1p')
+    target=$(printf '%s\n' "$control_data" | sed -n '2p')
+
+    if [ -z "$action" ]; then
+        log "⚠️ ${context}: empty control action from ralph_control.json; defaulting to continue"
+        CONTROL_ACTION="continue"
+        CONTROL_TARGET=""
+        return 1
+    fi
+
+    CONTROL_ACTION="$action"
+    CONTROL_TARGET="$target"
+    return 0
+}
+
+apply_control_action_snapshot() {
+    local context="$1"
+    local control_data=""
+
+    control_data=$(read_control_file)
+    parse_control_data "$context" "$control_data" || return 1
+    return 0
+}
+
+clear_control_action() {
+    run_control_helper control-clear >/dev/null || {
+        log "⚠️ Failed to clear control action in ralph_control.json"
+        return 1
     }
 }
 
@@ -1075,10 +1152,7 @@ apply_timeout_override() {
 check_control() {
     while true; do
         if [ -f ralph_control.json ]; then
-            local control_data
-            control_data=$(read_control_file)
-            CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
-            CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+            apply_control_action_snapshot "check_control" || true
             if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
                 return 1
             fi
@@ -1090,9 +1164,7 @@ check_control() {
                 write_state "paused" "" "" "Paused by user"
                 while [ "$CONTROL_ACTION" = "pause" ]; do
                     sleep 5
-                    control_data=$(read_control_file)
-                    CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
-                    CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+                    apply_control_action_snapshot "check_control pause loop" || true
                 done
                 if [ "$CONTROL_ACTION" = "continue" ]; then
                     write_state "running" "${TASK_ID:-}" "" "Resumed by user"
@@ -1117,9 +1189,7 @@ wait_for_high_risk_approval() {
             CONTROL_ACTION="pause"
             CONTROL_TARGET=""
         else
-            control_data=$(read_control_file)
-            CONTROL_ACTION=$(printf '%s\n' "$control_data" | sed -n '1p')
-            CONTROL_TARGET=$(printf '%s\n' "$control_data" | sed -n '2p')
+            apply_control_action_snapshot "wait_for_high_risk_approval" || true
         fi
 
         if [ "$CONTROL_ACTION" = "continue" ]; then
@@ -1147,14 +1217,13 @@ wait_for_high_risk_approval() {
     done
 }
 
-clear_control_action() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-clear 2>/dev/null || true
-}
-
 set_control_action() {
     local action="$1"
     local comment="${2:-}"
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-write "$action" "$comment" 2>/dev/null || true
+    run_control_helper control-write "$action" "$comment" >/dev/null || {
+        log "⚠️ Failed to write control action '${action}' to ralph_control.json"
+        return 1
+    }
 }
 
 skip_current_task() {
@@ -2095,10 +2164,10 @@ PY
 }
 
 get_human_comment() {
-    python3 "$RALPH_DIR/scripts/ralph_common.py" control-consume-comment || {
+    if ! run_control_helper control-consume-comment; then
         log "⚠️ Failed to consume operator comment from ralph_control.json"
         return 0
-    }
+    fi
 }
 
 notify() {
