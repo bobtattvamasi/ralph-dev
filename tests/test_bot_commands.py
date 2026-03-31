@@ -549,12 +549,15 @@ async def test_watch_state_recovers_crashed_running_task(
 
     called_commands = [call.args[0] for call in run_mock.call_args_list]
     assert ["python3", "scripts/update_task.py", "T01", "pending"] in called_commands
-    assert ["git", "-C", str(bot.PROJECT_DIR), "reset", "HEAD", "--", "."] in called_commands
-    assert ["git", "-C", str(bot.PROJECT_DIR), "checkout", "--", "."] in called_commands
+    assert ["git", "-C", str(bot.PROJECT_DIR), "reset", "HEAD", "--", "."] not in called_commands
+    assert ["git", "-C", str(bot.PROJECT_DIR), "checkout", "--", "."] not in called_commands
 
     safe_send = bot_env["safe_send"]
     messages = [call.args[0] for call in safe_send.await_args_list]
-    assert any("🔄 Ralph crashed during T01. Task reset to pending, changes rolled back." in msg for msg in messages)
+    assert any(
+        "🔄 Ralph crashed during T01. Task reset to pending. Worktree rollback skipped by policy." in msg
+        for msg in messages
+    )
 
 
 @pytest.mark.asyncio

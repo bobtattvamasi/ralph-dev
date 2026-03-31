@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+from scripts.ralph_common import DEFAULT_CODER_TIMEOUT_SEC
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RALPH_SH = REPO_ROOT / "ralph.sh"
@@ -1907,8 +1908,14 @@ def test_ralph_timeout_fallback_is_900_in_runtime_and_packaged_shell() -> None:
     runtime_shell = RALPH_SH.read_text(encoding="utf-8")
     packaged_shell = (REPO_ROOT / "src/ralph/resources/ralph.sh").read_text(encoding="utf-8")
 
-    assert '2>/dev/null || echo "900")' in runtime_shell
-    assert '2>/dev/null || echo "900")' in packaged_shell
+    expected_default = str(DEFAULT_CODER_TIMEOUT_SEC)
+    expected_named_default = f'DEFAULT_CODER_TIMEOUT_SEC="${{RALPH_DEFAULT_CODER_TIMEOUT_SEC:-{expected_default}}}"'
+    expected_fallback = '" 2>/dev/null || echo "$DEFAULT_CODER_TIMEOUT_SEC")'
+
+    assert expected_named_default in runtime_shell
+    assert expected_named_default in packaged_shell
+    assert expected_fallback in runtime_shell
+    assert expected_fallback in packaged_shell
     assert '2>/dev/null || echo "600")' not in runtime_shell
     assert '2>/dev/null || echo "600")' not in packaged_shell
 
