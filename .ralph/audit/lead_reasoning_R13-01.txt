@@ -1,0 +1,650 @@
+OpenAI Codex v0.117.0 (research preview)
+--------
+workdir: /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 019d427f-78f0-79c3-b89f-26f148b6aa01
+--------
+user
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R13-01",
+  "phase": "R13",
+  "category": "hardening",
+  "priority": "critical",
+  "complexity": "moderate",
+  "title": "Sync root and packaged trust/runtime resources",
+  "description": "Eliminate root vs packaged resource drift found in BRITTLENESS_AUDIT.md: scripts/extract_json.py:12 vs src/ralph/resources/scripts/extract_json.py:22, scripts/verify_task_closure.py:14 vs src/ralph/resources/scripts/verify_task_closure.py:14, scripts/models.py:8 vs src/ralph/resources/scripts/models.py:8, scripts/ralph_bot.py:1075 vs src/ralph/resources/scripts/ralph_bot.py:1075, and templates/AGENTS_CODER.md:16 vs src/ralph/resources/templates/AGENTS_CODER.md:16.",
+  "acceptance_criteria": [
+    "Root and packaged copies for trust-critical scripts are behaviorally identical",
+    "RalphState schema is the same in root and packaged models",
+    "Packaged bot preserves blocked-state auto-start guard",
+    "Packaged coder template includes local-first discipline",
+    "A parity test or sync mechanism prevents future drift"
+  ],
+  "dependencies": [
+    "R13-06"
+  ],
+  "status": "pending"
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/src/ralph/resources/scripts/extract_json.py b/src/ralph/resources/scripts/extract_json.py
+index 4a68283..6d9dcad 100644
+--- a/src/ralph/resources/scripts/extract_json.py
++++ b/src/ralph/resources/scripts/extract_json.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Extract the first valid JSON object from mixed model output."""
++"""Extract one trustworthy Tech Lead review JSON object from mixed model output."""
+ 
+ from __future__ import annotations
+ 
+@@ -9,6 +9,13 @@ import sys
+ from json import JSONDecodeError
+ 
+ 
++REVIEW_MARKER_START = "BEGIN_RALPH_REVIEW_JSON"
++REVIEW_MARKER_END = "END_RALPH_REVIEW_JSON"
++PLACEHOLDER_TASK_ID = "TASK-ID"
++PLACEHOLDER_SUMMARY = "one line summary"
++VALID_DECISIONS = {"approve", "fix", "alert", "done"}
++
++
+ def try_load(candidate: str) -> dict | None:
+     try:
+         value = json.loads(candidate)
+@@ -19,13 +26,19 @@ def try_load(candidate: str) -> dict | None:
+     return None
+ 
+ 
+-def extract_json_object(text: str) -> dict | None:
+-    fenced_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+-    for block in fenced_blocks:
+-        parsed = try_load(block.strip())
+-        if parsed is not None:
+-            return parsed
++def is_review_candidate(value: dict) -> bool:
++    return isinstance(value, dict) and str(value.get("decision", "")).strip() in VALID_DECISIONS
+ 
++
++def is_placeholder_review(value: dict) -> bool:
++    task_id = str(value.get("task_id", "")).strip()
++    summary = str(value.get("summary", "")).strip().lower()
++    return task_id == PLACEHOLDER_TASK_ID or summary == PLACEHOLDER_SUMMARY
++
++
++def collect_json_objects(text: str) -> list[dict]:
++    candidates: list[dict] = []
++    seen: set[str] = set()
+     decoder = json.JSONDecoder()
+     for idx, char in enumerate(text):
+         if char != "{":
+@@ -34,19 +47,52 @@ def extract_json_object(text: str) -> dict | None:
+             parsed, end = decoder.raw_decode(text[idx:])
+         except JSONDecodeError:
+             continue
+-        if isinstance(parsed, dict):
+-            return parsed
+-
+-    start_positions = [idx for idx, char in enumerate(text) if char == "{"]
+-    end_positions = [idx for idx, char in enumerate(text) if char == "}"]
+-    for start in start_positions:
+-        for end in reversed(end_positions):
+-            if end <= start:
+-                continue
+-            parsed = try_load(text[start : end + 1].strip())
+-            if parsed is not None:
+-                return parsed
+-    return None
++        if not isinstance(parsed, dict):
++            continue
++        key = json.dumps(parsed, sort_keys=True, ensure_ascii=False)
++        if key in seen:
++            continue
++        seen.add(key)
++        candidates.append(parsed)
++    return candidates
++
++
++def extract_json_object(text: str) -> dict | None:
++    marker_blocks = re.findall(
++        rf"{REVIEW_MARKER_START}\s*(\{{.*?\}})\s*{REVIEW_MARKER_END}",
++        text,
++        flags=re.DOTALL,
++    )
++    if len(marker_blocks) > 1:
++        return None
++    if len(marker_blocks) == 1:
++        parsed = try_load(marker_blocks[0].strip())
++        if parsed is None or not is_review_candidate(parsed) or is_placeholder_review(parsed):
++            return None
++        return parsed
++
++    fenced_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
++    candidates: list[dict] = []
++    for block in fenced_blocks:
++        parsed = try_load(block.strip())
++        if parsed is not None:
++            candidates.append(parsed)
++    candidates.extend(collect_json_objects(text))
++
++    trusted: list[dict] = []
++    seen: set[str] = set()
++    for candidate in candidates:
++        if not is_review_candidate(candidate) or is_placeholder_review(candidate):
++            continue
++        key = json.dumps(candidate, sort_keys=True, ensure_ascii=False)
++        if key in seen:
++            continue
++        seen.add(key)
++        trusted.append(candidate)
++
++    if len(trusted) != 1:
++        return None
++    return trusted[0]
+ 
+ 
+ def main() -> None:
+diff --git a/src/ralph/resources/scripts/models.py b/src/ralph/resources/scripts/models.py
+index ab47d84..0a47b8f 100644
+--- a/src/ralph/resources/scripts/models.py
++++ b/src/ralph/resources/scripts/models.py
+@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
+ 
+ 
+ class RalphState(BaseModel):
+-    status: Literal["idle", "running", "paused", "waiting_human", "stopped"] = "idle"
++    status: Literal["idle", "running", "paused", "waiting_human", "stopped", "blocked"] = "idle"
+     current_task: str = ""
+     current_phase_step: str = ""
+     last_update: Optional[str] = None
+diff --git a/src/ralph/resources/scripts/ralph_bot.py b/src/ralph/resources/scripts/ralph_bot.py
+index 5fa400a..03b5e3c 100755
+--- a/src/ralph/resources/scripts/ralph_bot.py
++++ b/src/ralph/resources/scripts/ralph_bot.py
+@@ -1072,6 +1072,9 @@ async def cmd_start_auto() -> None:
+     if state.get("status") == "running":
+         await safe_send("⚠️ Ralph already running. /stop first.")
+         return
++    if state.get("status") == "blocked":
++        await safe_send("⚠️ Ralph is blocked. Use /reset or /unblock first.")
++        return
+     try:
+         write_control("continue", "")
+         try:
+diff --git a/src/ralph/resources/scripts/verify_task_closure.py b/src/ralph/resources/scripts/verify_task_closure.py
+index 7b2db46..6d1e9df 100644
+--- a/src/ralph/resources/scripts/verify_task_closure.py
++++ b/src/ralph/resources/scripts/verify_task_closure.py
+@@ -1,15 +1,15 @@
++#!/usr/bin/env python3
++"""Minimal trust-layer verification before task closure."""
++
+ from __future__ import annotations
+ 
+ import json
+ import os
++import py_compile
+ import re
+ import sys
+ from pathlib import Path
+-from typing import Any
+-
+ 
+-PROJECT_DIR = Path(os.environ.get("RALPH_PROJECT_DIR", Path(__file__).resolve().parent.parent))
+-CHANGED_FILES_JSON = os.environ.get("RALPH_CHANGED_FILES_JSON", "[]")
+ 
+ BOOKKEEPING_EXACT = {
+     "tasks.json",
+@@ -18,14 +18,13 @@ BOOKKEEPING_EXACT = {
+     "ralph_state.json",
+     "ralph_control.json",
+     "ralph_alerts.log",
+-    "logs/metrics.csv",
+     "ralph_main.pid",
+     "ralph_codex.pid",
++    "ralph_codex.pgid",
+     ".ralph/memory/recent.md",
+-    ".ralph/memory/patterns.md",
+     ".ralph/memory/decisions.md",
++    ".ralph/memory/patterns.md",
+ }
+-
+ BOOKKEEPING_PREFIXES = (
+     "logs/",
+     ".pytest_cache/",
+@@ -33,20 +32,18 @@ BOOKKEEPING_PREFIXES = (
+     ".ralph/audit/",
+     "ralph/audit/",
+ )
++DOC_KEYWORDS = (
++    "readme",
++    "documentation",
++    "docs/",
++    "postmortem",
++    "prompt_version",
++    "changelog",
++)
+ 
+ 
+ def normalize_path(path: str) -> str:
+-    return path.replace("\\", "/").lstrip("./")
+-
+-
+-def load_changed_files() -> list[str]:
+-    try:
+-        raw = json.loads(CHANGED_FILES_JSON)
+-        if isinstance(raw, list):
+-            return [normalize_path(str(item)) for item in raw]
+-    except Exception:
+-        pass
+-    return []
++    return path.strip().replace("\\", "/").lstrip("./")
+ 
+ 
+ def is_bookkeeping_file(path: str) -> bool:
+@@ -60,90 +57,82 @@ def is_bookkeeping(path: str) -> bool:
+     return is_bookkeeping_file(path)
+ 
+ 
+-def extract_path_candidates(task: dict[str, Any]) -> list[str]:
+-    text_parts = [
+-        str(task.get("title", "")),
+-        str(task.get("description", "")),
+-        *[str(item) for item in task.get("acceptance_criteria", [])],
+-        *[str(item) for item in task.get("test_steps", [])],
+-    ]
+-    combined = "\n".join(text_parts)
+-    matches = re.findall(r"([A-Za-z0-9_./-]+\.[A-Za-z0-9_]+)", combined)
+-    paths = []
++def extract_path_candidates(task: dict) -> list[str]:
++    texts: list[str] = [task.get("title", ""), task.get("description", "")]
++    texts.extend(task.get("acceptance_criteria", []) or [])
++    texts.extend(task.get("test_steps", []) or [])
++    combined = "\n".join(texts)
++    matches = re.findall(
++        r"((?:scripts|templates|tests|docs)/[A-Za-z0-9_./-]+\.(?:py|md|json|sh|ts|tsx|js)|(?:README|PROMPT_CHANGELOG|AGENTS(?:_[A-Z]+)?|BLOG_DRAFTS|progress)\.md)",
++        combined,
++    )
++    seen: set[str] = set()
++    result: list[str] = []
+     for match in matches:
+-        normalized = normalize_path(match)
+-        if "/" in normalized or normalized.endswith(".md") or normalized.endswith(".py"):
+-            paths.append(normalized)
+-    seen = []
+-    for path in paths:
+-        if path not in seen:
+-            seen.append(path)
+-    return seen
+-
+-
+-def extract_command_tokens(task: dict[str, Any]) -> list[str]:
+-    text_parts = [
+-        str(task.get("title", "")),
+-        str(task.get("description", "")),
+-        *[str(item) for item in task.get("acceptance_criteria", [])],
+-        *[str(item) for item in task.get("test_steps", [])],
+-    ]
+-    combined = "\n".join(text_parts)
+-    tokens = re.findall(r"/([a-zA-Z0-9_]+)", combined)
+-    seen = []
++        path = normalize_path(match)
++        if path in seen:
++            continue
++        seen.add(path)
++        result.append(path)
++    return result
++
++
++def extract_command_tokens(task: dict) -> list[str]:
++    texts: list[str] = [task.get("title", ""), task.get("description", "")]
++    texts.extend(task.get("acceptance_criteria", []) or [])
++    tokens = re.findall(r"/([a-z][a-z0-9_]*)", "\n".join(texts).lower())
++    seen: set[str] = set()
++    result: list[str] = []
+     for token in tokens:
+-        if token not in seen:
+-            seen.append(token)
+-    return seen
+-
+-
+-def extract_expected_test_names(task: dict[str, Any]) -> list[str]:
+-    text_parts = [*[str(item) for item in task.get("acceptance_criteria", [])], *[str(item) for item in task.get("test_steps", [])]]
+-    combined = "\n".join(text_parts)
+-    names = re.findall(r"\b(test_[A-Za-z0-9_]+)\b", combined)
+-    seen = []
++        if token in seen:
++            continue
++        seen.add(token)
++        result.append(token)
++    return result
++
++
++def extract_expected_test_names(task: dict) -> list[str]:
++    texts = [task.get("title", ""), task.get("description", "")]
++    texts.extend(task.get("acceptance_criteria", []) or [])
++    texts.extend(task.get("test_steps", []) or [])
++    names = re.findall(r"\b(test_[a-zA-Z0-9_]+)\b", "\n".join(texts))
++    seen: set[str] = set()
++    result: list[str] = []
+     for name in names:
+-        if name not in seen:
+-            seen.append(name)
+-    return seen
+-
+-
+-def detect_task_class(
+-    task: dict[str, Any],
+-    expected_paths: list[str],
+-    command_tokens: list[str],
+-    expected_tests: list[str],
+-) -> str:
+-    task_id = str(task.get("id", ""))
+-    title = str(task.get("title", "")).lower()
+-    description = str(task.get("description", "")).lower()
+-    acceptance = " ".join(str(item) for item in task.get("acceptance_criteria", [])).lower()
+-    combined = " ".join([task_id.lower(), title, description, acceptance])
+-
++        if name in seen:
++            continue
++        seen.add(name)
++        result.append(name)
++    return result
++
++
++def detect_task_class(task: dict, expected_paths: list[str], command_tokens: list[str], expected_tests: list[str]) -> str:
++    title = task.get("title", "").lower()
++    description = task.get("description", "").lower()
++    combined = "\n".join(
++        [title, description, *[item.lower() for item in task.get("acceptance_criteria", []) or []]]
++    )
+     if any(path.startswith("templates/") for path in expected_paths):
+         return "template"
+     if any(path.startswith("scripts/") for path in expected_paths):
+         return "script"
+-    if command_tokens and ("bot" in combined or "telegram" in combined or "/" in combined):
++    if command_tokens and ("bot" in title or "команда" in title or "telegram" in combined):
+         return "command"
+-    if expected_tests and "tests" in combined:
++    if title.startswith("tests:") or expected_tests or "pytest" in combined:
+         return "tests-only"
+-    if "re-audit" in combined and "report" in combined and any(
+-        keyword in combined for keyword in ("verified", "partial", "false positive", "unclear")
++    if (
++        "re-audit" in combined
++        and "report" in combined
++        and any(keyword in combined for keyword in ("verified", "partial", "false positive", "unclear"))
+     ):
+         return "reaudit-report"
+-    if any(path.startswith("docs/") for path in expected_paths) or "docs:" in title or title.startswith("docs"):
++    if any(path.startswith("docs/") for path in expected_paths) or any(path.endswith(".md") for path in expected_paths):
++        return "docs-only"
++    if any(keyword in combined for keyword in DOC_KEYWORDS):
+         return "docs-only"
+     return "implementation"
+ 
+ 
+-def is_bookkeeping(path: str) -> bool:
+-    normalized = normalize_path(path)
+-    if normalized in BOOKKEEPING_EXACT:
+-        return True
+-    return any(normalized.startswith(prefix) for prefix in BOOKKEEPING_PREFIXES)
+-
+-
+ def read_text(path: Path) -> str:
+     try:
+         return path.read_text(encoding="utf-8")
+@@ -151,26 +140,49 @@ def read_text(path: Path) -> str:
+         return ""
+ 
+ 
+-def file_contains_required_content(task: dict[str, Any], path: Path) -> bool:
+-    text = read_text(path)
+-    if not text:
++def command_candidate_handlers(token: str) -> set[str]:
++    return {f"cmd_{token}", f"cmd_start_{token}"}
++
++
++def command_routed_handlers(bot_text: str, token: str) -> set[str]:
++    pattern = re.compile(
++        rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
++        re.MULTILINE,
++    )
++    return set(pattern.findall(bot_text))
++
++
++def file_contains_required_content(task: dict, path: Path) -> bool:
++    content = read_text(path).lower()
++    if not content:
+         return False
++    for criterion in task.get("acceptance_criteria", []) or []:
++        crit = criterion.strip()
++        if crit.lower().startswith("содержит "):
++            phrase = crit[9:].strip().lower()
++            if phrase and phrase not in content:
++                return False
++        if crit.lower().startswith("contains "):
++            phrase = crit[9:].strip().lower()
++            if phrase and phrase not in content:
++                return False
++    return True
++
+ 
+-    checks = {
+-        "AGENTS_COORDINATOR.md": ["question", "PROJECT_BRIEF"],
+-        "AGENTS_ARCHITECT.md": ["stack", "ARCHITECTURE"],
+-        "AGENTS_JOURNALIST.md": ["telegram", "post"],
+-        "TRUST_LAYER.md": ["trust", "audit"],
++def result(result: str, task_class: str, reason: str, changed_files: list[str], non_bookkeeping: list[str]) -> dict:
++    return {
++        "result": result,
++        "task_class": task_class,
++        "reason": reason,
++        "changed_files": changed_files,
++        "changed_files_non_bookkeeping": non_bookkeeping,
++        "bookkeeping_only": bool(changed_files) and not non_bookkeeping,
+     }
+-    for key, required_terms in checks.items():
+-        if key in path.name:
+-            return all(term.lower() in text.lower() for term in required_terms)
+-    return True
+ 
+ 
+-def verify_task_completion(task: dict[str, Any], project_dir: Path, changed_files: list[str]) -> dict[str, Any]:
+-    changed_files = [normalize_path(path) for path in changed_files]
+-    non_bookkeeping = [path for path in changed_files if not is_bookkeeping(path)]
++def verify_task_completion(task: dict, project_dir: Path, changed_files: list[str]) -> dict:
++    changed_files = [normalize_path(path) for path in changed_files if normalize_path(path)]
++    non_bookkeeping = [path for path in changed_files if not is_bookkeeping_file(path)]
+     expected_paths = extract_path_candidates(task)
+     command_tokens = extract_command_tokens(task)
+     expected_tests = extract_expected_test_names(task)
+@@ -180,260 +192,161 @@ def verify_task_completion(task: dict[str, Any], project_dir: Path, changed_file
+         script_path = project_dir / "scripts" / "re_audit_tasks.py"
+         test_path = project_dir / "tests" / "test_re_audit_tasks.py"
+         report_path = project_dir / "audit_report.md"
++
++        missing_parts: list[str] = []
+         script_text = read_text(script_path)
+-        test_text = read_text(test_path)
++        tests_text = read_text(test_path)
+         report_text = read_text(report_path)
+-        missing_parts: list[str] = []
+-        if not script_path.exists():
++
++        if not script_text:
+             missing_parts.append("scripts/re_audit_tasks.py is missing")
+-        if not test_path.exists():
++        if not tests_text:
+             missing_parts.append("tests/test_re_audit_tasks.py is missing")
+-        if not report_path.exists():
++        if not report_text:
+             missing_parts.append("audit_report.md is missing")
+-        if script_text and "audit_report.md" not in script_text:
+-            missing_parts.append("re_audit_tasks.py does not save audit_report.md")
+-        if script_text and "Human-readable report saved to" not in script_text:
+-            missing_parts.append("re_audit_tasks.py does not report saved human-readable output")
+-        if script_text and "false positive" not in script_text:
+-            missing_parts.append("re_audit_tasks.py is missing false positive report labeling")
+-        if script_text and "unclear" not in script_text:
+-            missing_parts.append("re_audit_tasks.py is missing unclear report labeling")
+-        if test_text and "audit_report.md" not in test_text:
+-            missing_parts.append("re_audit tests do not assert report persistence")
+-        if test_text and "Classification: unclear" not in test_text:
+-            missing_parts.append("re_audit tests do not cover unclear classification in report")
+-        if report_text and "# Re-audit Report" not in report_text:
+-            missing_parts.append("audit_report.md is not a re-audit report")
+-        if report_text and "## Results" not in report_text:
+-            missing_parts.append("audit_report.md is missing per-task results")
++        if script_text:
++            if "audit_report.md" not in script_text or "Human-readable report saved to" not in script_text:
++                missing_parts.append("re-audit script does not persist human-readable report")
++            if "false positive" not in script_text or "unclear" not in script_text:
++                missing_parts.append("re-audit script does not expose human-readable classifications")
++        if tests_text:
++            if "audit_report.md" not in tests_text or "Classification: unclear" not in tests_text:
++                missing_parts.append("re-audit report path is not covered by targeted tests")
++        if report_text:
++            if "# Re-audit Report" not in report_text or "## Results" not in report_text:
++                missing_parts.append("audit_report.md does not contain saved re-audit report output")
++
+         if missing_parts:
+-            return {
+-                "result": "fail_fix",
+-                "task_class": task_class,
+-                "reason": "; ".join(missing_parts),
+-                "changed_files": changed_files,
+-                "changed_files_non_bookkeeping": non_bookkeeping,
+-                "bookkeeping_only": not non_bookkeeping,
+-                "evidence_files": [path for path in ["scripts/re_audit_tasks.py", "tests/test_re_audit_tasks.py", "audit_report.md"] if (project_dir / path).exists()],
+-            }
+-        return {
+-            "result": "pass",
+-            "task_class": task_class,
+-            "reason": "Re-audit reporting verification passed.",
+-            "changed_files": changed_files,
+-            "changed_files_non_bookkeeping": non_bookkeeping,
+-            "bookkeeping_only": not non_bookkeeping,
+-            "evidence_files": ["scripts/re_audit_tasks.py", "tests/test_re_audit_tasks.py", "audit_report.md"],
+-        }
+diff error
+```
+
+Previous diff snapshot: 39916 bytes
+
+## Tests
+```
+tests/test_operator_helpers.py::test_reopen_tasks_prefers_cwd_over_polluted_ralph_project_dir PASSED [ 78%]
+tests/test_operator_helpers.py::test_explain_task_prefers_cwd_over_polluted_ralph_project_dir PASSED [ 79%]
+tests/test_operator_helpers.py::test_bot_smoke_check_collects_help_output PASSED [ 80%]
+tests/test_operator_helpers.py::test_bot_smoke_check_reports_send_failure PASSED [ 80%]
+tests/test_operator_helpers.py::test_bot_smoke_check_resolve_project_dir_prefers_cwd PASSED [ 81%]
+tests/test_re_audit_tasks.py::test_reaudit_dry_run_classifies_obvious_false_positive PASSED [ 81%]
+tests/test_re_audit_tasks.py::test_reaudit_command_alias_handler_counts_as_verified_done PASSED [ 82%]
+tests/test_re_audit_tasks.py::test_reaudit_missing_command_still_becomes_false_positive PASSED [ 82%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_updates_tasks_for_strong_case PASSED [ 83%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_false_positive_keeps_reason_and_clears_stale_latest_run_truth PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_ambiguous_case_becomes_needs_human_review PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_report_stays_task_scoped PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_verified_case_becomes_verified_done PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_partial_case_is_reported PASSED [ 86%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_partial_and_needs_human_review PASSED [ 86%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_tasks_already_aligned_to_verified_done PASSED [ 87%]
+tests/test_re_audit_tasks.py::test_next_task_still_only_picks_pending PASSED [ 88%]
+tests/test_run_eval.py::test_load_fixture_reads_basic_eval_source PASSED [ 88%]
+tests/test_run_eval.py::test_evaluate_fixture_applies_bounded_limit PASSED [ 89%]
+tests/test_run_eval.py::test_run_eval_cli_emits_json_result PASSED       [ 89%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_full_tasks PASSED [ 90%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_minimal_tasks PASSED [ 90%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_priority_uses_default PASSED [ 91%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_dependencies_uses_default PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_timeout_uses_default PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_completed_at PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_required_fields_exist PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_empty_tasks_file PASSED [ 94%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_no_tasks_key PASSED   [ 94%]
+tests/test_verify_task_closure.py::test_bookkeeping_only_diff_blocks_implementation_task PASSED [ 95%]
+tests/test_verify_task_closure.py::test_missing_script_file_blocks_closure PASSED [ 96%]
+tests/test_verify_task_closure.py::test_missing_command_handler_blocks_closure PASSED [ 96%]
+tests/test_verify_task_closure.py::test_command_alias_handler_counts_as_valid_runtime_evidence PASSED [ 97%]
+tests/test_verify_task_closure.py::test_missing_template_file_blocks_closure PASSED [ 97%]
+tests/test_verify_task_closure.py::test_docs_only_task_can_pass_with_docs_evidence PASSED [ 98%]
+tests/test_verify_task_closure.py::test_tests_only_task_requires_actual_test_evidence PASSED [ 98%]
+tests/test_verify_task_closure.py::test_reaudit_reporting_task_passes_with_saved_report_evidence PASSED [ 99%]
+tests/test_verify_task_closure.py::test_generic_implementation_task_still_fails_on_report_and_state_files_only PASSED [100%]
+
+================== 176 passed, 1 skipped in 681.04s (0:11:21) ==================
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.
+deprecated: `[features].web_search_request` is deprecated because web search is enabled by default.
+Set `web_search` to `"live"`, `"cached"`, or `"disabled"` at the top level (or under a profile) in config.toml if you want to override it.
+codex
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R13-01","summary":"Из diff видно обновление только packaged-копий; доказательств синхронизации root и packaged ресурсов и механизма против будущего drift нет.","quality_score":62,"issues":["По представленному diff не подтверждён ключевой критерий паритета между root и packaged копиями trust-critical файлов: изменены `src/ralph/resources/...`, но не показаны соответствующие root-файлы или автоматическая проверка их идентичности."],"fix_instructions":"Добавь минимальный механизм паритета для trust-critical ресурсов: либо синхронизируй root-копии с изменёнными `src/ralph/resources/...` файлами, либо введи тест/проверку, которая сравнивает содержимое root и packaged версий `scripts/extract_json.py`, `scripts/verify_task_closure.py`, `scripts/models.py`, `scripts/ralph_bot.py` и `templates/AGENTS_CODER.md` и падает при расхождении.","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+tokens used
+27,046
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R13-01","summary":"Из diff видно обновление только packaged-копий; доказательств синхронизации root и packaged ресурсов и механизма против будущего drift нет.","quality_score":62,"issues":["По представленному diff не подтверждён ключевой критерий паритета между root и packaged копиями trust-critical файлов: изменены `src/ralph/resources/...`, но не показаны соответствующие root-файлы или автоматическая проверка их идентичности."],"fix_instructions":"Добавь минимальный механизм паритета для trust-critical ресурсов: либо синхронизируй root-копии с изменёнными `src/ralph/resources/...` файлами, либо введи тест/проверку, которая сравнивает содержимое root и packaged версий `scripts/extract_json.py`, `scripts/verify_task_closure.py`, `scripts/models.py`, `scripts/ralph_bot.py` и `templates/AGENTS_CODER.md` и падает при расхождении.","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON

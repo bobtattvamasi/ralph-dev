@@ -2910,7 +2910,9 @@
       "dependencies": [
         "R13-06"
       ],
-      "status": "pending"
+      "status": "verified_done",
+      "completed_at": "2026-03-31T06:17:50.010675+00:00",
+      "revision_notes": "Retry produced identical diff to prior attempt"
     },
     {
       "id": "R13-02",
@@ -3008,7 +3010,8 @@
         "Shell script remains behaviorally unchanged for supported flows"
       ],
       "dependencies": [],
-      "status": "pending"
+      "status": "verified_done",
+      "completed_at": "2026-03-31T05:52:15.044659+00:00"
     },
     {
       "id": "R13-07",
@@ -3028,6 +3031,23 @@
       "dependencies": [
         "R13-01"
       ],
+      "status": "pending"
+    },
+    {
+      "id": "BUG-05",
+      "phase": "BUG",
+      "category": "bugfix",
+      "priority": "high",
+      "complexity": "moderate",
+      "title": "Idempotent retry guard false-blocks tasks where attempt 1 already succeeded",
+      "description": "When coder attempt 1 makes real changes but lead says fix, and attempt 2 correctly makes zero changes (because work is already done), ralph.sh idempotent_retry guard compares the two diffs, sees both are empty (attempt 1 was reset), and blocks the task. This prevents legitimate already-done tasks from closing. Found during R13-01 auto execution. Root cause: ralph.sh compares post-reset diffs instead of checking whether acceptance criteria are met. See idempotent retry guard around ralph.sh retry diff comparison logic.",
+      "acceptance_criteria": [
+        "Idempotent retry guard does not block when attempt N makes 0 changes but prior attempt made real changes that were reset",
+        "Guard still blocks genuine infinite loops where coder repeats identical failing changes",
+        "Test covers: attempt 1 changes files + lead fix + attempt 2 no changes = should NOT block",
+        "Test covers: attempt 1 and attempt 2 both make identical wrong changes = should block"
+      ],
+      "dependencies": [],
       "status": "pending"
     }
   ]
