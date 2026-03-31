@@ -2907,7 +2907,9 @@
         "Packaged coder template includes local-first discipline",
         "A parity test or sync mechanism prevents future drift"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "R13-06"
+      ],
       "status": "pending"
     },
     {
@@ -2925,7 +2927,9 @@
         "progress.md appends are atomic or serialized",
         "Regression coverage exists for concurrent control/state/task update scenarios"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "R13-03"
+      ],
       "status": "pending"
     },
     {
@@ -2943,7 +2947,9 @@
         "Verifier and re-audit reuse a single task classification path",
         "Operator explanation reuses scheduler runnable logic"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "R13-01"
+      ],
       "status": "pending"
     },
     {
@@ -2961,7 +2967,9 @@
         "Notification failures are visible in logs without crashing runtime",
         "Crash-recovery failures in bot paths are surfaced for debugging"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "R13-01"
+      ],
       "status": "pending"
     },
     {
@@ -2979,7 +2987,11 @@
         "Memory and progress update helpers have direct tests",
         "Focused tests cover handoff helpers, human comment injection, lead JSON parsing/validation, verifier failure paths, and benchmark helper edge cases"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "R13-02",
+        "R13-04",
+        "R13-07"
+      ],
       "status": "pending"
     },
     {
@@ -3013,7 +3025,9 @@
         "Article-generation timeout is centralized and configurable",
         "No behavior regression for normal operator flows"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "R13-01"
+      ],
       "status": "pending"
     }
   ]
