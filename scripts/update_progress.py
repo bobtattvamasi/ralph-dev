@@ -1,34 +1,27 @@
 #!/usr/bin/env python3
 """Append entry to progress.md."""
-import os
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
-
-def get_project_dir() -> Path:
-    """Get project directory from env or default to script parent."""
-    env = os.environ.get("RALPH_PROJECT_DIR")
-    if env:
-        return Path(env)
-    return Path(__file__).parent.parent
-
-
-PROJECT_DIR = get_project_dir()
-PROGRESS_FILE = PROJECT_DIR / "progress.md"
+try:
+    from ralph_common import resolve_project_dir
+except ImportError:
+    from scripts.ralph_common import resolve_project_dir
 
 
 def main():
     if len(sys.argv) < 3:
         print("Usage: update_progress.py <task_id> <note>")
         sys.exit(1)
+    project_dir = resolve_project_dir(script_path=__file__)
+    progress_file = project_dir / "progress.md"
     task_id = sys.argv[1]
     note = " ".join(sys.argv[2:])
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     entry = f"- **{task_id}** ({ts}): {note}\n"
-    content = PROGRESS_FILE.read_text(encoding="utf-8") if PROGRESS_FILE.exists() else ""
+    content = progress_file.read_text(encoding="utf-8") if progress_file.exists() else ""
     content += entry
-    PROGRESS_FILE.write_text(content, encoding="utf-8")
+    progress_file.write_text(content, encoding="utf-8")
     print(f"Progress updated: {task_id}")
 
 

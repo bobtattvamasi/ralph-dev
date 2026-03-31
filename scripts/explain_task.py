@@ -4,40 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-from pathlib import Path
 
-
-COMPLETED_STATUSES = {"done", "verified_done"}
-
-
-def resolve_project_dir(explicit: str | None = None) -> Path:
-    if explicit:
-        return Path(explicit).resolve()
-    cwd = Path.cwd()
-    if (cwd / "tasks.json").exists():
-        return cwd
-    env = os.environ.get("RALPH_PROJECT_DIR")
-    if env:
-        return Path(env).resolve()
-    return cwd
-
-
-def load_tasks(tasks_file: Path) -> dict:
-    return json.loads(tasks_file.read_text(encoding="utf-8"))
-
-
-def runnable_reason(task: dict, tasks: list[dict]) -> tuple[bool, str]:
-    status = str(task.get("status", ""))
-    if status != "pending":
-        return False, f"status={status}"
-
-    done_ids = {item.get("id") for item in tasks if item.get("status") in COMPLETED_STATUSES}
-    unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
-    if unmet:
-        return False, "unmet dependencies: " + ", ".join(unmet)
-    return True, "pending and dependencies satisfied"
+try:
+    from ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
+except ImportError:
+    from scripts.ralph_common import load_tasks_data, resolve_project_dir, runnable_reason
 
 
 def suggested_next_action(task: dict, is_runnable: bool, reason: str, re_audit: dict) -> str:
@@ -73,8 +45,7 @@ def main() -> int:
     from audit_artifact import AUDIT_DIR, format_audit_summary, load_artifact
     from re_audit_tasks import classify_task
 
-    tasks_file = project_dir / "tasks.json"
-    data = load_tasks(tasks_file)
+    data = load_tasks_data(project_dir)
     tasks = data.get("tasks", [])
     task = next((item for item in tasks if item.get("id") == args.task_id), None)
     if task is None:

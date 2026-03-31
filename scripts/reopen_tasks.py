@@ -4,22 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 from datetime import datetime, timezone
-from pathlib import Path
 
-
-def resolve_project_dir(explicit: str | None = None) -> Path:
-    if explicit:
-        return Path(explicit).resolve()
-    cwd = Path.cwd()
-    if (cwd / "tasks.json").exists():
-        return cwd
-    env = os.environ.get("RALPH_PROJECT_DIR")
-    if env:
-        return Path(env).resolve()
-    return cwd
+try:
+    from ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
+except ImportError:
+    from scripts.ralph_common import load_tasks_data, resolve_project_dir, save_tasks_data
 
 
 def main() -> int:
@@ -36,9 +26,7 @@ def main() -> int:
     args = parser.parse_args()
 
     project_dir = resolve_project_dir(args.project_dir)
-    tasks_file = project_dir / "tasks.json"
-
-    data = json.loads(tasks_file.read_text(encoding="utf-8"))
+    data = load_tasks_data(project_dir)
     task = next((item for item in data.get("tasks", []) if item.get("id") == args.task), None)
     if task is None:
         print(f"Task not found: {args.task}")
@@ -54,7 +42,7 @@ def main() -> int:
     previous = str(task.get("revision_notes", "")).strip()
     task["revision_notes"] = f"{previous}\n{entry}".strip() if previous else entry
 
-    tasks_file.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    save_tasks_data(project_dir, data)
     print(f"Updated {args.task}: {old_status} -> {args.to_status}")
     return 0
 

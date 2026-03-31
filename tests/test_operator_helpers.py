@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 import scripts.bot_smoke_check as smoke
+from scripts.ralph_common import consume_control_comment, load_tasks_data, save_tasks_data, write_control_data
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -307,3 +308,39 @@ def test_bot_smoke_check_resolve_project_dir_prefers_cwd(tmp_path: Path, monkeyp
     monkeypatch.chdir(project_dir)
 
     assert smoke.resolve_project_dir() == project_dir
+
+
+def test_shared_tasks_io_round_trips_validated_payload(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+    data = load_tasks_data(project_dir)
+
+    data["tasks"].append(
+        {
+            "id": "T04",
+            "phase": "R1",
+            "title": "New task",
+            "description": "Shared save path",
+            "status": "pending",
+            "dependencies": [],
+        }
+    )
+    save_tasks_data(project_dir, data)
+
+    reloaded = load_tasks_data(project_dir)
+    assert [task["id"] for task in reloaded["tasks"]] == ["T01", "T02", "T03", "T04"]
+
+
+def test_shared_control_io_normalizes_and_consumes_comment(tmp_path: Path) -> None:
+    project_dir = create_project(tmp_path)
+
+    write_control_data(project_dir, "comment", "Operator note")
+    control = json.loads((project_dir / "ralph_control.json").read_text(encoding="utf-8"))
+
+    assert control["action"] == "comment"
+    assert control["comment"] == "Operator note"
+    assert "timestamp" in control
+    assert consume_control_comment(project_dir) == "Operator note"
+
+    cleared = json.loads((project_dir / "ralph_control.json").read_text(encoding="utf-8"))
+    assert cleared["action"] == "comment"
+    assert cleared["comment"] == ""
