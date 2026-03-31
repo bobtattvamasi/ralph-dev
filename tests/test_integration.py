@@ -1,4 +1,3 @@
-import pytest
 from __future__ import annotations
 
 import json
@@ -7,6 +6,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+import pytest
 
 from scripts.ralph_common import DEFAULT_CODER_TIMEOUT_SEC
 
