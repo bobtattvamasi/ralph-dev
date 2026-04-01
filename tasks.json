@@ -3056,6 +3056,101 @@
       ],
       "dependencies": [],
       "status": "pending"
+    },
+    {
+      "id": "R14-01",
+      "phase": "R14",
+      "title": "Fix bookkeeping-only closure gate regression",
+      "description": "test_ralph_blocks_bookkeeping_only_closure (currently xfail) expects that when coder produces only bookkeeping file changes (progress.md, tasks.json, etc), verification returns fail_fix and task is blocked. The verification gate in ralph.sh works correctly (lines 4167-4175) but the mock codex test flow bypasses it. Root cause: mock lead auto-approves, verification runs, returns fail_fix, but retry loop with mock codex produces identical diff -> idempotent retry blocks with wrong reason. Fix the test mock flow OR fix the verification gate timing to catch bookkeeping-only before lead review.",
+      "status": "pending",
+      "priority": "high",
+      "risk": "medium",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "test_ralph_blocks_bookkeeping_only_closure passes (remove xfail)",
+        "Task status is 'blocked' when only bookkeeping files changed",
+        "Audit artifact shows verification.result = fail_fix",
+        "No other test regressions"
+      ]
+    },
+    {
+      "id": "R14-02",
+      "phase": "R14",
+      "title": "Fix audit review.parsed always empty",
+      "description": "In .ralph/audit/*.json, review.parsed is always {} even when review.raw contains valid BEGIN_RALPH_REVIEW_JSON...END_RALPH_REVIEW_JSON. The write_task_audit_artifact function in ralph.sh constructs the audit JSON but doesn't extract parsed review fields from REVIEW_JSON variable into the parsed structure. Fix so decision, quality_score, issues, fix_instructions are preserved structurally.",
+      "status": "pending",
+      "priority": "high",
+      "risk": "low",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "After task approval, .ralph/audit/<TASK>.json review.parsed contains decision, quality_score, summary",
+        "After task fix/block, review.parsed contains decision and fix_instructions",
+        "Existing test_audit_artifact tests still pass",
+        "Add test verifying review.parsed is populated"
+      ]
+    },
+    {
+      "id": "R14-03",
+      "phase": "R14",
+      "title": "Fix metrics.csv schema drift",
+      "description": "logs/metrics.csv header doesn't include web_search_policy column but new rows do, causing csv.DictReader to put extra field in None key. Add header migration: on first write, check if header matches expected columns, rewrite header if needed. Add row/header consistency check in log_metrics function.",
+      "status": "pending",
+      "priority": "medium",
+      "risk": "low",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "log_metrics writes header matching all columns including web_search_policy",
+        "Existing metrics.csv gets header migrated on next write",
+        "csv.DictReader produces no None keys",
+        "Add test for header migration"
+      ]
+    },
+    {
+      "id": "R14-04",
+      "phase": "R14",
+      "title": "Add phase outcome report after auto/phase runs",
+      "description": "After ./ralph.sh phase or auto completes, generate a structured phase outcome artifact in .ralph/reports/<PHASE>_<DATE>.json with: tasks attempted, tasks completed, tasks blocked, total tokens, total cost, duration, test results summary, any truth mismatches between tasks.json and audit artifacts.",
+      "status": "pending",
+      "priority": "medium",
+      "risk": "low",
+      "dependencies": [
+        "R14-02"
+      ],
+      "acceptance_criteria": [
+        ".ralph/reports/ directory created if missing",
+        "Phase report JSON written after phase/auto completion",
+        "Report contains task_results array with id, status, attempts, duration",
+        "Report contains aggregate stats: total_tokens, total_cost, success_rate",
+        "Add test for report generation"
+      ]
+    },
+    {
+      "id": "R14-05",
+      "phase": "R14",
+      "title": "Resolve remaining R12 blocked tasks",
+      "description": "R12 has 2 blocked tasks. Investigate what blocks them, determine if they are still relevant or should be marked false_positive/partial. If relevant, unblock and fix.",
+      "status": "pending",
+      "priority": "low",
+      "risk": "low",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "All R12 tasks have terminal status (verified_done, false_positive, or partial)",
+        "No R12 tasks remain in blocked status"
+      ]
+    },
+    {
+      "id": "R14-06",
+      "phase": "R14",
+      "title": "Resolve remaining BUG phase pending task",
+      "description": "BUG phase has 1 pending task. Investigate, execute or close it.",
+      "status": "pending",
+      "priority": "low",
+      "risk": "low",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "BUG phase has no pending tasks",
+        "All BUG tasks have terminal status"
+      ]
     }
   ]
 }
