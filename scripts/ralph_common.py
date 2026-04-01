@@ -456,6 +456,8 @@ def normalize_path(path: str) -> str:
 
 
 def is_bookkeeping_file(path: str) -> bool:
+    if path.endswith(".lock"):
+        return True
     normalized = normalize_path(path)
     if normalized in BOOKKEEPING_EXACT:
         return True

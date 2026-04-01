@@ -2933,8 +2933,17 @@ try:
 except Exception:
     print('')
 " 2>/dev/null || echo "")
+    VERIFICATION_BOOKKEEPING_ONLY=$(echo "$VERIFICATION_JSON" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print('true' if d.get('bookkeeping_only') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
     if [ "$verifier_failed" -eq 1 ]; then
         VERIFICATION_NON_BOOKKEEPING=""
+        VERIFICATION_BOOKKEEPING_ONLY="false"
     fi
 }
 
@@ -4194,12 +4203,31 @@ print('?')
                 fi
 
                 if [ "${VERIFICATION_RESULT:-needs_human_review}" = "fail_fix" ]; then
-                    FIX_INSTRUCTIONS="$VERIFICATION_REASON"
-                    printf '%s' "$FIX_INSTRUCTIONS" > "$RETRY_FEEDBACK_FILE"
-                    printf '%s' "verification" > "$RETRY_FEEDBACK_SOURCE_FILE"
-                    FIX_RETRY=$((FIX_RETRY+1))
-                    notify "🔧 $TASK_ID verification blocked closure ($FIX_RETRY/$MAX_FIX_RETRIES)"
-                    log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: $FIX_INSTRUCTIONS"
+                    if [ "${VERIFICATION_BOOKKEEPING_ONLY:-false}" = "true" ]; then
+                        REASON="$VERIFICATION_REASON"
+                        TASK_DURATION=$(( $(date +%s) - TASK_START ))
+                        log "🛑 Verification blocked closure without retry: $REASON"
+                        log_metrics "failed" "true" "false"
+                        log "📋 TASK_FAIL task_id=$TASK_ID status=verification runtime_success=true verified_success=false reason=\"$REASON\" attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                        RALPH_AUDIT_REASON="$REASON" write_task_audit_artifact "blocked" "true" "false" "$TASK_DURATION"
+                        AUDIT_WRITTEN=true
+                        if [ "${TASK_RISK:-medium}" = "high" ]; then
+                            alert_human "$REASON"
+                            TASK_ALERTED=true
+                            TASK_DONE=true
+                        else
+                            defer_blocked_task "$REASON"
+                        fi
+                        TASK_BLOCKED=true
+                        break
+                    else
+                        FIX_INSTRUCTIONS="$VERIFICATION_REASON"
+                        printf '%s' "$FIX_INSTRUCTIONS" > "$RETRY_FEEDBACK_FILE"
+                        printf '%s' "verification" > "$RETRY_FEEDBACK_SOURCE_FILE"
+                        FIX_RETRY=$((FIX_RETRY+1))
+                        notify "🔧 $TASK_ID verification blocked closure ($FIX_RETRY/$MAX_FIX_RETRIES)"
+                        log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: $FIX_INSTRUCTIONS"
+                    fi
                 elif [ "${VERIFICATION_RESULT:-needs_human_review}" = "needs_human_review" ]; then
                     REASON="$VERIFICATION_REASON"
                     TASK_DURATION=$(( $(date +%s) - TASK_START ))
