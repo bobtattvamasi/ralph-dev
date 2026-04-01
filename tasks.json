@@ -1600,7 +1600,7 @@
       "phase": "R8",
       "priority": "high",
       "complexity": "simple",
-      "status": "partial",
+      "status": "false_positive",
       "dependencies": [
         "R8-02",
         "R8-03"
@@ -2416,7 +2416,7 @@
         "Regression tests cover narrow prompt path selection for a simple exact-task run"
       ],
       "dependencies": [],
-      "status": "--status",
+      "status": "false_positive",
       "completed_at": null,
       "revision_notes": "verified_done",
       "timeout": 300,
@@ -2439,7 +2439,7 @@
         "Regression tests cover that the narrow prompt path no longer embeds the duplicate full-test instruction while existing task-mode behavior stays green"
       ],
       "dependencies": [],
-      "status": "--status",
+      "status": "false_positive",
       "completed_at": null,
       "revision_notes": "verified_done",
       "timeout": 300,
@@ -2461,7 +2461,7 @@
         "Verifier, audit, handoff semantics, scheduler, and timeout/backoff policy remain unchanged"
       ],
       "dependencies": [],
-      "status": "--status",
+      "status": "false_positive",
       "completed_at": null,
       "revision_notes": "verified_done",
       "timeout": 300,
@@ -2709,7 +2709,7 @@
         "Tests mock LLMProvider"
       ],
       "dependencies": [],
-      "status": "blocked",
+      "status": "false_positive",
       "completed_at": null,
       "revision_notes": "Modular LLM backend — defer after R12-01 MVP",
       "timeout": 300,
@@ -2754,7 +2754,7 @@
       "dependencies": [
         "R12-01b"
       ],
-      "status": "blocked",
+      "status": "false_positive",
       "completed_at": null,
       "revision_notes": "Future: after modular backend",
       "timeout": 300,
@@ -3062,7 +3062,7 @@
       "phase": "R14",
       "title": "Fix bookkeeping-only closure gate regression",
       "description": "test_ralph_blocks_bookkeeping_only_closure (currently xfail) expects that when coder produces only bookkeeping file changes (progress.md, tasks.json, etc), verification returns fail_fix and task is blocked. The verification gate in ralph.sh works correctly (lines 4167-4175) but the mock codex test flow bypasses it. Root cause: mock lead auto-approves, verification runs, returns fail_fix, but retry loop with mock codex produces identical diff -> idempotent retry blocks with wrong reason. Fix the test mock flow OR fix the verification gate timing to catch bookkeeping-only before lead review.",
-      "status": "pending",
+      "status": "verified_done",
       "priority": "high",
       "risk": "medium",
       "dependencies": [],
@@ -3071,7 +3071,9 @@
         "Task status is 'blocked' when only bookkeeping files changed",
         "Audit artifact shows verification.result = fail_fix",
         "No other test regressions"
-      ]
+      ],
+      "completed_at": "2026-04-01T17:46:33.614907+00:00",
+      "revision_notes": "verified_done"
     },
     {
       "id": "R14-02",
