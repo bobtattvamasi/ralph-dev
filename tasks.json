@@ -2998,7 +2998,9 @@
         "R13-04",
         "R13-07"
       ],
-      "status": "pending"
+      "status": "blocked",
+      "completed_at": null,
+      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
     },
     {
       "id": "R13-06",

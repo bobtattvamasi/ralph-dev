@@ -1,0 +1,1422 @@
+OpenAI Codex v0.117.0 (research preview)
+--------
+workdir: /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 019d452c-bb57-71b2-8f27-38bdc5d557db
+--------
+user
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R13-05",
+  "phase": "R13",
+  "category": "tests",
+  "priority": "high",
+  "complexity": "moderate",
+  "title": "Add coverage for untested mutators and trust helpers",
+  "description": "Close high and medium test gaps from BRITTLENESS_AUDIT.md covering scripts/auto_update.py:1, scripts/ralph_notify.py:1, scripts/check_prompt_budgets.py:1, scripts/update_memory.py:1, scripts/update_progress.py:1, and key ralph.sh helpers at 432, 480, 505, 2214, 2663, 2688, 2935, 3388, and 3504.",
+  "acceptance_criteria": [
+    "Legacy task/progress mutators have explicit tests or are safely deprecated",
+    "Telegram notifier has mocked transport coverage",
+    "Prompt budget validation has fixture-driven coverage",
+    "Memory and progress update helpers have direct tests",
+    "Focused tests cover handoff helpers, human comment injection, lead JSON parsing/validation, verifier failure paths, and benchmark helper edge cases"
+  ],
+  "dependencies": [
+    "R13-02",
+    "R13-04",
+    "R13-07"
+  ],
+  "status": "pending"
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
+index 6d7ab50..31d008c 100755
+--- a/src/ralph/resources/ralph.sh
++++ b/src/ralph/resources/ralph.sh
+@@ -20,9 +20,6 @@ else
+     exit 1
+ fi
+ 
+-cd "$PROJECT_DIR"
+-export RALPH_PROJECT_DIR="$PROJECT_DIR"
+-
+ kill_tree() {
+     local pid="${1:-}"
+ 
+@@ -142,8 +139,6 @@ handle_interrupt() {
+     cleanup
+     exit 130
+ }
+-trap cleanup EXIT
+-trap handle_interrupt INT TERM
+ 
+ MAX_FIX_RETRIES=2
+ MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
+@@ -164,12 +159,9 @@ MINI_MODEL=""
+ SESSION_TOKENS=0
+ SESSION_TASKS=0
+ LOG_DIR="$PROJECT_DIR/logs"
+-mkdir -p "$LOG_DIR"
+ RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
+ METRICS_FILE="$LOG_DIR/metrics.csv"
+-[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
+ PHASE_TIMINGS_FILE="$LOG_DIR/task_phase_timings.csv"
+-[ ! -f "$PHASE_TIMINGS_FILE" ] && echo "timestamp,task_id,attempt,mode,phase,duration_s" > "$PHASE_TIMINGS_FILE"
+ FINAL_STATE_STATUS="idle"
+ FINAL_STATE_STEP="idle"
+ FINAL_STATE_MESSAGE="All tasks complete"
+@@ -177,8 +169,6 @@ FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
+ QUEUE_EXIT_LOG="🎉 All tasks complete!"
+ FINAL_EXIT_CODE=0
+ REASON=""
+-find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
+-cleanup_orphan_coder_outputs
+ 
+ is_single_task_mode() {
+     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
+@@ -346,6 +336,7 @@ prepare_coder_prompt_for_task_json() {
+     local previous_test_output=""
+     local task_complexity=""
+     local web_search_policy="default"
++    local inherited_web_search_policy="${RALPH_WEB_SEARCH_POLICY:-}"
+ 
+     PROJECT_AGENTS=""
+     PROJECT_ARCHITECTURE=""
+@@ -359,8 +350,11 @@ prepare_coder_prompt_for_task_json() {
+     CODER_PROMPT_BUDGET=0
+     task_complexity=$(extract_task_field "$task_json" "print(task.get('complexity', 'moderate'))" || echo "moderate")
+ 
+-    # Web search policy: simple tasks use local-first (no web search)
+-    if [ "$task_complexity" = "simple" ]; then
++    # Respect an explicit external policy override before applying task defaults.
++    if [ -n "$inherited_web_search_policy" ] && [ "$inherited_web_search_policy" != "default" ]; then
++        web_search_policy="$inherited_web_search_policy"
++        log "🔍 Web search policy preserved from environment: $web_search_policy"
++    elif [ "$task_complexity" = "simple" ]; then
+         web_search_policy="disabled"
+         log "🔍 Web search disabled for simple task (local-first policy)"
+     fi
+@@ -466,13 +460,19 @@ for path in list(paths):
+ 
+ if command_tokens:
+     bot_path = project_dir / "scripts" / "ralph_bot.py"
+-    bot_text = read_text(bot_path)
+-    paths.add("scripts/ralph_bot.py")
+     packaged_bot = project_dir / "src" / "ralph" / "resources" / "scripts" / "ralph_bot.py"
++    routing_texts: list[str] = []
++    if bot_path.exists():
++        paths.add("scripts/ralph_bot.py")
++        routing_texts.append(read_text(bot_path))
+     if packaged_bot.exists():
+         paths.add("src/ralph/resources/scripts/ralph_bot.py")
++        routing_texts.append(read_text(packaged_bot))
++    routing_text = "\n".join(text for text in routing_texts if text)
+     for token in command_tokens:
+-        handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
++        handlers = set(command_candidate_handlers(token))
++        if routing_text:
++            handlers |= command_routed_handlers(routing_text, token)
+         for test_file in (project_dir / "tests").glob("test_*.py"):
+             test_text = read_text(test_file)
+             if f"/{token}" in test_text or any(handler in test_text for handler in handlers):
+@@ -505,7 +505,14 @@ handoff_empty_tree_hash() {
+ 
+ handoff_commit_parent_hash() {
+     local commit_hash="$1"
+-    git rev-parse "${commit_hash}^" 2>/dev/null || handoff_empty_tree_hash
++    local parent_hash=""
++
++    parent_hash=$(git rev-list --parents -n 1 "$commit_hash" 2>/dev/null | awk '{print $2}')
++    if [ -n "$parent_hash" ]; then
++        printf '%s\n' "$parent_hash"
++    else
++        handoff_empty_tree_hash
++    fi
+ }
+ 
+ handoff_latest_repo_candidate_commit() {
+@@ -595,19 +602,6 @@ handoff_unrelated_worktree_tracked_changes() {
+     done <<< "$tracked_paths"
+ }
+ 
+-# Prevent duplicate ralph instances
+-if { is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
+-    _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
+-    if [ -n "$_existing_pid" ] && kill -0 "$_existing_pid" 2>/dev/null; then
+-        echo "⚠️  Ralph already running (PID $_existing_pid). Aborting duplicate launch."
+-        exit 1
+-    fi
+-fi
+-if is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
+-    OWNS_MAIN_PID=1
+-    echo "$$" > "$PROJECT_DIR/ralph_main.pid"
+-fi
+-
+ log() {
+     local msg="[ralph] $(date +%H:%M:%S) $*"
+     echo "$msg"
+@@ -2896,11 +2890,16 @@ resolve_git_ref() {
+ }
+ 
+ run_task_closure_verification() {
++    local verifier_failed=0
++
+     PRE_CLOSURE_CHANGED_FILES_JSON=$(collect_preclosure_changed_files_json)
+-    VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
++    if ! VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
+         RALPH_PROJECT_DIR="$PROJECT_DIR" \
+         RALPH_CHANGED_FILES_JSON="$PRE_CLOSURE_CHANGED_FILES_JSON" \
+-        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>/dev/null || echo '{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}')
++        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>/dev/null); then
++        verifier_failed=1
++        VERIFICATION_JSON='{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}'
++    fi
+ 
+     VERIFICATION_RESULT=$(echo "$VERIFICATION_JSON" | python3 -c "
+ import sys, json
+@@ -2934,6 +2933,9 @@ try:
+ except Exception:
+     print('')
+ " 2>/dev/null || echo "")
++    if [ "$verifier_failed" -eq 1 ]; then
++        VERIFICATION_NON_BOOKKEEPING=""
++    fi
+ }
+ 
+ run_coder_agent() {
+@@ -3564,6 +3566,33 @@ print_final_report() {
+     print_task_progress_report
+ }
+ 
++if [ "${BASH_SOURCE[0]:-$0}" != "$0" ]; then
++    return 0
++fi
++
++cd "$PROJECT_DIR"
++export RALPH_PROJECT_DIR="$PROJECT_DIR"
++mkdir -p "$LOG_DIR"
++[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
++[ ! -f "$PHASE_TIMINGS_FILE" ] && echo "timestamp,task_id,attempt,mode,phase,duration_s" > "$PHASE_TIMINGS_FILE"
++find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
++cleanup_orphan_coder_outputs
++trap cleanup EXIT
++trap handle_interrupt INT TERM
++
++# Prevent duplicate ralph instances
++if { is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; } && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
++    _existing_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
++    if [ -n "$_existing_pid" ] && kill -0 "$_existing_pid" 2>/dev/null; then
++        echo "⚠️  Ralph already running (PID $_existing_pid). Aborting duplicate launch."
++        exit 1
++    fi
++fi
++if is_single_task_mode || [ "$MODE" = "phase" ] || [ "$MODE" = "auto" ]; then
++    OWNS_MAIN_PID=1
++    echo "$$" > "$PROJECT_DIR/ralph_main.pid"
++fi
++
+ if [ "$MODE" = "status" ]; then
+     print_status_report
+     exit 0
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+index 96e19df..c44162f 100644
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -659,6 +659,53 @@ def test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry(tmp_p
+     assert "limit=15000" in log_text
+ 
+ 
++def test_ralph_injects_human_comment_into_coder_prompt_and_consumes_it(tmp_path: Path) -> None:
++    project_dir, env = create_test_project(tmp_path)
++    prompt_file = tmp_path / "coder_prompt_human_comment.txt"
++    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
++    (project_dir / "ralph_control.json").write_text(
++        json.dumps({"action": "comment", "comment": "Keep the patch minimal and avoid repo-wide cleanup."}, indent=2),
++        encoding="utf-8",
++    )
++
++    result = subprocess.run(
++        [str(RALPH_SH), "task", "T01"],
++        cwd=project_dir,
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=45,
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    prompt = prompt_file.read_text(encoding="utf-8")
++    assert "## Human Comment (from project owner via Telegram)" in prompt
++    assert "Keep the patch minimal and avoid repo-wide cleanup." in prompt
++    control = json.loads((project_dir / "ralph_control.json").read_text(encoding="utf-8"))
++    assert control["comment"] == ""
++
++
++def test_ralph_injects_local_first_constraint_when_web_search_is_disabled(tmp_path: Path) -> None:
++    project_dir, env = create_test_project(tmp_path)
++    prompt_file = tmp_path / "coder_prompt_local_first.txt"
++    env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
++    env["RALPH_WEB_SEARCH_POLICY"] = "disabled"
++
++    result = subprocess.run(
++        [str(RALPH_SH), "task", "T01"],
++        cwd=project_dir,
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=45,
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    prompt = prompt_file.read_text(encoding="utf-8")
++    assert "Do NOT use web search. Search locally first with rg." in prompt
++    assert "Injected local-first prompt constraint" in result.stdout
++
++
+ def test_ralph_rejects_oversized_prompt(tmp_path: Path) -> None:
+     project_dir, env = create_test_project(tmp_path)
+     env["RALPH_CODER_PROMPT_MAX_TOKENS"] = "20"
+diff --git a/tests/test_mutator_scripts.py b/tests/test_mutator_scripts.py
+new file mode 100644
+index 0000000..3388cb4
+--- /dev/null
++++ b/tests/test_mutator_scripts.py
+@@ -0,0 +1,186 @@
++from __future__ import annotations
++
++import json
++import os
++import subprocess
++import sys
++import urllib.error
++import urllib.parse
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++import scripts.auto_update as auto_update
++import scripts.ralph_notify as ralph_notify
++import scripts.update_memory as update_memory
++
++
++ROOT = Path(__file__).resolve().parent.parent
++UPDATE_PROGRESS = ROOT / "scripts" / "update_progress.py"
++
++
++def make_project(tmp_path: Path) -> Path:
++    project_dir = tmp_path / "project"
++    (project_dir / "scripts").mkdir(parents=True)
++    (project_dir / ".ralph" / "memory").mkdir(parents=True)
++    (project_dir / "tasks.json").write_text(
++        json.dumps(
++            {
++                "version": 1,
++                "project": "mutator-tests",
++                "tasks": [
++                    {
++                        "id": "T01",
++                        "title": "Primary task",
++                        "status": "pending",
++                    },
++                    {
++                        "id": "T02",
++                        "title": "Dependent task",
++                        "status": "done",
++                        "dependencies": ["T01"],
++                        "completed_at": "2026-03-01",
++                    },
++                ],
++            },
++            indent=2,
++        )
++        + "\n",
++        encoding="utf-8",
++    )
++    (project_dir / "progress.md").write_text("# Progress\n\n", encoding="utf-8")
++    return project_dir
++
++
++def test_auto_update_marks_task_complete_resets_dependents_and_appends_progress(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    project_dir = make_project(tmp_path)
++    monkeypatch.setattr(auto_update, "__file__", str(project_dir / "scripts" / "auto_update.py"))
++
++    git_calls: list[list[str]] = []
++
++    def fake_run_git(_project_dir: Path, args: list[str]) -> SimpleNamespace:
++        git_calls.append(args)
++        return SimpleNamespace(returncode=0, stdout="", stderr="")
++
++    monkeypatch.setattr(auto_update, "run_git", fake_run_git)
++    monkeypatch.setattr(sys, "argv", ["auto_update.py", "T01", "verified_done", "Closed", "cleanly"])
++
++    rc = auto_update.main()
++
++    assert rc == 0
++    tasks = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))["tasks"]
++    task_map = {task["id"]: task for task in tasks}
++    assert task_map["T01"]["status"] == "verified_done"
++    assert task_map["T01"]["completed_at"]
++    assert task_map["T02"]["status"] == "pending"
++    assert "completed_at" not in task_map["T02"]
++    progress = (project_dir / "progress.md").read_text(encoding="utf-8")
++    assert "### " in progress
++    assert "Завершена задача T01" in progress
++    assert "- Статус: verified_done" in progress
++    assert "- Комментарий: Closed cleanly" in progress
++    assert git_calls == [["add", "tasks.json", "progress.md"], ["commit", "-m", "feat(T01): auto update status and progress"]]
++
++
++def test_auto_update_rejects_missing_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
++    project_dir = make_project(tmp_path)
++    monkeypatch.setattr(auto_update, "__file__", str(project_dir / "scripts" / "auto_update.py"))
++    monkeypatch.setattr(sys, "argv", ["auto_update.py", "T99", "done"])
++
++    rc = auto_update.main()
++    captured = capsys.readouterr()
++
++    assert rc == 1
++    assert "Task not found: T99" in captured.err
++
++
++def test_update_memory_prepends_latest_entry_and_keeps_only_five(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    project_dir = make_project(tmp_path)
++    recent_path = project_dir / ".ralph" / "memory" / "recent.md"
++    recent_path.write_text(
++        "# Recent Task History\n\n"
++        "### T05: Older 5\n- Files: e.py\n- Result: approved\n- Notes: fifth\n- Time: 2026-03-05T00:00:00Z\n\n"
++        "### T04: Older 4\n- Files: d.py\n- Result: approved\n- Notes: fourth\n- Time: 2026-03-04T00:00:00Z\n\n"
++        "### T03: Older 3\n- Files: c.py\n- Result: approved\n- Notes: third\n- Time: 2026-03-03T00:00:00Z\n\n"
++        "### T02: Older 2\n- Files: b.py\n- Result: approved\n- Notes: second\n- Time: 2026-03-02T00:00:00Z\n\n"
++        "### T01: Older 1\n- Files: a.py\n- Result: approved\n- Notes: first\n- Time: 2026-03-01T00:00:00Z\n",
++        encoding="utf-8",
++    )
++    monkeypatch.setenv("RALPH_PROJECT_DIR", str(project_dir))
++    monkeypatch.setattr(sys, "argv", ["update_memory.py", "T06", "Newest", "scripts/new.py", "approved", "Fresh", "note"])
++
++    rc = update_memory.main()
++
++    assert rc == 0
++    recent = recent_path.read_text(encoding="utf-8")
++    assert recent.startswith("# Recent Task History\n\n### T06: Newest")
++    assert "- Files: scripts/new.py" in recent
++    assert "- Result: approved" in recent
++    assert "- Notes: Fresh note" in recent
++    assert recent.count("### ") == 5
++    assert "### T01: Older 1" not in recent
++
++
++def test_update_progress_appends_timestamped_entry_using_project_env(tmp_path: Path) -> None:
++    project_dir = make_project(tmp_path)
++    result = subprocess.run(
++        [sys.executable, str(UPDATE_PROGRESS), "T01", "Operator note"],
++        cwd=project_dir,
++        env={**os.environ, "RALPH_PROJECT_DIR": str(project_dir)},
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    assert "Progress updated: T01" in result.stdout
++    progress = (project_dir / "progress.md").read_text(encoding="utf-8")
++    assert "**T01**" in progress
++    assert "Operator note" in progress
++    assert "UTC" in progress
++
++
++def test_ralph_notify_posts_html_message_with_timeout_and_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
++    captured: dict[str, object] = {}
++
++    def fake_urlopen(request, timeout):  # type: ignore[no-untyped-def]
++        captured["url"] = request.full_url
++        captured["payload"] = request.data.decode()
++        captured["timeout"] = timeout
++        return object()
++
++    monkeypatch.setattr(ralph_notify, "TOKEN", "token")
++    monkeypatch.setattr(ralph_notify, "CHAT_ID", "chat")
++    monkeypatch.setattr(ralph_notify, "TELEGRAM_TIMEOUT_SEC", 17)
++    monkeypatch.setattr(ralph_notify.urllib.request, "urlopen", fake_urlopen)
++
++    ralph_notify.send("x" * 5000)
++    payload = urllib.parse.parse_qs(str(captured["payload"]))
++
++    assert captured["url"] == "https://api.telegram.org/bottoken/sendMessage"
++    assert payload["chat_id"] == ["chat"]
++    assert payload["parse_mode"] == ["HTML"]
++    assert len(payload["text"][0]) == 4096
++    assert captured["timeout"] == 17
++
++
++def test_ralph_notify_logs_transport_errors(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
++    monkeypatch.setattr(ralph_notify, "TOKEN", "token")
++    monkeypatch.setattr(ralph_notify, "CHAT_ID", "chat")
++
++    def fake_urlopen(_request, timeout):  # type: ignore[no-untyped-def]
++        raise urllib.error.URLError(f"timeout={timeout}")
++
++    monkeypatch.setattr(ralph_notify.urllib.request, "urlopen", fake_urlopen)
++
++    with caplog.at_level("ERROR"):
++        ralph_notify.send("ping")
++
++    assert "Notification failed" in caplog.text
+diff --git a/tests/test_prompt_budgets_script.py b/tests/test_prompt_budgets_script.py
+new file mode 100644
+index 0000000..d6860a0
+--- /dev/null
++++ b/tests/test_prompt_budgets_script.py
+@@ -0,0 +1,44 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest
++
++import scripts.check_prompt_budgets as prompt_budgets
++
++
++@pytest.mark.parametrize(
++    ("profile", "minimum_limit"),
++    [
++        ("narrow", 15000),
++        ("broad", 25000),
++    ],
++)
++def test_prompt_budget_runner_cases_stay_under_expected_limit(tmp_path: Path, profile: str, minimum_limit: int) -> None:
++    runner_path = prompt_budgets.build_prompt_runner_script()
++    try:
++        tokens, expected_limit = prompt_budgets.run_case(runner_path, tmp_path, profile)
++    finally:
++        runner_path.unlink(missing_ok=True)
++
++    assert expected_limit == minimum_limit
++    assert tokens > 0
++    assert tokens < expected_limit
++
++
++def test_create_test_project_copies_required_prompt_context(tmp_path: Path) -> None:
++    project_dir = prompt_budgets.create_test_project(tmp_path)
++
++    for relative_path in (
++        "AGENTS.md",
++        "ARCHITECTURE.md",
++        "MEMORY_SYSTEM.md",
++        "AGENTS_CODER.md",
++        "AGENTS_LEAD.md",
++        ".ralph/memory/core.md",
++        ".ralph/memory/recent.md",
++    ):
++        assert (project_dir / relative_path).exists(), relative_path
++
++    assert (project_dir / "src" / "prompt_builder.ts").read_text(encoding="utf-8")
++    assert (project_dir / "scripts" / "narrow_target.py").read_text(encoding="utf-8") == "TARGET = False\n"
+diff --git a/tests/test_ralph_shell_helpers.py b/tests/test_ralph_shell_helpers.py
+new file mode 100644
+index 0000000..e74a3bc
+--- /dev/null
++++ b/tests/test_ralph_shell_helpers.py
+@@ -0,0 +1,294 @@
++from __future__ import annotations
++
++import json
++import os
++import shutil
+```
+
+Previous diff snapshot: 31432 bytes
+
+## Tests
+```
+            f"handoff_candidate_paths '{task_json}'",
+        )
+    
+        assert result.returncode == 0, result.stdout + result.stderr
+        lines = set(result.stdout.splitlines())
+>       assert "scripts/ralph_bot.py" in lines
+E       AssertionError: assert 'scripts/ralph_bot.py' in set()
+
+tests/test_ralph_shell_helpers.py:126: AssertionError
+_____ test_run_task_closure_verification_falls_back_when_verifier_crashes ______
+
+tmp_path = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-39/test_run_task_closure_verifica0')
+
+    def test_run_task_closure_verification_falls_back_when_verifier_crashes(tmp_path: Path) -> None:
+        project_dir = build_shell_fixture(tmp_path, broken_verifier=True)
+    
+        result = run_helper(
+            project_dir,
+            "TASK_JSON='{\"id\":\"T01\",\"title\":\"Task\",\"description\":\"desc\"}'\n"
+            "PRE_HASH=$(git hash-object -t tree /dev/null)\n"
+            "REVIEW_BASE_HASH=\"$PRE_HASH\"\n"
+            "REVIEW_TARGET_HASH=\"$PRE_HASH\"\n"
+            "run_task_closure_verification\n"
+            "printf '%s\\n%s\\n%s\\n%s' \"$VERIFICATION_RESULT\" \"$VERIFICATION_CLASS\" \"$VERIFICATION_REASON\" \"$VERIFICATION_NON_BOOKKEEPING\"\n",
+        )
+    
+        assert result.returncode == 0, result.stdout + result.stderr
+        lines = result.stdout.splitlines()
+        assert lines[0] == "needs_human_review"
+        assert lines[1] == "implementation"
+        assert lines[2] == "Verification script failed unexpectedly."
+>       assert lines[3] == ""
+E       IndexError: list index out of range
+
+tests/test_ralph_shell_helpers.py:239: IndexError
+=========================== short test summary info ============================
+FAILED tests/test_ralph_shell_helpers.py::test_handoff_candidate_paths_include_packaged_and_test_evidence
+FAILED tests/test_ralph_shell_helpers.py::test_run_task_closure_verification_falls_back_when_verifier_crashes
+============= 2 failed, 197 passed, 2 skipped in 697.86s (0:11:37) =============
+make: *** [test] Error 1
+tests failed
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.
+deprecated: `[features].web_search_request` is deprecated because web search is enabled by default.
+Set `web_search` to `"live"`, `"cached"`, or `"disabled"` at the top level (or under a profile) in config.toml if you want to override it.
+codex
+Проверяю обязательные инструкции и контекст задачи, затем сверю diff с падениями тестов и критериями приёмки.
+exec
+/bin/zsh -lc "sed -n '1,260p' ARCHITECTURE.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+exec
+/bin/zsh -lc "sed -n '1,220p' AGENTS.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+# Ralph Architecture
+
+## Ralph as AI Execution Layer
+Ralph is a project-agnostic AI execution layer for software delivery workflows.
+It sits on top of an existing repository, reads structured tasks, runs AI agents,
+collects outputs, applies review gates, and coordinates human escalation.
+
+## Core Components
+- `ralph.sh` — orchestrator loop and execution policy
+- `scripts/ralph_bot.py` — Telegram control plane
+- `codex exec` — tool runtime used for Coder and Tech Lead agents
+- `scripts/*.py` — task, progress, notification, and memory helpers
+
+## Execution Model
+1. Select next pending task from `tasks.json`
+2. Build coder prompt from task payload, repo docs, memory, and optional human comment
+3. Run Coder agent through `codex exec`
+4. If `assets_manifest.json` exists, validate it, wait for missing required assets, and sync them into target paths
+5. Capture git diff and test output
+6. Run Tech Lead review through `codex exec`
+7. Resolve decision: `approve`, `fix`, `alert`, or `reorder`
+8. Persist state, progress, memory, logs, and metrics
+
+## Orchestrator
+`ralph.sh` is the main runtime controller.
+
+Responsibilities:
+- task selection and phase/auto execution
+- process supervision and cleanup
+- retries, timeouts, exponential backoff, and rate-limit pauses
+- prompt assembly for Coder and Tech Lead
+- git commit flow for agent-produced changes
+- task lifecycle updates and human alerting
+
+## Tool Runtime
+Ralph currently depends on:
+- `codex exec` for both agent roles
+- `make test` as the default verification gate
+- `git` for diffing and commits
+- `gtimeout` for bounded runs
+- `python3` helper scripts for state and file updates
+
+## State Model
+Runtime state is file-based and repo-local:
+- `tasks.json` — backlog, dependencies, and task statuses
+- `ralph_state.json` — current runner state
+- `ralph_control.json` — bot-to-runner control signals
+- `progress.md` — append-only human-readable execution log
+- `logs/` — execution logs and metrics
+
+## Memory Model
+Persistent memory lives in `.ralph/memory/` and is partially injected into agent prompts.
+See `MEMORY_SYSTEM.md` for the memory layers and update rules.
+
+## Human Control Layer
+Telegram is the primary remote control interface.
+
+Current control surface:
+- start a task, phase, or full auto mode
+- stop gracefully or force kill
+- inspect tasks, logs, progress, cost, and diff
+- leave a comment for the next agent attempt
+
+Asset-heavy projects can also use `assets_manifest.json` as an async handoff between the agent and a human who later supplies binary assets.
+
+## Reliability Model
+Implemented safeguards include:
+- recursive process cleanup
+- retry with exponential backoff
+- rate-limit detection and pause
+- watchdog around Codex execution
+- circuit breaker after repeated failures
+- alert path for human intervention
+
+ succeeded in 0ms:
+# AGENTS.md — Ralph Dev
+
+## Read First
+- `ARCHITECTURE.md` — execution model, orchestration, runtime, and state
+- `MEMORY_SYSTEM.md` — memory layers and update policy
+- `tasks.json` — roadmap and task source of truth
+- `progress.md` — lightweight narrative history only, not authoritative task truth
+
+## General Rules
+1. `ralph.sh` must stay project-agnostic.
+2. All bash script paths use `$RALPH_DIR`.
+3. All project paths use `$PROJECT_DIR`.
+4. No external Python dependencies except `dotenv`.
+5. Bash changes must pass `bash -n ralph.sh`.
+6. Python changes must pass `python3 -c "import ast; ast.parse(...)"` where applicable.
+7. Prefer repo-local state and configuration over machine-level assumptions.
+8. Prefer narrow task execution over broad repo exploration: start from the known hot zone and expand only when evidence requires it.
+
+## Notes
+- Ralph attaches to any repo that contains `tasks.json`.
+- Telegram bot is the main human control surface.
+- Persistent memory lives in `.ralph/memory/`.
+
+exec
+/bin/zsh -lc "sed -n '1,260p' MEMORY_SYSTEM.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+# Ralph Memory System
+
+## Purpose
+Ralph keeps lightweight persistent memory across tasks so the agent loop does
+not start from zero on every run.
+
+## Memory Layers
+- `core.md` — stable project context: architecture, stack, conventions, constraints
+- `recent.md` — short history of the last approved tasks
+- `patterns.md` — recurring error patterns and working fixes
+- `decisions.md` — architectural and product decisions worth preserving
+
+## Injection Policy
+Before each coder run, Ralph reads and injects:
+- `.ralph/memory/core.md`
+- `.ralph/memory/recent.md`
+
+This gives the coding agent project context plus short-term history.
+
+## Update Policy
+- `core.md` — maintained manually by project owners
+- `recent.md` — updated automatically after approved tasks
+- `patterns.md` — intended for recurring failure learnings
+- `decisions.md` — intended for durable architecture decisions
+
+## Current Implementation Status
+- `core.md` and `recent.md` are actively used by `ralph.sh`
+- `recent.md` is updated by `scripts/update_memory.py`
+- `patterns.md` and `decisions.md` exist as placeholders and are not yet automatically maintained
+
+## Design Constraints
+- markdown files instead of a database
+- repo-local storage for portability
+- low operational overhead
+- readable and editable by humans
+
+exec
+/bin/zsh -lc "sed -n '1,220p' AGENTS_LEAD.md" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+codex
+Сверяю проблемные участки в `ralph.sh` и тестах, чтобы назвать один минимальный блокер без расплывчатых формулировок.
+exec
+/bin/zsh -lc "sed -n '430,540p' src/ralph/resources/ralph.sh" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+}
+
+handoff_candidate_paths() {
+    python3 - "$RALPH_DIR" "$1" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ralph_dir = Path(sys.argv[1])
+task = json.loads(sys.argv[2])
+project_dir = Path.cwd()
+sys.path.insert(0, str(ralph_dir / "scripts"))
+
+from verify_task_closure import (  # type: ignore
+    command_candidate_handlers,
+    command_routed_handlers,
+    extract_command_tokens,
+    extract_path_candidates,
+    read_text,
+)
+paths: set[str] = set(extract_path_candidates(task))
+command_tokens = extract_command_tokens(task)
+
+for path in list(paths):
+    if path.startswith("scripts/"):
+        packaged_path = f"src/ralph/resources/{path}"
+        if (project_dir / packaged_path).exists():
+            paths.add(packaged_path)
+
+if command_tokens:
+    bot_path = project_dir / "scripts" / "ralph_bot.py"
+    packaged_bot = project_dir / "src" / "ralph" / "resources" / "scripts" / "ralph_bot.py"
+    routing_texts: list[str] = []
+    if bot_path.exists():
+        paths.add("scripts/ralph_bot.py")
+        routing_texts.append(read_text(bot_path))
+    if packaged_bot.exists():
+        paths.add("src/ralph/resources/scripts/ralph_bot.py")
+        routing_texts.append(read_text(packaged_bot))
+    routing_text = "\n".join(text for text in routing_texts if text)
+    for token in command_tokens:
+        handlers = set(command_candidate_handlers(token))
+        if routing_text:
+            handlers |= command_routed_handlers(routing_text, token)
+        for test_file in (project_dir / "tests").glob("test_*.py"):
+            test_text = read_text(test_file)
+            if f"/{token}" in test_text or any(handler in test_text for handler in handlers):
+                paths.add(test_file.relative_to(project_dir).as_posix())
+
+for path in sorted(paths):
+    print(path)
+PY
+}
+
+handoff_worktree_evidence_paths() {
+    local task_json="$1"
+    local candidate_paths=""
+    local path=""
+
+    candidate_paths=$(handoff_candidate_paths "$task_json")
+    [ -n "$candidate_paths" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if [ -n "$(git status --porcelain --untracked-files=all -- "$path" 2>/dev/null)" ]; then
+            printf '%s\n' "$path"
+        fi
+    done <<< "$candidate_paths"
+}
+
+handoff_empty_tree_hash() {
+    printf '%s\n' "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+}
+
+handoff_commit_parent_hash() {
+    local commit_hash="$1"
+    local parent_hash=""
+
+    parent_hash=$(git rev-list --parents -n 1 "$commit_hash" 2>/dev/null | awk '{print $2}')
+    if [ -n "$parent_hash" ]; then
+        printf '%s\n' "$parent_hash"
+    else
+        handoff_empty_tree_hash
+    fi
+}
+
+handoff_latest_repo_candidate_commit() {
+    local task_json="$1"
+    local candidate_paths=""
+    local commit_hash=""
+    local changed_paths=""
+    local filtered_paths=""
+    local path=""
+
+    candidate_paths=$(handoff_candidate_paths "$task_json")
+    [ -n "$candidate_paths" ] || return 0
+
+    set --
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        set -- "$@" "$path"
+    done <<< "$candidate_paths"
+    [ "$#" -gt 0 ] || return 0
+
+    while IFS= read -r commit_hash; do
+        [ -n "$commit_hash" ] || continue
+        changed_paths=$(git diff-tree --root --no-commit-id --name-only -r "$commit_hash" 2>/dev/null || true)
+        [ -n "$changed_paths" ] || continue
+        filtered_paths=""
+
+exec
+/bin/zsh -lc "sed -n '220,260p' tests/test_ralph_shell_helpers.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+
+def test_run_task_closure_verification_falls_back_when_verifier_crashes(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path, broken_verifier=True)
+
+    result = run_helper(
+        project_dir,
+        "TASK_JSON='{\"id\":\"T01\",\"title\":\"Task\",\"description\":\"desc\"}'\n"
+        "PRE_HASH=$(git hash-object -t tree /dev/null)\n"
+        "REVIEW_BASE_HASH=\"$PRE_HASH\"\n"
+        "REVIEW_TARGET_HASH=\"$PRE_HASH\"\n"
+        "run_task_closure_verification\n"
+        "printf '%s\\n%s\\n%s\\n%s' \"$VERIFICATION_RESULT\" \"$VERIFICATION_CLASS\" \"$VERIFICATION_REASON\" \"$VERIFICATION_NON_BOOKKEEPING\"\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0] == "needs_human_review"
+    assert lines[1] == "implementation"
+    assert lines[2] == "Verification script failed unexpectedly."
+    assert lines[3] == ""
+
+
+def test_write_benchmark_report_clamps_other_time_and_accepts_missing_manual_duration(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    auto_logs = project_dir / "auto" / "logs"
+    auto_logs.mkdir(parents=True)
+    manual_results = project_dir / "manual.jsonl"
+    report_file = project_dir / "report.json"
+    (auto_logs / "metrics.csv").write_text(
+        "\n".join(
+            [
+                "timestamp,task_id,status,duration_s,attempts",
+                "2026-03-30T10:00:00Z,T01,success,5,1",
+                "2026-03-30T10:01:00Z,T02,success,0,2",
+                "2026-03-30T10:02:00Z,T03,success,1,1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (auto_logs / "task_phase_timings.csv").write_text(
+
+exec
+/bin/zsh -lc "sed -n '100,145p' tests/test_ralph_shell_helpers.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+def test_handoff_candidate_paths_include_packaged_and_test_evidence(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "scripts" / "ralph_bot.py").write_text(
+        "async def cmd_start_auto():\n    return None\n\n"
+        "async def handle_update(cmd):\n"
+        "    if cmd == '/auto':\n"
+        "        await cmd_start_auto()\n",
+        encoding="utf-8",
+    )
+    (project_dir / "src" / "ralph" / "resources" / "scripts" / "ralph_bot.py").write_text(
+        "async def cmd_start_auto():\n    return None\n",
+        encoding="utf-8",
+    )
+    (project_dir / "tests" / "test_bot_auto.py").write_text(
+        "def test_auto_route():\n    assert '/auto'\n    assert 'cmd_start_auto'\n",
+        encoding="utf-8",
+    )
+    task_json = (project_dir / "tasks.json").read_text(encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        f"handoff_candidate_paths '{task_json}'",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = set(result.stdout.splitlines())
+    assert "scripts/ralph_bot.py" in lines
+    assert "src/ralph/resources/scripts/ralph_bot.py" in lines
+    assert "tests/test_bot_auto.py" in lines
+
+
+def test_handoff_worktree_evidence_paths_only_returns_dirty_candidate_paths(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    (project_dir / "scripts" / "run_eval.py").write_text("def main():\n    return 0\n", encoding="utf-8")
+    (project_dir / "src" / "ralph" / "resources" / "scripts" / "run_eval.py").write_text("def main():\n    return 0\n", encoding="utf-8")
+    (project_dir / "ARCHITECTURE.md").write_text("# Architecture\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+    (project_dir / "scripts" / "run_eval.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+    (project_dir / "ARCHITECTURE.md").write_text("# Architecture\nchanged\n", encoding="utf-8")
+    task = {
+        "id": "T02",
+        "phase": "OPS",
+        "title": "scripts/run_eval.py",
+        "description": "Add scripts/run_eval.py and keep it importable.",
+
+codex
+Нужно отличить реальный дефект рантайма от сломанной фикстуры. Смотрю, из какого `task_json` тест берёт токены команд и что именно печатает helper при падении верификатора.
+exec
+/bin/zsh -lc "sed -n '1,110p' tests/test_ralph_shell_helpers.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+RALPH_SH = REPO_ROOT / "ralph.sh"
+
+
+def build_shell_fixture(tmp_path: Path, *, broken_verifier: bool = False) -> Path:
+    project_dir = tmp_path / "project"
+    (project_dir / "scripts").mkdir(parents=True)
+    (project_dir / "logs").mkdir()
+    (project_dir / "tests").mkdir()
+    (project_dir / ".ralph" / "memory").mkdir(parents=True)
+    (project_dir / ".ralph" / "audit").mkdir(parents=True)
+    (project_dir / "src" / "ralph" / "resources" / "scripts").mkdir(parents=True)
+    (project_dir / "tasks.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "project": "shell-helper-tests",
+                "tasks": [
+                    {
+                        "id": "T01",
+                        "phase": "OPS",
+                        "title": "Bot: /auto command",
+                        "description": "Wire /auto in the bot",
+                        "status": "pending",
+                        "acceptance_criteria": ["test_auto_route covers /auto"],
+                    }
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (project_dir / "progress.md").write_text("# Progress\n", encoding="utf-8")
+    for name, content in (
+        ("AGENTS.md", "# AGENTS\n"),
+        ("ARCHITECTURE.md", "# Architecture\n"),
+        ("MEMORY_SYSTEM.md", "# Memory\n"),
+        ("AGENTS_CODER.md", "# Coder\n"),
+        ("AGENTS_LEAD.md", "# Lead\n"),
+        (".ralph/memory/core.md", "# Core\n"),
+        (".ralph/memory/recent.md", "# Recent\n"),
+    ):
+        (project_dir / name).write_text(content, encoding="utf-8")
+
+    for script_name in ("extract_json.py", "ralph_common.py"):
+        shutil.copy2(REPO_ROOT / "scripts" / script_name, project_dir / "scripts" / script_name)
+    verify_target = project_dir / "scripts" / "verify_task_closure.py"
+    if broken_verifier:
+        verify_target.write_text("raise RuntimeError('boom')\n", encoding="utf-8")
+    else:
+        shutil.copy2(REPO_ROOT / "scripts" / "verify_task_closure.py", verify_target)
+
+    shell_lines = RALPH_SH.read_text(encoding="utf-8").splitlines()
+    cutoff = next(index for index, line in enumerate(shell_lines) if line.startswith('case "$MODE" in'))
+    (project_dir / "ralph_helpers.sh").write_text("\n".join(shell_lines[:cutoff]) + "\n", encoding="utf-8")
+    return project_dir
+
+
+def init_git_repo(project_dir: Path) -> None:
+    subprocess.run(["git", "init"], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project_dir, check=True, capture_output=True, text=True)
+
+
+def run_helper(project_dir: Path, body: str, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    runner = project_dir / "run_helper.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "source ./ralph_helpers.sh\n"
+        f"{body}\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
+    return subprocess.run(
+        [str(runner)],
+        cwd=project_dir,
+        env=run_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+
+def test_handoff_candidate_paths_include_packaged_and_test_evidence(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "scripts" / "ralph_bot.py").write_text(
+        "async def cmd_start_auto():\n    return None\n\n"
+        "async def handle_update(cmd):\n"
+        "    if cmd == '/auto':\n"
+        "        await cmd_start_auto()\n",
+        encoding="utf-8",
+    )
+    (project_dir / "src" / "ralph" / "resources" / "scripts" / "ralph_bot.py").write_text(
+        "async def cmd_start_auto():\n    return None\n",
+
+exec
+/bin/zsh -lc "rg -n \"def extract_command_tokens|extract_command_tokens\\(\" -n scripts src -g '*.py'" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+scripts/ralph_common.py:489:def extract_command_tokens(task: dict[str, Any]) -> list[str]:
+scripts/ralph_common.py:552:    command_tokens = extract_command_tokens(task)
+src/ralph/resources/scripts/ralph_common.py:489:def extract_command_tokens(task: dict[str, Any]) -> list[str]:
+src/ralph/resources/scripts/ralph_common.py:552:    command_tokens = extract_command_tokens(task)
+
+exec
+/bin/zsh -lc "sed -n '489,535p' scripts/ralph_common.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+def extract_command_tokens(task: dict[str, Any]) -> list[str]:
+    texts: list[str] = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    tokens = re.findall(r"/([a-z][a-z0-9_]*)", "\n".join(texts).lower())
+    seen: set[str] = set()
+    result: list[str] = []
+    for token in tokens:
+        if token in seen:
+            continue
+        seen.add(token)
+        result.append(token)
+    return result
+
+
+def extract_expected_test_names(task: dict[str, Any]) -> list[str]:
+    texts = [task.get("title", ""), task.get("description", "")]
+    texts.extend(task.get("acceptance_criteria", []) or [])
+    texts.extend(task.get("test_steps", []) or [])
+    names = re.findall(r"\b(test_[a-zA-Z0-9_]+)\b", "\n".join(texts))
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
+
+
+def detect_task_class(
+    task: dict[str, Any],
+    expected_paths: list[str],
+    command_tokens: list[str],
+    expected_tests: list[str],
+) -> str:
+    title = task.get("title", "").lower()
+    description = task.get("description", "").lower()
+    combined = "\n".join(
+        [title, description, *[item.lower() for item in task.get("acceptance_criteria", []) or []]]
+    )
+    if any(path.startswith("templates/") for path in expected_paths):
+        return "template"
+    if any(path.startswith("scripts/") for path in expected_paths):
+        return "script"
+    if command_tokens and ("bot" in title or "команда" in title or "telegram" in combined):
+        return "command"
+    if title.startswith("tests:") or expected_tests or "pytest" in combined:
+
+exec
+/bin/zsh -lc 'rg -n "extract_command_tokens|command_routed_handlers|command_candidate_handlers|read_text|extract_path_candidates" scripts/verify_task_closure.py' in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+16:        extract_command_tokens,
+18:        extract_path_candidates,
+28:        extract_command_tokens,
+30:        extract_path_candidates,
+39:def read_text(path: Path) -> str:
+41:        return path.read_text(encoding="utf-8")
+46:def command_candidate_handlers(token: str) -> set[str]:
+50:def command_routed_handlers(bot_text: str, token: str) -> set[str]:
+59:    content = read_text(path).lower()
+97:        script_text = read_text(script_path)
+98:        tests_text = read_text(test_path)
+99:        report_text = read_text(report_path)
+135:        bot_text = read_text(bot_path)
+143:            handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
+154:                test_text = read_text(test_file)
+233:                if test_name in read_text(test_file):
+
+exec
+/bin/zsh -lc "sed -n '1,170p' scripts/verify_task_closure.py" in /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Minimal trust-layer verification before task closure."""
+
+from __future__ import annotations
+
+import json
+import os
+import py_compile
+import re
+import sys
+from pathlib import Path
+
+try:
+    from ralph_common import (
+        detect_task_class,
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        infer_task_context,
+        is_bookkeeping,
+        is_bookkeeping_file,
+        normalize_path,
+        resolve_project_dir,
+    )
+except ImportError:
+    from scripts.ralph_common import (
+        detect_task_class,
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        infer_task_context,
+        is_bookkeeping,
+        is_bookkeeping_file,
+        normalize_path,
+        resolve_project_dir,
+    )
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def command_candidate_handlers(token: str) -> set[str]:
+    return {f"cmd_{token}", f"cmd_start_{token}"}
+
+
+def command_routed_handlers(bot_text: str, token: str) -> set[str]:
+    pattern = re.compile(
+        rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']\s*:\s*\n\s*await\s+([a-zA-Z_][a-zA-Z0-9_]*)\(',
+        re.MULTILINE,
+    )
+    return set(pattern.findall(bot_text))
+
+
+def file_contains_required_content(task: dict, path: Path) -> bool:
+    content = read_text(path).lower()
+    if not content:
+        return False
+    for criterion in task.get("acceptance_criteria", []) or []:
+        crit = criterion.strip()
+        if crit.lower().startswith("содержит "):
+            phrase = crit[9:].strip().lower()
+            if phrase and phrase not in content:
+                return False
+        if crit.lower().startswith("contains "):
+            phrase = crit[9:].strip().lower()
+            if phrase and phrase not in content:
+                return False
+    return True
+
+
+def result(result: str, task_class: str, reason: str, changed_files: list[str], non_bookkeeping: list[str]) -> dict:
+    return {
+        "result": result,
+        "task_class": task_class,
+        "reason": reason,
+        "changed_files": changed_files,
+        "changed_files_non_bookkeeping": non_bookkeeping,
+        "bookkeeping_only": bool(changed_files) and not non_bookkeeping,
+    }
+
+
+def verify_task_completion(task: dict, project_dir: Path, changed_files: list[str]) -> dict:
+    changed_files = [normalize_path(path) for path in changed_files if normalize_path(path)]
+    non_bookkeeping = [path for path in changed_files if not is_bookkeeping_file(path)]
+    task_class, expected_paths, command_tokens, expected_tests = infer_task_context(task)
+
+    if task_class == "reaudit-report":
+        script_path = project_dir / "scripts" / "re_audit_tasks.py"
+        test_path = project_dir / "tests" / "test_re_audit_tasks.py"
+        report_path = project_dir / "audit_report.md"
+
+        missing_parts: list[str] = []
+        script_text = read_text(script_path)
+        tests_text = read_text(test_path)
+        report_text = read_text(report_path)
+
+        if not script_text:
+            missing_parts.append("scripts/re_audit_tasks.py is missing")
+        if not tests_text:
+            missing_parts.append("tests/test_re_audit_tasks.py is missing")
+        if not report_text:
+            missing_parts.append("audit_report.md is missing")
+        if script_text:
+            if "audit_report.md" not in script_text or "Human-readable report saved to" not in script_text:
+                missing_parts.append("re-audit script does not persist human-readable report")
+            if "false positive" not in script_text or "unclear" not in script_text:
+                missing_parts.append("re-audit script does not expose human-readable classifications")
+        if tests_text:
+            if "audit_report.md" not in tests_text or "Classification: unclear" not in tests_text:
+                missing_parts.append("re-audit report path is not covered by targeted tests")
+        if report_text:
+            if "# Re-audit Report" not in report_text or "## Results" not in report_text:
+                missing_parts.append("audit_report.md does not contain saved re-audit report output")
+
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
+        return result(
+            "pass",
+            task_class,
+            "Re-audit reporting verification passed.",
+            changed_files,
+            non_bookkeeping,
+        )
+
+    if task_class not in {"docs-only", "template"} and not non_bookkeeping:
+        reason = "Verification failed: only bookkeeping/state/report files changed; no implementation evidence found."
+        return result("fail_fix", task_class, reason, changed_files, non_bookkeeping)
+
+    if task_class == "command":
+        bot_path = project_dir / "scripts" / "ralph_bot.py"
+        bot_text = read_text(bot_path)
+        missing_handler: list[str] = []
+        missing_routing: list[str] = []
+        missing_help: list[str] = []
+        resolved_handlers: dict[str, set[str]] = {}
+        if not any(path == "scripts/ralph_bot.py" or path.startswith("tests/") for path in non_bookkeeping):
+            return result("fail_fix", task_class, "Verification failed: command task changed no bot or test files.", changed_files, non_bookkeeping)
+        for token in command_tokens:
+            handlers = command_candidate_handlers(token) | command_routed_handlers(bot_text, token)
+            resolved_handlers[token] = handlers
+            if not any(f"def {handler}(" in bot_text for handler in handlers):
+                missing_handler.append(token)
+            if not re.search(rf'(?:if|elif)\s+cmd\s*==\s*["\']/{re.escape(token)}["\']', bot_text):
+                missing_routing.append(token)
+            if f"/{token}" not in bot_text:
+                missing_help.append(token)
+        tests_have_evidence = any(path.startswith("tests/") for path in non_bookkeeping)
+        if not tests_have_evidence:
+            for test_file in project_dir.glob("tests/test_*.py"):
+                test_text = read_text(test_file)
+                if any(
+                    f"/{token}" in test_text or any(handler in test_text for handler in resolved_handlers.get(token, set()))
+                    for token in command_tokens
+                ):
+                    tests_have_evidence = True
+                    break
+        missing_parts: list[str] = []
+        if missing_handler:
+            missing_parts.append("missing handlers: " + ", ".join("/" + token for token in missing_handler))
+        if missing_routing:
+            missing_parts.append("missing routing: " + ", ".join("/" + token for token in missing_routing))
+        if missing_help:
+            missing_parts.append("missing command/help evidence: " + ", ".join("/" + token for token in missing_help))
+        if missing_parts:
+            return result("fail_fix", task_class, "Verification failed: " + "; ".join(missing_parts), changed_files, non_bookkeeping)
+        if not tests_have_evidence:
+
+codex
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R13-05","summary":"Новый набор тестов почти закрывает нужные пробелы, но задача не готова к approve: `make test` падает на двух кейсах в `tests/test_ralph_shell_helpers.py`.","quality_score":81,"issues":["`tests/test_ralph_shell_helpers.py::test_handoff_candidate_paths_include_packaged_and_test_evidence` передаёт в `handoff_candidate_paths` не тот JSON-контракт, поэтому helper не находит `scripts/ralph_bot.py` и тест падает.","`tests/test_ralph_shell_helpers.py::test_run_task_closure_verification_falls_back_when_verifier_crashes` некорректно проверяет пустое последнее поле через `splitlines()`, из-за чего падает даже при ожидаемом fallback-поведении."],"fix_instructions":"Исправь `tests/test_ralph_shell_helpers.py`, чтобы оба shell-helper кейса соответствовали реальному контракту helper-функций: в тесте `handoff_candidate_paths` передавай один task JSON-объект, а не весь `tasks.json`, и в тесте fallback для `run_task_closure_verification` проверяй пустой `VERIFICATION_NON_BOOKKEEPING` без `splitlines()`-артефакта последней пустой строки.","alert_reason":"","progress_note":"Ревью остановлено на красном тестовом прогоне: 2 падения, 197 passed, 2 skipped."}
+END_RALPH_REVIEW_JSON
+tokens used
+37,369
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R13-05","summary":"Новый набор тестов почти закрывает нужные пробелы, но задача не готова к approve: `make test` падает на двух кейсах в `tests/test_ralph_shell_helpers.py`.","quality_score":81,"issues":["`tests/test_ralph_shell_helpers.py::test_handoff_candidate_paths_include_packaged_and_test_evidence` передаёт в `handoff_candidate_paths` не тот JSON-контракт, поэтому helper не находит `scripts/ralph_bot.py` и тест падает.","`tests/test_ralph_shell_helpers.py::test_run_task_closure_verification_falls_back_when_verifier_crashes` некорректно проверяет пустое последнее поле через `splitlines()`, из-за чего падает даже при ожидаемом fallback-поведении."],"fix_instructions":"Исправь `tests/test_ralph_shell_helpers.py`, чтобы оба shell-helper кейса соответствовали реальному контракту helper-функций: в тесте `handoff_candidate_paths` передавай один task JSON-объект, а не весь `tasks.json`, и в тесте fallback для `run_task_closure_verification` проверяй пустой `VERIFICATION_NON_BOOKKEEPING` без `splitlines()`-артефакта последней пустой строки.","alert_reason":"","progress_note":"Ревью остановлено на красном тестовом прогоне: 2 падения, 197 passed, 2 skipped."}
+END_RALPH_REVIEW_JSON
