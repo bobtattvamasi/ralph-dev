@@ -2180,7 +2180,7 @@ def test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt(tmp_path:
     assert "🔧 Fix 2/2:" not in result.stdout
 
 
-@pytest.mark.skip(reason="R13-02 bookkeeping regression — investigating")
+@pytest.mark.xfail(reason="R14: bookkeeping-only closure gate regression", strict=False)
 def test_ralph_blocks_bookkeeping_only_closure(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     env["MOCK_CODEX_WRITE_FILE"] = "progress.md"
