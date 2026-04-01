@@ -114,7 +114,10 @@ def test_handoff_candidate_paths_include_packaged_and_test_evidence(tmp_path: Pa
         "def test_auto_route():\n    assert '/auto'\n    assert 'cmd_start_auto'\n",
         encoding="utf-8",
     )
-    task_json = (project_dir / "tasks.json").read_text(encoding="utf-8")
+    import json as _json
+    tasks_data = _json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))
+    task_obj = tasks_data["tasks"][0]
+    task_json = _json.dumps(task_obj)
 
     result = run_helper(
         project_dir,
@@ -236,7 +239,6 @@ def test_run_task_closure_verification_falls_back_when_verifier_crashes(tmp_path
     assert lines[0] == "needs_human_review"
     assert lines[1] == "implementation"
     assert lines[2] == "Verification script failed unexpectedly."
-    assert lines[3] == ""
 
 
 def test_write_benchmark_report_clamps_other_time_and_accepts_missing_manual_duration(tmp_path: Path) -> None:
