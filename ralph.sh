@@ -684,27 +684,38 @@ estimate_cost() {
 }
 
 ensure_metrics_schema() {
-    python3 - "$METRICS_FILE" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-if not path.exists():
-    raise SystemExit(0)
-lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-if not lines:
-    raise SystemExit(0)
-old_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est"
-new_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success,web_search_policy"
-if lines[0].strip() != old_header:
-    raise SystemExit(0)
-rewritten = [new_header]
-for line in lines[1:]:
+    [ ! -f "$METRICS_FILE" ] && return 0
+    local current_header
+    current_header=$(head -1 "$METRICS_FILE")
+    local expected="timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success,web_search_policy"
+    [ "$current_header" = "$expected" ] && return 0
+    # Migrate 10-col header (no web_search_policy) to 11-col
+    local legacy10="timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success"
+    # Migrate 8-col header (very old) to 11-col
+    local legacy8="timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est"
+    python3 - "$METRICS_FILE" "$current_header" "$legacy10" "$legacy8" "$expected" <<'PYINLINE'
+import sys, csv
+path, current, leg10, leg8, expected = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+exp_cols = expected.split(",")
+with open(path, "r", newline="") as f:
+    raw = f.readlines()
+if not raw:
+    sys.exit(0)
+hdr = raw[0].strip()
+if hdr == expected:
+    sys.exit(0)
+hdr_cols = hdr.split(",")
+result = [expected + "\n"]
+for line in raw[1:]:
     if not line.strip():
         continue
-    rewritten.append(f"{line},,")
-path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
-PY
+    fields = line.rstrip("\n").split(",")
+    while len(fields) < len(exp_cols):
+        fields.append("")
+    result.append(",".join(fields[:len(exp_cols)]) + "\n")
+with open(path, "w", newline="") as f:
+    f.writelines(result)
+PYINLINE
 }
 
 log_metrics() {
@@ -3582,7 +3593,7 @@ fi
 cd "$PROJECT_DIR"
 export RALPH_PROJECT_DIR="$PROJECT_DIR"
 mkdir -p "$LOG_DIR"
-[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
+[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success,web_search_policy" > "$METRICS_FILE"
 [ ! -f "$PHASE_TIMINGS_FILE" ] && echo "timestamp,task_id,attempt,mode,phase,duration_s" > "$PHASE_TIMINGS_FILE"
 find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
 cleanup_orphan_coder_outputs
