@@ -1,0 +1,24 @@
+{
+  "task_id": "BUG-05",
+  "title": "Idempotent retry guard false-blocks tasks where attempt 1 already succeeded",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "BUG-05 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"BUG-05\",\"summary\":\"Retry guard no longer blocks repeated identical failing attempts; the new touched-files check lets the infinite-loop case pass through and tests still fail.\",\"quality_score\":61,\"issues\":[\"`src/ralph/resources/ralph.sh` changed the block condition to require a non-empty post-review `CURRENT_DIFF`, but in the real failing-loop case the lead resets the wrong patch before the comparison, so attempt 2 can still be the same bad work while `CURRENT_DIFF` is empty and the task incorrectly reaches `verified_done`. This breaks the existing retry-block behavior and leaves `tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt` failing.\"],\"fix_instructions\":\"Keep the noop-retry allowance, but make the retry guard decide from attempt-level evidence captured before the reset rather than from the post-reset diff alone. In `src/ralph/resources/ralph.sh`, persist whether the current coder attempt actually reproduced the same task-scoped patch as the prior attempt, then block when the two attempt patches match even if the lead reset leaves `CURRENT_DIFF` empty. This should preserve the new `attempt 1 changed, attempt 2 noop` pass case while restoring the block expected by `tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt` and the failed retry-context test.\",\"alert_reason\":\"\",\"progress_note\":\"Implementation is close, but acceptance is not met because the genuine identical-retry loop is no longer detected.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 2915,
+  "timestamp": "2026-04-01T18:52:15Z",
+  "runtime_success": false,
+  "verified_success": false
+}

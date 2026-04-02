@@ -1,0 +1,416 @@
+Reading additional input from stdin...
+OpenAI Codex v0.118.0 (research preview)
+--------
+workdir: /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 019d4ab7-2c1e-7a62-a2c5-4a3bf35b136a
+--------
+user
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R14-03",
+  "phase": "R14",
+  "title": "Fix metrics.csv schema drift",
+  "description": "logs/metrics.csv header doesn't include web_search_policy column but new rows do, causing csv.DictReader to put extra field in None key. Add header migration: on first write, check if header matches expected columns, rewrite header if needed. Add row/header consistency check in log_metrics function.",
+  "status": "pending",
+  "priority": "medium",
+  "risk": "low",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "log_metrics writes header matching all columns including web_search_policy",
+    "Existing metrics.csv gets header migrated on next write",
+    "csv.DictReader produces no None keys",
+    "Add test for header migration"
+  ]
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
+index b01f02e..d99749b 100755
+--- a/src/ralph/resources/ralph.sh
++++ b/src/ralph/resources/ralph.sh
+@@ -162,6 +162,7 @@ LOG_DIR="$PROJECT_DIR/logs"
+ RALPH_LOG="$LOG_DIR/ralph_$(date +%Y-%m-%d).log"
+ METRICS_FILE="$LOG_DIR/metrics.csv"
+ PHASE_TIMINGS_FILE="$LOG_DIR/task_phase_timings.csv"
++METRICS_HEADER="timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success,web_search_policy"
+ FINAL_STATE_STATUS="idle"
+ FINAL_STATE_STEP="idle"
+ FINAL_STATE_MESSAGE="All tasks complete"
+@@ -684,26 +685,41 @@ estimate_cost() {
+ }
+ 
+ ensure_metrics_schema() {
+-    python3 - "$METRICS_FILE" <<'PY'
++    python3 - "$METRICS_FILE" "$METRICS_HEADER" <<'PY'
++import csv
+ import sys
+ from pathlib import Path
+ 
+ path = Path(sys.argv[1])
+-if not path.exists():
++expected_header = sys.argv[2]
++expected_columns = expected_header.split(",")
++
++if not path.exists() or not path.read_text(encoding="utf-8", errors="replace").strip():
++    path.write_text(expected_header + "\n", encoding="utf-8")
+     raise SystemExit(0)
+-lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+-if not lines:
++
++with path.open(encoding="utf-8", errors="replace", newline="") as handle:
++    rows = list(csv.reader(handle))
++
++if not rows:
++    path.write_text(expected_header + "\n", encoding="utf-8")
+     raise SystemExit(0)
+-old_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est"
+-new_header = "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success,web_search_policy"
+-if lines[0].strip() != old_header:
++
++header = rows[0]
++if header == expected_columns:
+     raise SystemExit(0)
+-rewritten = [new_header]
+-for line in lines[1:]:
+-    if not line.strip():
++
++rewritten = [expected_columns]
++for row in rows[1:]:
++    if not any(field.strip() for field in row):
+         continue
+-    rewritten.append(f"{line},,")
+-path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
++    if len(row) > len(expected_columns):
++        raise SystemExit(f"metrics schema mismatch: row has {len(row)} fields, expected at most {len(expected_columns)}")
++    rewritten.append(row + [""] * (len(expected_columns) - len(row)))
++
++with path.open("w", encoding="utf-8", newline="") as handle:
++    writer = csv.writer(handle, lineterminator="\n")
++    writer.writerows(rewritten)
+ PY
+ }
+ 
+@@ -716,7 +732,24 @@ log_metrics() {
+     local duration=$((end_time - TASK_START))
+     local files=$(git diff --name-only "$PRE_HASH" HEAD 2>/dev/null | wc -l | tr -d ' ')
+     local cost=$(estimate_cost "$TASK_TOKENS")
+-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$quality,$cost,$runtime_success,$verified_success,${RALPH_WEB_SEARCH_POLICY:-default}" >> "$METRICS_FILE"
++    ensure_metrics_schema
++    local row="$(date -u +%Y-%m-%dT%H:%M:%SZ),$TASK_ID,$status,$duration,$FIX_RETRY,$files,$quality,$cost,$runtime_success,$verified_success,${RALPH_WEB_SEARCH_POLICY:-default}"
++    python3 - "$METRICS_FILE" "$METRICS_HEADER" "$row" <<'PY'
++import csv
++import sys
++from pathlib import Path
++
++path = Path(sys.argv[1])
++expected_header = sys.argv[2]
++row = sys.argv[3]
++header = path.read_text(encoding="utf-8", errors="replace").splitlines()[0].strip() if path.exists() else ""
++if header != expected_header:
++    raise SystemExit(f"metrics schema mismatch: header={header!r}")
++row_fields = next(csv.reader([row]))
++if len(row_fields) != len(expected_header.split(",")):
++    raise SystemExit("metrics schema mismatch: row field count does not match header")
++PY
++    printf '%s\n' "$row" >> "$METRICS_FILE"
+ }
+ 
+ log_phase_timing() {
+@@ -2900,17 +2933,21 @@ list_task_scoped_repo_files() {
+ 
+ snapshot_task_scoped_repo_metadata() {
+     local snapshot_file="$1"
+-    python3 - "$snapshot_file" <<'PY'
++    local repo_paths="${2:-}"
++    if [ -z "$repo_paths" ] && [ ! -t 0 ]; then
++        repo_paths="$(cat)"
++    fi
++    python3 - "$snapshot_file" "$repo_paths" <<'PY'
+ from __future__ import annotations
+ 
+ import json
+-import os
+ import sys
+ 
+ snapshot_file = sys.argv[1]
++repo_paths = sys.argv[2] if len(sys.argv) > 2 else ""
+ entries = {}
+ 
+-for raw_path in sys.stdin.read().splitlines():
++for raw_path in repo_paths.splitlines():
+     path = raw_path.strip()
+     if not path:
+         continue
+@@ -2920,6 +2957,7 @@ for raw_path in sys.stdin.read().splitlines():
+         continue
+     entries[path] = {
+         "mtime_ns": stat_result.st_mtime_ns,
++        "ctime_ns": stat_result.st_ctime_ns,
+         "size": stat_result.st_size,
+     }
+ 
+@@ -2930,14 +2968,18 @@ PY
+ 
+ task_scoped_paths_touched_since_snapshot() {
+     local snapshot_file="$1"
+-    python3 - "$snapshot_file" <<'PY'
++    local repo_paths="${2:-}"
++    if [ -z "$repo_paths" ] && [ ! -t 0 ]; then
++        repo_paths="$(cat)"
++    fi
++    python3 - "$snapshot_file" "$repo_paths" <<'PY'
+ from __future__ import annotations
+ 
+ import json
+-import os
+ import sys
+ 
+ snapshot_file = sys.argv[1]
++repo_paths = sys.argv[2] if len(sys.argv) > 2 else ""
+ 
+ try:
+     with open(snapshot_file, "r", encoding="utf-8") as handle:
+@@ -2945,7 +2987,7 @@ try:
+ except FileNotFoundError:
+     before = {}
+ 
+-current_paths = {line.strip() for line in sys.stdin.read().splitlines() if line.strip()}
++current_paths = {line.strip() for line in repo_paths.splitlines() if line.strip()}
+ after = {}
+ for path in current_paths:
+     try:
+@@ -2954,6 +2996,7 @@ for path in current_paths:
+         continue
+     after[path] = {
+         "mtime_ns": stat_result.st_mtime_ns,
++        "ctime_ns": stat_result.st_ctime_ns,
+         "size": stat_result.st_size,
+     }
+ 
+@@ -3725,7 +3768,7 @@ fi
+ cd "$PROJECT_DIR"
+ export RALPH_PROJECT_DIR="$PROJECT_DIR"
+ mkdir -p "$LOG_DIR"
+-[ ! -f "$METRICS_FILE" ] && echo "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est,runtime_success,verified_success" > "$METRICS_FILE"
++[ ! -f "$METRICS_FILE" ] && printf '%s\n' "$METRICS_HEADER" > "$METRICS_FILE"
+ [ ! -f "$PHASE_TIMINGS_FILE" ] && echo "timestamp,task_id,attempt,mode,phase,duration_s" > "$PHASE_TIMINGS_FILE"
+ find "$LOG_DIR" -name "ralph_*.log" -mtime +2 -delete 2>/dev/null || true
+ cleanup_orphan_coder_outputs
+@@ -4076,7 +4119,8 @@ print(task.get('role', 'coder'))
+             notify "🤖 [CODER] Starting: $TASK_ID — $TASK_TITLE"
+             CODER_START=$(date +%s)
+             apply_timeout_override
+-            list_task_scoped_repo_files | snapshot_task_scoped_repo_metadata "$ATTEMPT_ACTIVITY_SNAPSHOT_FILE"
++            TASK_SCOPED_REPO_PATHS=$(list_task_scoped_repo_files)
++            snapshot_task_scoped_repo_metadata "$ATTEMPT_ACTIVITY_SNAPSHOT_FILE" "$TASK_SCOPED_REPO_PATHS"
+ 
+             # Inject memory context
+             PROJECT_AGENTS=""
+@@ -4177,7 +4221,7 @@ print(task.get('role', 'coder'))
+         if [ -n "$CURRENT_DIFF" ]; then
+             CURRENT_DIFF_HAS_DIFF=true
+         fi
+-        CURRENT_ATTEMPT_TOUCHED_PATHS=$(list_task_scoped_repo_files | task_scoped_paths_touched_since_snapshot "$ATTEMPT_ACTIVITY_SNAPSHOT_FILE")
++        CURRENT_ATTEMPT_TOUCHED_PATHS=$(task_scoped_paths_touched_since_snapshot "$ATTEMPT_ACTIVITY_SNAPSHOT_FILE" "${TASK_SCOPED_REPO_PATHS:-$(list_task_scoped_repo_files)}")
+         CURRENT_ATTEMPT_TOUCHED_TASK_SCOPED_FILES=false
+         if [ -n "$CURRENT_ATTEMPT_TOUCHED_PATHS" ]; then
+             CURRENT_ATTEMPT_TOUCHED_TASK_SCOPED_FILES=true
+diff --git a/tests/test_ralph_shell_helpers.py b/tests/test_ralph_shell_helpers.py
+index f768357..514891b 100644
+--- a/tests/test_ralph_shell_helpers.py
++++ b/tests/test_ralph_shell_helpers.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import csv
+ import json
+ import os
+ import shutil
+@@ -294,3 +295,66 @@ def test_write_benchmark_report_clamps_other_time_and_accepts_missing_manual_dur
+     assert auto_tasks["T01"]["other_duration_s"] == 0.0
+     assert report["manual"]["task_total_duration_s"] == 3.0
+     assert report["comparison"]["auto_to_manual_ratio"] == 2.0
++
++
++def test_log_metrics_migrates_legacy_header_without_dictreader_none_keys(tmp_path: Path) -> None:
++    project_dir = build_shell_fixture(tmp_path)
++    (project_dir / "logs" / "metrics.csv").write_text(
++        "\n".join(
++            [
++                "timestamp,task_id,status,duration_s,attempts,files_changed,quality,cost_est",
++                "2026-03-30T10:00:00Z,T00,success,5,1,2,0,0.01",
++                "2026-03-30T10:05:00Z,T00B,failed,7,2,3,0,0.02,true,false,enabled",
++            ]
++        )
++        + "\n",
++        encoding="utf-8",
++    )
++
++    result = run_helper(
++        project_dir,
++        "TASK_ID='T01'\n"
++        "TASK_START=$(date +%s)\n"
++        "FIX_RETRY=1\n"
++        "QUALITY=0\n"
++        "TASK_TOKENS=1000\n"
++        "PRE_HASH=$(git hash-object -t tree /dev/null)\n"
++        "export RALPH_WEB_SEARCH_POLICY=disabled\n"
++        "log_metrics success true true\n",
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    metrics_file = project_dir / "logs" / "metrics.csv"
++    rows = list(csv.DictReader(metrics_file.open(encoding="utf-8", newline="")))
++    assert rows
++    assert rows[0].get(None) is None
++    assert rows[0]["runtime_success"] == ""
++    assert rows[0]["verified_success"] == ""
++    assert rows[0]["web_search_policy"] == ""
++    assert rows[1].get(None) is None
++    assert rows[1]["task_id"] == "T00B"
++    assert rows[1]["runtime_success"] == "true"
++    assert rows[1]["verified_success"] == "false"
++    assert rows[1]["web_search_policy"] == "enabled"
++    assert rows[-1]["task_id"] == "T01"
++    assert rows[-1]["runtime_success"] == "true"
++    assert rows[-1]["verified_success"] == "true"
++    assert rows[-1]["web_search_policy"] == "disabled"
++
++
++def test_task_scoped_snapshot_helpers_accept_stdin_compatibility(tmp_path: Path) -> None:
++    project_dir = build_shell_fixture(tmp_path)
++    tracked_file = project_dir / "src" / "tracked.ts"
++    tracked_file.parent.mkdir(parents=True)
++    tracked_file.write_text("export const value = 1;\n", encoding="utf-8")
++
++    result = run_helper(
++        project_dir,
++        "snapshot_file='.ralph/task-snapshot.json'\n"
++        "printf '%s\\n' 'src/tracked.ts' | snapshot_task_scoped_repo_metadata \"$snapshot_file\"\n"
++        "printf 'export const value = 2;\\n' > src/tracked.ts\n"
++        "printf '%s\\n' 'src/tracked.ts' | task_scoped_paths_touched_since_snapshot \"$snapshot_file\"\n",
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    assert result.stdout.strip() == "src/tracked.ts"
+```
+
+Previous diff snapshot: 10671 bytes
+
+## Tests
+```
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_narrow_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_broad_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion
+FAILED tests/test_integration.py::test_ralph_task_success_final_tail_does_not_run_nested_status_pytest
+FAILED tests/test_integration.py::test_ralph_task_success_preserves_final_state_if_success_tail_reporting_hits_formatter_error
+FAILED tests/test_integration.py::test_ralph_task_mode_runs_requested_pending_task_exactly
+FAILED tests/test_integration.py::test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_run
+FAILED tests/test_integration.py::test_ralph_handoff_mode_closes_from_repo_backed_candidate_state_without_coder_run
+FAILED tests/test_integration.py::test_ralph_handoff_mode_can_use_earlier_repo_backed_candidate_commit_even_with_unrelated_later_commit
+FAILED tests/test_integration.py::test_ralph_phase_mode_only_runs_pending_task_from_requested_phase
+FAILED tests/test_integration.py::test_ralph_auto_mode_still_runs_next_runnable_pending_task
+FAILED tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task
+FAILED tests/test_integration.py::test_ralph_uses_complexity_default_timeout_when_timeout_missing
+FAILED tests/test_integration.py::test_ralph_uses_900s_default_timeout_for_simple_tasks
+FAILED tests/test_integration.py::test_ralph_fails_closed_on_lead_stdout_review_mismatch
+FAILED tests/test_integration.py::test_ralph_blocks_contradictory_bookkeeping_only_fix_instructions
+FAILED tests/test_integration.py::test_ralph_blocks_diff_only_fix_without_retry_loop
+FAILED tests/test_integration.py::test_ralph_retry_prompt_includes_failed_attempt_context
+FAILED tests/test_integration.py::test_ralph_sanitizes_noisy_fix_and_keeps_exact_feature_gap
+FAILED tests/test_integration.py::test_ralph_lead_review_uses_cumulative_diff_from_task_start_across_retries
+FAILED tests/test_integration.py::test_ralph_allows_noop_retry_after_prior_attempt_already_changed_files
+FAILED tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt
+FAILED tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure
+FAILED tests/test_integration.py::test_ralph_populates_structured_review_fields_in_audit
+FAILED tests/test_integration.py::test_ralph_allows_docs_only_task_with_docs_evidence
+FAILED tests/test_integration.py::test_ralph_audit_cli_prints_expected_fields
+FAILED tests/test_integration.py::test_ralph_marks_task_skipped_on_skip_control
+FAILED tests/test_integration.py::test_ralph_watchdog_kills_stale_codex_and_retries
+FAILED tests/test_integration.py::test_ralph_pauses_and_retries_on_rate_limit
+FAILED tests/test_integration.py::test_ralph_timeout_cleans_up_orphan_children
+FAILED tests/test_integration.py::test_ralph_cleanup_removes_current_coder_tmp_file_after_run
+FAILED tests/test_integration.py::test_ralph_startup_cleans_old_orphan_coder_tmp_files
+FAILED tests/test_integration.py::test_ralph_does_not_retry_timeout_for_docs_only_tasks
+FAILED tests/test_integration.py::test_ralph_streams_codex_output_into_main_log_before_timeout
+FAILED tests/test_integration.py::test_ralph_archives_timeout_output_after_stream_flush
+FAILED tests/test_integration.py::test_ralph_saves_codex_output_snapshot_on_failure
+FAILED tests/test_integration.py::test_ralph_waits_for_assets_and_resumes_when_files_arrive
+FAILED tests/test_ralph_shell_helpers.py::test_task_scoped_snapshot_helpers_accept_stdin_compatibility
+============ 56 failed, 148 passed, 1 skipped in 213.39s (0:03:33) =============
+make: *** [test] Error 1
+tests failed
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.
+deprecated: `[features].web_search_request` is deprecated because web search is enabled by default.
+Set `web_search` to `"live"`, `"cached"`, or `"disabled"` at the top level (or under a profile) in config.toml if you want to override it.
+codex
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R14-03","summary":"Миграция заголовка metrics.csv реализована, но дифф вносит регрессию в snapshot helper'ы и тестовый прогон не проходит.","quality_score":42,"issues":["Падает тест `tests/test_ralph_shell_helpers.py::test_task_scoped_snapshot_helpers_accept_stdin_compatibility`, а вместе с ним и большой набор integration-тестов. Регрессия пришла из несвязанных с задачей изменений в `snapshot_task_scoped_repo_metadata` и `task_scoped_paths_touched_since_snapshot` в `src/ralph/resources/ralph.sh`."],"fix_instructions":"Убери регрессию в `src/ralph/resources/ralph.sh`: восстанови корректную stdin-совместимость `snapshot_task_scoped_repo_metadata` и `task_scoped_paths_touched_since_snapshot` без изменения поведения основного пайплайна. После этого прогон `make test` должен проходить; сама логика миграции `metrics.csv` может остаться как есть.","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+tokens used
+24,979
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"R14-03","summary":"Миграция заголовка metrics.csv реализована, но дифф вносит регрессию в snapshot helper'ы и тестовый прогон не проходит.","quality_score":42,"issues":["Падает тест `tests/test_ralph_shell_helpers.py::test_task_scoped_snapshot_helpers_accept_stdin_compatibility`, а вместе с ним и большой набор integration-тестов. Регрессия пришла из несвязанных с задачей изменений в `snapshot_task_scoped_repo_metadata` и `task_scoped_paths_touched_since_snapshot` в `src/ralph/resources/ralph.sh`."],"fix_instructions":"Убери регрессию в `src/ralph/resources/ralph.sh`: восстанови корректную stdin-совместимость `snapshot_task_scoped_repo_metadata` и `task_scoped_paths_touched_since_snapshot` без изменения поведения основного пайплайна. После этого прогон `make test` должен проходить; сама логика миграции `metrics.csv` может остаться как есть.","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON

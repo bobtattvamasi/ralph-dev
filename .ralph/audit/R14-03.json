@@ -1,0 +1,24 @@
+{
+  "task_id": "R14-03",
+  "title": "Fix metrics.csv schema drift",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "R14-03 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R14-03\",\"summary\":\"Миграция заголовка metrics.csv реализована, но дифф вносит регрессию в snapshot helper'ы и тестовый прогон не проходит.\",\"quality_score\":42,\"issues\":[\"Падает тест `tests/test_ralph_shell_helpers.py::test_task_scoped_snapshot_helpers_accept_stdin_compatibility`, а вместе с ним и большой набор integration-тестов. Регрессия пришла из несвязанных с задачей изменений в `snapshot_task_scoped_repo_metadata` и `task_scoped_paths_touched_since_snapshot` в `src/ralph/resources/ralph.sh`.\"],\"fix_instructions\":\"Убери регрессию в `src/ralph/resources/ralph.sh`: восстанови корректную stdin-совместимость `snapshot_task_scoped_repo_metadata` и `task_scoped_paths_touched_since_snapshot` без изменения поведения основного пайплайна. После этого прогон `make test` должен проходить; сама логика миграции `metrics.csv` может остаться как есть.\",\"alert_reason\":\"\",\"progress_note\":\"\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 2501,
+  "timestamp": "2026-04-01T20:23:56Z",
+  "runtime_success": false,
+  "verified_success": false
+}

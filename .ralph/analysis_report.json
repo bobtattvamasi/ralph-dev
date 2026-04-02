@@ -1,0 +1,116 @@
+{
+  "timestamp": "2026-04-02T20:11:00+07:00",
+  "reliability_score": 40,
+  "automation_readiness": "red",
+  "test_health": "fail",
+  "tasks_summary": {
+    "total": 144,
+    "done": 120,
+    "pending": 3,
+    "blocked": 0,
+    "other": 21
+  },
+  "top_bottlenecks": [
+    {
+      "issue": "Тестовый контур нестабилен: `make test` не дал финального результата и завис, а последний рантайм-лог содержит массовые `FAILED` по integration tests.",
+      "severity": "high",
+      "fix": "Сначала вернуть зелёный `make test`, локализовать зависающий/ломающийся integration path, затем только снова пробовать auto."
+    },
+    {
+      "issue": "Retry/idempotent logic остаётся системным стоппером: `BUG-05` — текущий next task, ранее уже падал после 2 retries и блокирует честное закрытие задач.",
+      "severity": "high",
+      "fix": "Починить `BUG-05` и добавить regression tests на noop-retry после успешной первой попытки."
+    },
+    {
+      "issue": "Текущий R14-хвост не закрывается автоматически: `R14-02` и `R14-03` уже свалились, `R14-04` зависим от `R14-02`.",
+      "severity": "high",
+      "fix": "Разобрать и вручную довести `R14-02`, затем только открывать `R14-04`."
+    },
+    {
+      "issue": "Drift в рабочем дереве: есть незакоммиченный `tasks.json`, новые audit artifacts и `blog_context.md`.",
+      "severity": "medium",
+      "fix": "Сначала зафиксировать или очистить рабочее дерево, чтобы новый прогон не смешивал старую диагностику с новым состоянием."
+    },
+    {
+      "issue": "Рантайм state застрял в `status=running`, `current_phase_step=blocked`, хотя очередь уже deadlocked.",
+      "severity": "medium",
+      "fix": "Сбросить stale state и сверить `ralph_state.json` с реальным состоянием процесса перед следующими запусками."
+    }
+  ],
+  "blocked_clusters": [
+    {
+      "pattern": "Последние pipeline failures after 2 retries",
+      "count": 3,
+      "recommendation": "Разбирать вручную как R14 bugfix batch: `BUG-05`, `R14-02`, `R14-03`."
+    },
+    {
+      "pattern": "Dependency deadlock в pending backlog",
+      "count": 1,
+      "recommendation": "`R14-04` не запускать, пока не будет закрыт `R14-02`."
+    },
+    {
+      "pattern": "Нерunnable backlog в `false_positive`",
+      "count": 21,
+      "recommendation": "Не считать эти задачи частью auto-queue; держать их отдельно как архив/деферы, чтобы не шумели в операционной картине."
+    }
+  ],
+  "safe_auto_tasks": [],
+  "needs_human": [
+    "BUG-05",
+    "R14-02",
+    "R14-04"
+  ],
+  "strategy": {
+    "immediate": [
+      "Остановить любые новые auto-прогоны.",
+      "Привести `ralph_state.json` в честное idle/stopped состояние.",
+      "Починить `BUG-05` как главный системный стоппер retry-логики.",
+      "Разобрать, почему `make test` не завершается и почему integration suite массово падал в последнем прогоне."
+    ],
+    "before_auto": [
+      "Получить зелёный `make test` без зависаний.",
+      "Закрыть `R14-02` или явно вывести его из очереди.",
+      "Очистить или закоммитить 11 незакоммиченных файлов в рабочем дереве.",
+      "Перезапустить Ralph только после сверки state/control/tasks с фактическим git/runtime состоянием."
+    ],
+    "parallel_work": {
+      "human_claude": [
+        "Разобрать корневую причину падений `R14-02` и audit/reporting path.",
+        "Проверить, не расходятся ли `tasks.json`, audit artifacts и runtime state после последних ручных cleanup-коммитов.",
+        "Решить, какие из remaining R14 задач реально нужны, а какие лучше закрыть вручную."
+      ],
+      "codex_cli": [
+        "Исправить `BUG-05` с адресными regression tests.",
+        "Локализовать failing integration tests из лога и вернуть зелёный `make test`.",
+        "После починки тестов доработать `R14-02`."
+      ],
+      "ralph_auto": [
+        "Ничего не запускать автоматически до стабилизации тестов и retry-логики."
+      ]
+    },
+    "confidence_to_auto": "25% - текущая очередь почти исчерпана, но оставшиеся задачи уже ломали pipeline, тесты не доказаны зелёными, а runtime state и рабочее дерево дрейфуют."
+  },
+  "risks": [
+    "Ночной auto снова упрётся в `BUG-05` и/или R14 bugfix batch без продвижения.",
+    "Зависший `make test` может оставить ложное ощущение, что пайплайн работает, хотя verification gate не завершён.",
+    "Незакоммиченные audit/state/task изменения могут загрязнить следующий прогон и артефакты.",
+    "Stale `running/blocked` state может вводить bot/operator в заблуждение.",
+    "Даже при успешном runtime часть задач сейчас не проходит verified_success."
+  ],
+  "raw_diagnostics": {
+    "last_10_outcomes": [
+      "BUG-03:failed:runtime=true:verified=false",
+      "R13-06:success:runtime=true:verified=true",
+      "R13-01:failed:runtime=true:verified=false",
+      "R13-03:failed:runtime=false:verified=false",
+      "R13-04:success:runtime=true:verified=true",
+      "R13-07:success:runtime=true:verified=true",
+      "R13-05:failed:runtime=true:verified=false",
+      "BUG-05:failed:runtime=false:verified=false",
+      "R14-02:failed:runtime=false:verified=false",
+      "R14-03:failed:runtime=false:verified=false"
+    ],
+    "test_summary": "200 tests collected. `make test` did not complete within the diagnostic window and the latest Ralph log shows dozens of FAILED integration tests; treat test health as FAIL.",
+    "uncommitted_files": 11
+  }
+}

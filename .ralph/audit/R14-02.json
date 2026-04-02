@@ -1,0 +1,24 @@
+{
+  "task_id": "R14-02",
+  "title": "Fix audit review.parsed always empty",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "R14-02 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R14-02\",\"summary\":\"review.parsed population was added, but the change regressed existing retry/block behavior and the full test suite no longer passes.\",\"quality_score\":4,\"issues\":[\"Existing integration behavior regressed: `test_ralph_retry_prompt_includes_failed_attempt_context` and `test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt` now end in `verified_done` instead of `blocked`, so the acceptance criterion that existing audit artifact tests still pass is not met.\"],\"fix_instructions\":\"Make the structured review extraction affect only the audit artifact payload in `write_task_audit_artifact` and preserve the existing fix/block review semantics used by retry handling. After the change, the two retry/block integration tests must return to `blocked` while the new audit test still proves `review.parsed` contains the structured fields.\",\"alert_reason\":\"\",\"progress_note\":\"\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {}
+  },
+  "attempts": 3,
+  "duration_sec": 2995,
+  "timestamp": "2026-04-01T19:42:12Z",
+  "runtime_success": false,
+  "verified_success": false
+}

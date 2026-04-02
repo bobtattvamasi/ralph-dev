@@ -1,0 +1,324 @@
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R14-02",
+  "phase": "R14",
+  "title": "Fix audit review.parsed always empty",
+  "description": "In .ralph/audit/*.json, review.parsed is always {} even when review.raw contains valid BEGIN_RALPH_REVIEW_JSON...END_RALPH_REVIEW_JSON. The write_task_audit_artifact function in ralph.sh constructs the audit JSON but doesn't extract parsed review fields from REVIEW_JSON variable into the parsed structure. Fix so decision, quality_score, issues, fix_instructions are preserved structurally.",
+  "status": "pending",
+  "priority": "high",
+  "risk": "low",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "After task approval, .ralph/audit/<TASK>.json review.parsed contains decision, quality_score, summary",
+    "After task fix/block, review.parsed contains decision and fix_instructions",
+    "Existing test_audit_artifact tests still pass",
+    "Add test verifying review.parsed is populated"
+  ]
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
+index c76eddd..b01f02e 100755
+--- a/src/ralph/resources/ralph.sh
++++ b/src/ralph/resources/ralph.sh
+@@ -740,6 +740,7 @@ write_task_audit_artifact() {
+         verification_json_payload=$(python3 - <<'PY'
+ import json
+ import os
++import re
+ 
+ reason = os.environ.get("RALPH_AUDIT_REASON", "").strip()
+ print(json.dumps({
+@@ -768,6 +769,7 @@ PY
+         python3 - <<'PY'
+ import json
+ import os
++import re
+ 
+ def safe_json_load(raw: str, default):
+     try:
+@@ -775,10 +777,72 @@ def safe_json_load(raw: str, default):
+     except Exception:
+         return default
+ 
++def extract_review_payload(review_json_raw: str, review_raw: str):
++    parsed = safe_json_load(review_json_raw, None)
++    if isinstance(parsed, dict):
++        return parsed
++
++    direct_raw = safe_json_load(review_raw, None)
++    if isinstance(direct_raw, dict):
++        return direct_raw
++
++    if not isinstance(review_raw, str) or not review_raw.strip():
++        return {}
++
++    match = re.search(
++        r"BEGIN_RALPH_REVIEW_JSON\s*(\{.*?\})\s*END_RALPH_REVIEW_JSON",
++        review_raw,
++        re.DOTALL,
++    )
++    if not match:
++        return {}
++
++    extracted = safe_json_load(match.group(1), None)
++    if isinstance(extracted, dict):
++        return extracted
++    return {}
++
++def normalize_parsed_review(review):
++    if not isinstance(review, dict):
++        return {}
++
++    normalized = {}
++
++    decision = review.get("decision")
++    if isinstance(decision, str) and decision.strip():
++        normalized["decision"] = decision.strip()
++
++    quality_score = review.get("quality_score")
++    if isinstance(quality_score, (int, float)):
++        normalized["quality_score"] = quality_score
++
++    summary = review.get("summary")
++    if not isinstance(summary, str) or not summary.strip():
++        progress_note = review.get("progress_note")
++        if isinstance(progress_note, str) and progress_note.strip():
++            summary = progress_note
++    if isinstance(summary, str) and summary.strip():
++        normalized["summary"] = summary.strip()
++
++    issues = review.get("issues")
++    if isinstance(issues, list):
++        normalized["issues"] = issues
++
++    fix_instructions = review.get("fix_instructions")
++    if isinstance(fix_instructions, str) and fix_instructions.strip():
++        normalized["fix_instructions"] = fix_instructions.strip()
++
++    return normalized
++
+ task = safe_json_load(os.environ.get("RALPH_AUDIT_TASK_JSON", "{}"), {})
+ verification = safe_json_load(os.environ.get("RALPH_AUDIT_VERIFICATION_JSON", "{}"), {})
+ changes = safe_json_load(os.environ.get("RALPH_AUDIT_CHANGED_FILES_JSON", "[]"), [])
+-parsed_review = safe_json_load(os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}"), {})
++parsed_review = normalize_parsed_review(
++    extract_review_payload(
++        os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}"),
++        os.environ.get("RALPH_AUDIT_REVIEW_RAW", ""),
++    )
++)
+ 
+ payload = {
+     "task_id": task.get("id", ""),
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+index 08a0c68..3985788 100644
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -180,6 +180,27 @@ if review_file:
+                 "quality_score": 8,
+                 "progress_note": "Exact gap resolved",
+             }
++    elif mode == "lead_structured_review":
++        marker = Path(lead_fix_marker) if lead_fix_marker else None
++        if marker is not None and not marker.exists():
++            marker.write_text("fix-issued", encoding="utf-8")
++            payload = {
++                "decision": "fix",
++                "task_id": "T01",
++                "quality_score": 4,
++                "fix_instructions": "Implement the missing narrow-task behavior.",
++                "issues": ["missing narrow-task behavior"],
++                "progress_note": "One targeted fix remains",
++            }
++        else:
++            payload = {
++                "decision": "approve",
++                "task_id": "T01",
++                "quality_score": 9,
++                "summary": "Narrow-task behavior implemented",
++                "issues": [],
++                "progress_note": "Ready to ship",
++            }
+     else:
+         payload = {
+             "decision": "approve",
+@@ -316,7 +337,7 @@ def init_git_repo(project_dir: Path) -> None:
+ 
+ def create_test_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+     project_dir = tmp_path / "project"
+-    project_dir.mkdir()
++    project_dir.mkdir(parents=True)
+     (project_dir / "logs").mkdir()
+     (project_dir / ".ralph" / "memory").mkdir(parents=True)
+ 
+@@ -358,7 +379,7 @@ def create_test_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+     )
+ 
+     bin_dir = tmp_path / "bin"
+-    bin_dir.mkdir()
++    bin_dir.mkdir(parents=True)
+     make_fake_binaries(bin_dir)
+ 
+     init_git_repo(project_dir)
+@@ -2236,6 +2257,56 @@ def test_ralph_blocks_bookkeeping_only_closure(tmp_path: Path) -> None:
+     assert audit["verified_success"] is False
+ 
+ 
++def test_ralph_populates_structured_review_fields_in_audit(tmp_path: Path) -> None:
++    approved_project_dir, approved_env = create_test_project(tmp_path / "approved")
++    approved_env["MOCK_CODEX_MODE"] = "lead_structured_review"
++    approved_env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_structured_review.marker")
++    approved_env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
++    approved_env["MOCK_CODEX_WRITE_CONTENT"] = "export function buildKeywordPrompt() {\n  return 'structured review';\n}\n"
++    approved_env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
++
++    approved_result = subprocess.run(
++        [str(RALPH_SH), "task", "T01"],
++        cwd=approved_project_dir,
++        env=approved_env,
++        capture_output=True,
++        text=True,
++        timeout=45,
++    )
++
++    assert approved_result.returncode == 0, approved_result.stdout + approved_result.stderr
++    assert load_task_status(approved_project_dir) == "verified_done"
++
++    audit = load_audit(approved_project_dir)
++    parsed_review = audit["review"]["parsed"]
++    assert parsed_review["decision"] == "approve"
++    assert parsed_review["quality_score"] == 9
++    assert parsed_review["summary"] == "Narrow-task behavior implemented"
++    assert parsed_review["issues"] == []
++
++    blocked_project_dir, blocked_env = create_test_project(tmp_path / "blocked")
++    blocked_env["MOCK_CODEX_MODE"] = "lead_contradictory_fix_only"
++
++    blocked_result = subprocess.run(
++        [str(RALPH_SH), "task", "T01"],
++        cwd=blocked_project_dir,
++        env=blocked_env,
++        capture_output=True,
++        text=True,
++        timeout=45,
++    )
++
++    assert blocked_result.returncode == 0, blocked_result.stdout + blocked_result.stderr
++
++    blocked_audit = load_audit(blocked_project_dir)
++    blocked_parsed_review = blocked_audit["review"]["parsed"]
++    assert blocked_audit["status"] == "blocked"
++    assert blocked_parsed_review["decision"] == "fix"
++    assert blocked_parsed_review["fix_instructions"] == (
++        "Update tasks.json, update progress.md, add a final commit, and provide a real non-empty git diff."
++    )
++
++
+ def test_ralph_allows_docs_only_task_with_docs_evidence(tmp_path: Path) -> None:
+     project_dir, env = create_test_project(tmp_path)
+     tasks_path = project_dir / "tasks.json"
+```
+
+Previous diff snapshot: 7373 bytes
+
+## Tests
+```
+        assert result.returncode == 0, result.stdout + result.stderr
+>       assert load_task_status(project_dir) == "blocked"
+E       AssertionError: assert 'verified_done' == 'blocked'
+E         - blocked
+E         + verified_done
+
+tests/test_integration.py:2090: AssertionError
+______ test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt ______
+
+tmp_path = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-56/test_ralph_blocks_retry_when_a0')
+
+    def test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt(tmp_path: Path) -> None:
+        project_dir, env = create_test_project(tmp_path)
+        env["MOCK_CODEX_MODE"] = "lead_fix_twice_then_approve"
+        env["MOCK_LEAD_FIX_COUNT_FILE"] = str(tmp_path / "lead_fix_twice.count")
+        env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
+        env["MOCK_CODEX_WRITE_CONTENT"] = "export function buildKeywordPrompt() {\n  return 'retry patch';\n}\n"
+        env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
+    
+        result = subprocess.run(
+            [str(RALPH_SH), "task", "T01"],
+            cwd=project_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    
+        assert result.returncode == 0, result.stdout + result.stderr
+>       assert load_task_status(project_dir) == "blocked"
+E       AssertionError: assert 'verified_done' == 'blocked'
+E         - blocked
+E         + verified_done
+
+tests/test_integration.py:2227: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_integration.py::test_ralph_retry_prompt_includes_failed_attempt_context
+FAILED tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt
+============= 2 failed, 200 passed, 1 skipped in 809.97s (0:13:29) =============
+make: *** [test] Error 1
+tests failed
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.

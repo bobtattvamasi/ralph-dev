@@ -3096,7 +3096,7 @@
       "phase": "R14",
       "title": "Fix metrics.csv schema drift",
       "description": "logs/metrics.csv header doesn't include web_search_policy column but new rows do, causing csv.DictReader to put extra field in None key. Add header migration: on first write, check if header matches expected columns, rewrite header if needed. Add row/header consistency check in log_metrics function.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "risk": "low",
       "dependencies": [],
@@ -3105,7 +3105,8 @@
         "Existing metrics.csv gets header migrated on next write",
         "csv.DictReader produces no None keys",
         "Add test for header migration"
-      ]
+      ],
+      "completed_at": "2026-04-02T06:33:31.897502+00:00"
     },
     {
       "id": "R14-04",

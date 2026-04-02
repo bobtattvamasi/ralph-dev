@@ -1,0 +1,358 @@
+Reading additional input from stdin...
+OpenAI Codex v0.118.0 (research preview)
+--------
+workdir: /Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 019d4a63-3dee-7463-ad70-83b0b46c322f
+--------
+user
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "BUG-05",
+  "phase": "BUG",
+  "category": "bugfix",
+  "priority": "high",
+  "complexity": "moderate",
+  "title": "Idempotent retry guard false-blocks tasks where attempt 1 already succeeded",
+  "description": "When coder attempt 1 makes real changes but lead says fix, and attempt 2 correctly makes zero changes (because work is already done), ralph.sh idempotent_retry guard compares the two diffs, sees both are empty (attempt 1 was reset), and blocks the task. This prevents legitimate already-done tasks from closing. Found during R13-01 auto execution. Root cause: ralph.sh compares post-reset diffs instead of checking whether acceptance criteria are met. See idempotent retry guard around ralph.sh retry diff comparison logic.",
+  "acceptance_criteria": [
+    "Idempotent retry guard does not block when attempt N makes 0 changes but prior attempt made real changes that were reset",
+    "Guard still blocks genuine infinite loops where coder repeats identical failing changes",
+    "Test covers: attempt 1 changes files + lead fix + attempt 2 no changes = should NOT block",
+    "Test covers: attempt 1 and attempt 2 both make identical wrong changes = should block"
+  ],
+  "dependencies": [],
+  "status": "pending"
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
+index 05d740a..c76eddd 100755
+--- a/src/ralph/resources/ralph.sh
++++ b/src/ralph/resources/ralph.sh
+@@ -2820,6 +2820,85 @@ task_scoped_worktree_diff_from_ref() {
+         2>/dev/null || true
+ }
+ 
++list_task_scoped_repo_files() {
++    local path=""
++
++    {
++        git ls-files 2>/dev/null
++        git ls-files --others --exclude-standard 2>/dev/null
++    } | awk 'NF' | sort -u | while IFS= read -r path; do
++        [ -n "$path" ] || continue
++        handoff_is_runtime_owned_path "$path" && continue
++        [ -e "$path" ] || continue
++        printf '%s\n' "$path"
++    done
++}
++
++snapshot_task_scoped_repo_metadata() {
++    local snapshot_file="$1"
++    python3 - "$snapshot_file" <<'PY'
++from __future__ import annotations
++
++import json
++import os
++import sys
++
++snapshot_file = sys.argv[1]
++entries = {}
++
++for raw_path in sys.stdin.read().splitlines():
++    path = raw_path.strip()
++    if not path:
++        continue
++    try:
++        stat_result = os.stat(path, follow_symlinks=False)
++    except FileNotFoundError:
++        continue
++    entries[path] = {
++        "mtime_ns": stat_result.st_mtime_ns,
++        "size": stat_result.st_size,
++    }
++
++with open(snapshot_file, "w", encoding="utf-8") as handle:
++    json.dump(entries, handle, sort_keys=True)
++PY
++}
++
++task_scoped_paths_touched_since_snapshot() {
++    local snapshot_file="$1"
++    python3 - "$snapshot_file" <<'PY'
++from __future__ import annotations
++
++import json
++import os
++import sys
++
++snapshot_file = sys.argv[1]
++
++try:
++    with open(snapshot_file, "r", encoding="utf-8") as handle:
++        before = json.load(handle)
++except FileNotFoundError:
++    before = {}
++
++current_paths = {line.strip() for line in sys.stdin.read().splitlines() if line.strip()}
++after = {}
++for path in current_paths:
++    try:
++        stat_result = os.stat(path, follow_symlinks=False)
++    except FileNotFoundError:
++        continue
++    after[path] = {
++        "mtime_ns": stat_result.st_mtime_ns,
++        "size": stat_result.st_size,
++    }
++
++touched = sorted(path for path in set(before) | set(after) if before.get(path) != after.get(path))
++if touched:
++    print("\n".join(touched))
++PY
++}
++
+ format_diff_summary() {
+     python3 -c '
+ from __future__ import annotations
+@@ -3804,12 +3883,14 @@ print(task.get('role', 'coder'))
+     TASK_TOKENS=0
+     DIFF_SNAPSHOT_FILE="/tmp/ralph_diff_${TASK_ID}.txt"
+     DIFF_SUMMARY_FILE="/tmp/ralph_diff_summary_${TASK_ID}.txt"
++    ATTEMPT_ACTIVITY_SNAPSHOT_FILE="/tmp/ralph_attempt_activity_${TASK_ID}.json"
+     REVIEW_TARGET_FILE="/tmp/ralph_review_target_${TASK_ID}.txt"
+     RETRY_FEEDBACK_FILE="/tmp/ralph_retry_feedback_${TASK_ID}.txt"
+     RETRY_FEEDBACK_SOURCE_FILE="/tmp/ralph_retry_feedback_source_${TASK_ID}.txt"
+     RETRY_TEST_OUTPUT_FILE="/tmp/ralph_retry_tests_${TASK_ID}.txt"
+     rm -f "$DIFF_SNAPSHOT_FILE"
+     rm -f "$DIFF_SUMMARY_FILE"
++    rm -f "$ATTEMPT_ACTIVITY_SNAPSHOT_FILE"
+     rm -f "$REVIEW_TARGET_FILE"
+     rm -f "$RETRY_FEEDBACK_FILE"
+     rm -f "$RETRY_FEEDBACK_SOURCE_FILE"
+@@ -3931,6 +4012,7 @@ print(task.get('role', 'coder'))
+             notify "🤖 [CODER] Starting: $TASK_ID — $TASK_TITLE"
+             CODER_START=$(date +%s)
+             apply_timeout_override
++            list_task_scoped_repo_files | snapshot_task_scoped_repo_metadata "$ATTEMPT_ACTIVITY_SNAPSHOT_FILE"
+ 
+             # Inject memory context
+             PROJECT_AGENTS=""
+@@ -4010,8 +4092,15 @@ print(task.get('role', 'coder'))
+         EFFECTIVE_REVIEW_BASE_HASH=$(resolve_git_ref "${REVIEW_BASE_HASH:-$PRE_HASH}")
+         EFFECTIVE_REVIEW_TARGET_HASH=$(resolve_git_ref "${REVIEW_TARGET_HASH:-$POST_HASH}")
+         PRIOR_ATTEMPT_DIFF=""
++        PRIOR_ATTEMPT_DIFF_BYTES=0
++        PRIOR_ATTEMPT_HAS_DIFF=false
+         if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ]; then
+             PRIOR_ATTEMPT_DIFF=$(cat "$DIFF_SNAPSHOT_FILE" 2>/dev/null || true)
++            PRIOR_ATTEMPT_DIFF_BYTES=$(wc -c < "$DIFF_SNAPSHOT_FILE" 2>/dev/null | tr -d ' ' || echo "0")
++            PRIOR_ATTEMPT_DIFF_BYTES="${PRIOR_ATTEMPT_DIFF_BYTES:-0}"
++            if [ "$PRIOR_ATTEMPT_DIFF_BYTES" -gt 0 ]; then
++                PRIOR_ATTEMPT_HAS_DIFF=true
++            fi
+         fi
+         if [ "$EFFECTIVE_REVIEW_BASE_HASH" = "$EFFECTIVE_REVIEW_TARGET_HASH" ] && [ -n "$(task_scoped_cached_name_only_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")" ]; then
+             CURRENT_DIFF=$(task_scoped_cached_diff_from_ref "$EFFECTIVE_REVIEW_BASE_HASH")
+@@ -4020,7 +4109,16 @@ print(task.get('role', 'coder'))
+             CURRENT_DIFF=$(task_scoped_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
+             CURRENT_DIFF_SUMMARY=$(summarize_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
+         fi
+-        if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && { [ -z "$CURRENT_DIFF" ] || [ "$PRIOR_ATTEMPT_DIFF" = "$CURRENT_DIFF" ]; }; then
++        CURRENT_DIFF_HAS_DIFF=false
++        if [ -n "$CURRENT_DIFF" ]; then
++            CURRENT_DIFF_HAS_DIFF=true
++        fi
++        CURRENT_ATTEMPT_TOUCHED_PATHS=$(list_task_scoped_repo_files | task_scoped_paths_touched_since_snapshot "$ATTEMPT_ACTIVITY_SNAPSHOT_FILE")
++        CURRENT_ATTEMPT_TOUCHED_TASK_SCOPED_FILES=false
++        if [ -n "$CURRENT_ATTEMPT_TOUCHED_PATHS" ]; then
++            CURRENT_ATTEMPT_TOUCHED_TASK_SCOPED_FILES=true
++        fi
++        if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && [ "$PRIOR_ATTEMPT_HAS_DIFF" = true ] && [ "$CURRENT_DIFF_HAS_DIFF" = true ] && [ "$PRIOR_ATTEMPT_DIFF" = "$CURRENT_DIFF" ] && [ "$CURRENT_ATTEMPT_TOUCHED_TASK_SCOPED_FILES" = true ]; then
+             REASON="Retry produced identical diff to prior attempt"
+             TASK_DURATION=$(( $(date +%s) - TASK_START ))
+             log "⚠️ Retry diff matched the prior attempt; blocking before attempt $((CURRENT_ATTEMPT + 1))"
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+index e1ab5fe..08a0c68 100644
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -94,6 +94,7 @@ write_file = os.environ.get("MOCK_CODEX_WRITE_FILE", "")
+ write_content = os.environ.get("MOCK_CODEX_WRITE_CONTENT", "// generated by mock codex\\n")
+ write_mode = os.environ.get("MOCK_CODEX_WRITE_MODE", "append")
+ stdout_text = os.environ.get("MOCK_CODEX_STDOUT_TEXT", "")
++write_once_marker = os.environ.get("MOCK_CODEX_WRITE_ONCE_MARKER", "")
+ if review_file:
+     if lead_prompt_capture_file:
+         Path(lead_prompt_capture_file).write_text(prompt, encoding="utf-8")
+@@ -227,9 +228,14 @@ else:
+     if write_file:
+         target = Path(write_file)
+         target.parent.mkdir(parents=True, exist_ok=True)
+-        file_mode = "a" if write_mode == "append" else "w"
+-        with target.open(file_mode, encoding="utf-8") as fh:
+-            fh.write(write_content)
++        marker = Path(write_once_marker) if write_once_marker else None
++        should_write = marker is None or not marker.exists()
++        if should_write:
++            file_mode = "a" if write_mode == "append" else "w"
++            with target.open(file_mode, encoding="utf-8") as fh:
++                fh.write(write_content)
++            if marker is not None:
++                marker.write_text("written", encoding="utf-8")
+     if sleep_s > 0:
+         time.sleep(sleep_s)
+ 
+@@ -2153,6 +2159,32 @@ def test_ralph_lead_review_uses_cumulative_diff_from_task_start_across_retries(t
+     assert prompt.count("export const generatedByCodex = true;") == 2
+ 
+ 
++def test_ralph_allows_noop_retry_after_prior_attempt_already_changed_files(tmp_path: Path) -> None:
++    project_dir, env = create_test_project(tmp_path)
++    env["MOCK_CODEX_MODE"] = "lead_fix_once"
++    env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_fix_once_noop.marker")
++    env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
++    env["MOCK_CODEX_WRITE_CONTENT"] = "export function buildKeywordPrompt() {\n  return 'retry patch';\n}\n"
++    env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
++    env["MOCK_CODEX_WRITE_ONCE_MARKER"] = str(tmp_path / "write_once.marker")
++
++    result = subprocess.run(
++        [str(RALPH_SH), "task", "T01"],
++        cwd=project_dir,
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=45,
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    assert load_task_status(project_dir) == "verified_done"
++    assert result.stdout.count("🤖 CODER — Attempt") == 2
++    assert result.stdout.count("👔 TECH LEAD — Reviewing") == 2
++    assert "Retry produced identical diff to prior attempt" not in result.stdout
++    assert "status=idempotent_retry" not in result.stdout
++
++
+ def test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt(tmp_path: Path) -> None:
+     project_dir, env = create_test_project(tmp_path)
+     env["MOCK_CODEX_MODE"] = "lead_fix_twice_then_approve"
+```
+
+Previous diff snapshot: 8987 bytes
+
+## Tests
+```
+        assert result.returncode == 0, result.stdout + result.stderr
+>       assert load_task_status(project_dir) == "blocked"
+E       AssertionError: assert 'verified_done' == 'blocked'
+E         - blocked
+E         + verified_done
+
+tests/test_integration.py:2069: AssertionError
+______ test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt ______
+
+tmp_path = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-53/test_ralph_blocks_retry_when_a0')
+
+    def test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt(tmp_path: Path) -> None:
+        project_dir, env = create_test_project(tmp_path)
+        env["MOCK_CODEX_MODE"] = "lead_fix_twice_then_approve"
+        env["MOCK_LEAD_FIX_COUNT_FILE"] = str(tmp_path / "lead_fix_twice.count")
+        env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
+        env["MOCK_CODEX_WRITE_CONTENT"] = "export function buildKeywordPrompt() {\n  return 'retry patch';\n}\n"
+        env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
+    
+        result = subprocess.run(
+            [str(RALPH_SH), "task", "T01"],
+            cwd=project_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    
+        assert result.returncode == 0, result.stdout + result.stderr
+>       assert load_task_status(project_dir) == "blocked"
+E       AssertionError: assert 'verified_done' == 'blocked'
+E         - blocked
+E         + verified_done
+
+tests/test_integration.py:2206: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_integration.py::test_ralph_retry_prompt_includes_failed_attempt_context
+FAILED tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt
+============= 2 failed, 199 passed, 1 skipped in 789.79s (0:13:09) =============
+make: *** [test] Error 1
+tests failed
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.
+deprecated: `[features].web_search_request` is deprecated because web search is enabled by default.
+Set `web_search` to `"live"`, `"cached"`, or `"disabled"` at the top level (or under a profile) in config.toml if you want to override it.
+codex
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"BUG-05","summary":"Retry guard no longer blocks repeated identical failing attempts; the new touched-files check lets the infinite-loop case pass through and tests still fail.","quality_score":61,"issues":["`src/ralph/resources/ralph.sh` changed the block condition to require a non-empty post-review `CURRENT_DIFF`, but in the real failing-loop case the lead resets the wrong patch before the comparison, so attempt 2 can still be the same bad work while `CURRENT_DIFF` is empty and the task incorrectly reaches `verified_done`. This breaks the existing retry-block behavior and leaves `tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt` failing."],"fix_instructions":"Keep the noop-retry allowance, but make the retry guard decide from attempt-level evidence captured before the reset rather than from the post-reset diff alone. In `src/ralph/resources/ralph.sh`, persist whether the current coder attempt actually reproduced the same task-scoped patch as the prior attempt, then block when the two attempt patches match even if the lead reset leaves `CURRENT_DIFF` empty. This should preserve the new `attempt 1 changed, attempt 2 noop` pass case while restoring the block expected by `tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt` and the failed retry-context test.","alert_reason":"","progress_note":"Implementation is close, but acceptance is not met because the genuine identical-retry loop is no longer detected."}
+END_RALPH_REVIEW_JSON
+tokens used
+24,019
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"fix","task_id":"BUG-05","summary":"Retry guard no longer blocks repeated identical failing attempts; the new touched-files check lets the infinite-loop case pass through and tests still fail.","quality_score":61,"issues":["`src/ralph/resources/ralph.sh` changed the block condition to require a non-empty post-review `CURRENT_DIFF`, but in the real failing-loop case the lead resets the wrong patch before the comparison, so attempt 2 can still be the same bad work while `CURRENT_DIFF` is empty and the task incorrectly reaches `verified_done`. This breaks the existing retry-block behavior and leaves `tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt` failing."],"fix_instructions":"Keep the noop-retry allowance, but make the retry guard decide from attempt-level evidence captured before the reset rather than from the post-reset diff alone. In `src/ralph/resources/ralph.sh`, persist whether the current coder attempt actually reproduced the same task-scoped patch as the prior attempt, then block when the two attempt patches match even if the lead reset leaves `CURRENT_DIFF` empty. This should preserve the new `attempt 1 changed, attempt 2 noop` pass case while restoring the block expected by `tests/test_integration.py::test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt` and the failed retry-context test.","alert_reason":"","progress_note":"Implementation is close, but acceptance is not met because the genuine identical-retry loop is no longer detected."}
+END_RALPH_REVIEW_JSON
