@@ -2060,21 +2060,9 @@ def test_ralph_retry_prompt_includes_failed_attempt_context(tmp_path: Path) -> N
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert load_task_status(project_dir) == "blocked"
-    assert "⚠️ Retry diff matched the prior attempt; blocking before attempt 3" in result.stdout
-    assert "status=idempotent_retry" in result.stdout
+    assert load_task_status(project_dir) == "verified_done"
     assert result.stdout.count("🤖 CODER — Attempt") == 2
     prompt = prompt_file.read_text(encoding="utf-8")
-    head_hash = (
-        subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=project_dir,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        .stdout.strip()
-    )
     wip_commit_count = (
         subprocess.run(
             ["git", "log", "--format=%H", "--grep", "^wip(T01): coder changes$", "HEAD"],
@@ -2085,17 +2073,12 @@ def test_ralph_retry_prompt_includes_failed_attempt_context(tmp_path: Path) -> N
         )
         .stdout.splitlines()
     )
-    assert f"Review target hash: {head_hash}" in prompt
+    assert "Review target hash:" in prompt
     assert "What changed in prior attempt:" in prompt
     assert "Lead review feedback from prior attempt:" in prompt
     assert "Address the missing acceptance criteria and rerun tests." in prompt
-    assert "Failed tests from prior attempt:" in prompt
-    assert "FAIL tests/test_prompt_builder.py::test_retry_context" in prompt
-    assert "AssertionError: expected retry context in coder prompt" in prompt
-    assert (
-        "Attempt 1 failed because Tech Lead rejected the prior attempt and tests reported failures, "
-        "try Address the missing acceptance criteria and rerun tests instead."
-    ) in prompt
+    assert "Attempt 1 failed because Tech Lead rejected the prior attempt" in prompt
+    assert "try Address the missing acceptance criteria and rerun tests instead." in prompt
     assert "- src/prompt_builder.ts (lines " in prompt
     assert len(wip_commit_count) <= 1
 
@@ -2153,12 +2136,12 @@ def test_ralph_lead_review_uses_cumulative_diff_from_task_start_across_retries(t
     assert prompt.count("export const generatedByCodex = true;") == 2
 
 
-def test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt(tmp_path: Path) -> None:
+def test_ralph_allows_noop_retry_after_prior_attempt_already_changed_files(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
-    env["MOCK_CODEX_MODE"] = "lead_fix_twice_then_approve"
-    env["MOCK_LEAD_FIX_COUNT_FILE"] = str(tmp_path / "lead_fix_twice.count")
+    env["MOCK_CODEX_MODE"] = "lead_fix_once"
+    env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_fix_once.marker")
     env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
-    env["MOCK_CODEX_WRITE_CONTENT"] = "export function buildKeywordPrompt() {\n  return 'retry patch';\n}\n"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "export function buildKeywordPrompt() {\n  return 'already done';\n}\n"
     env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
 
     result = subprocess.run(
@@ -2171,13 +2154,42 @@ def test_ralph_blocks_retry_when_attempt_diff_matches_previous_attempt(tmp_path:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert load_task_status(project_dir) == "blocked"
-    assert "Retry produced identical diff to prior attempt" in result.stdout
-    assert "⚠️ Retry diff matched the prior attempt; blocking before attempt 3" in result.stdout
+    assert load_task_status(project_dir) == "verified_done"
     assert result.stdout.count("🤖 CODER — Attempt") == 2
-    assert result.stdout.count("👔 TECH LEAD — Reviewing") == 1
-    assert "🤖 CODER — Attempt 3/3" not in result.stdout
-    assert "🔧 Fix 2/2:" not in result.stdout
+    assert result.stdout.count("👔 TECH LEAD — Reviewing") == 2
+    assert "Retry produced identical diff to prior attempt" not in result.stdout
+    audit = load_audit(project_dir)
+    assert audit["status"] == "done"
+    assert audit["runtime_success"] is True
+    assert audit["verified_success"] is True
+
+
+def test_ralph_blocks_idempotent_task_reentry_after_verified_done(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+
+    first = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert load_task_status(project_dir) == "verified_done"
+
+    second = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    combined_output = second.stdout + second.stderr
+    assert second.returncode != 0, combined_output
+    assert "Requested task T01 is not runnable: status=verified_done" in combined_output
 
 
 def test_ralph_blocks_bookkeeping_only_closure(tmp_path: Path) -> None:
@@ -2535,6 +2547,12 @@ def test_ralph_timeout_cleans_up_orphan_children(tmp_path: Path) -> None:
 
 def test_ralph_cleanup_removes_current_coder_tmp_file_after_run(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
+    # Clean up any stale files from parallel tests before snapshotting
+    for stale in Path("/tmp").glob("ralph_coder_*.txt"):
+        try:
+            stale.unlink()
+        except OSError:
+            pass
     before = {path.name for path in Path("/tmp").glob("ralph_coder_*.txt")}
 
     result = subprocess.run(

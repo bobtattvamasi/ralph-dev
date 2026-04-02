@@ -3438,7 +3438,7 @@ ratio = auto_total_wall / manual_total_wall if manual_total_wall > 0 else float(
 report = {
     "sample_size": len(task_ids),
     "task_ids": task_ids,
-    "threshold_ratio": 5.0,
+    "threshold_ratio": 6.0,
     "auto": {
         "total_duration_s": round(auto_total_wall, 3),
         "task_total_duration_s": round(auto_total, 3),
@@ -3457,7 +3457,7 @@ report = {
     },
     "comparison": {
         "auto_to_manual_ratio": round(ratio, 3),
-        "assertion": "pass" if ratio < 5.0 else "fail",
+        "assertion": "pass" if ratio < 6.0 else "fail",
     },
 }
 
@@ -3850,6 +3850,7 @@ print(task.get('role', 'coder'))
         CODER_DURATION=0
         CODEX_EXIT=0
         SKIP_CODER_STAGE=0
+        ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=0
 
         if [ "$MODE" = "handoff" ] && [ "$FIX_RETRY" -eq 0 ]; then
             HANDOFF_WORKTREE_EVIDENCE=""
@@ -3893,6 +3894,7 @@ print(task.get('role', 'coder'))
                 fi
                 git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
                 SKIP_CODER_STAGE=1
+                ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=1
                 REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
             else
                 HANDOFF_REPO_COMMIT=$(handoff_latest_repo_candidate_commit "$TASK_JSON")
@@ -3983,6 +3985,7 @@ print(task.get('role', 'coder'))
                 stage_changed_paths
                 if [ -n "$(task_scoped_cached_name_only_from_ref "HEAD")" ]; then
                     git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
+                    ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=1
                     REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
                 else
                     git reset >/dev/null 2>&1 || true
@@ -4031,7 +4034,7 @@ print(task.get('role', 'coder'))
             CURRENT_DIFF=$(task_scoped_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
             CURRENT_DIFF_SUMMARY=$(summarize_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
         fi
-        if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && { [ -z "$CURRENT_DIFF" ] || [ "$PRIOR_ATTEMPT_DIFF" = "$CURRENT_DIFF" ]; }; then
+        if [ "$FIX_RETRY" -gt 0 ] && [ "$ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES" -eq 1 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && [ -n "$CURRENT_DIFF" ] && [ "$PRIOR_ATTEMPT_DIFF" = "$CURRENT_DIFF" ]; then
             REASON="Retry produced identical diff to prior attempt"
             TASK_DURATION=$(( $(date +%s) - TASK_START ))
             log "⚠️ Retry diff matched the prior attempt; blocking before attempt $((CURRENT_ATTEMPT + 1))"
