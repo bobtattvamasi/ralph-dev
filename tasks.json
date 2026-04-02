@@ -3055,7 +3055,8 @@
         "Test covers: attempt 1 and attempt 2 both make identical wrong changes = should block"
       ],
       "dependencies": [],
-      "status": "pending"
+      "status": "verified_done",
+      "completed_at": "2026-04-02T17:04:08.346543+00:00"
     },
     {
       "id": "R14-01",
