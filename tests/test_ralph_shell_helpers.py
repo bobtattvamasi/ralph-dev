@@ -243,6 +243,7 @@ def test_run_task_closure_verification_falls_back_when_verifier_crashes(tmp_path
 
 def test_task_scoped_diff_between_refs_includes_ralph_shell_changes(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
+    shutil.copy2(RALPH_SH, project_dir / "ralph.sh")
     init_git_repo(project_dir)
     subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
