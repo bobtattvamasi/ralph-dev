@@ -1614,7 +1614,8 @@
         "Инструкция читать blog_state.json для номера"
       ],
       "completed_at": null,
-      "revision_notes": "Historical aggregate task no longer used as a live execution candidate: dependency truth is non-runnable and current repo truth is partial. Replace with narrower R12 tasks for journalist template completion and context pipeline pieces."
+      "revision_notes": "Historical aggregate task no longer used as a live execution candidate: dependency truth is non-runnable and current repo truth is partial. Replace with narrower R12 tasks for journalist template completion and context pipeline pieces.",
+      "notes": " | Deferred: journalist template not MVP"
     },
     {
       "id": "R8-05",
@@ -2420,7 +2421,8 @@
       "completed_at": null,
       "revision_notes": "verified_done",
       "timeout": 300,
-      "role": "coder"
+      "role": "coder",
+      "notes": " | Auto-fixed: was '--status' (invalid)"
     },
     {
       "id": "R12-07",
@@ -2443,7 +2445,8 @@
       "completed_at": null,
       "revision_notes": "verified_done",
       "timeout": 300,
-      "role": "coder"
+      "role": "coder",
+      "notes": " | Auto-fixed: was '--status' (invalid)"
     },
     {
       "id": "R12-08",
@@ -2465,7 +2468,8 @@
       "completed_at": null,
       "revision_notes": "verified_done",
       "timeout": 300,
-      "role": "coder"
+      "role": "coder",
+      "notes": " | Auto-fixed: was '--status' (invalid)"
     },
     {
       "id": "OPS-01",
@@ -2713,7 +2717,8 @@
       "completed_at": null,
       "revision_notes": "Modular LLM backend — defer after R12-01 MVP",
       "timeout": 300,
-      "role": "coder"
+      "role": "coder",
+      "notes": " | Deferred: not needed for MVP"
     },
     {
       "id": "R12-01b",
@@ -2758,7 +2763,8 @@
       "completed_at": null,
       "revision_notes": "Future: after modular backend",
       "timeout": 300,
-      "role": "coder"
+      "role": "coder",
+      "notes": " | Deferred: not needed for MVP"
     },
     {
       "id": "BUG-01",
@@ -3098,7 +3104,7 @@
       "phase": "R14",
       "title": "Fix metrics.csv schema drift",
       "description": "logs/metrics.csv header doesn't include web_search_policy column but new rows do, causing csv.DictReader to put extra field in None key. Add header migration: on first write, check if header matches expected columns, rewrite header if needed. Add row/header consistency check in log_metrics function.",
-      "status": "done",
+      "status": "verified_done",
       "priority": "medium",
       "risk": "low",
       "dependencies": [],
@@ -3134,7 +3140,7 @@
       "phase": "R14",
       "title": "Resolve remaining R12 blocked tasks",
       "description": "R12 has 2 blocked tasks. Investigate what blocks them, determine if they are still relevant or should be marked false_positive/partial. If relevant, unblock and fix.",
-      "status": "done",
+      "status": "verified_done",
       "priority": "low",
       "risk": "low",
       "dependencies": [],
@@ -3158,6 +3164,161 @@
         "All BUG tasks have terminal status"
       ],
       "completed_at": "2026-04-01T17:50:40.323361+00:00"
+    },
+    {
+      "id": "R15-01",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Enrich task schema — require target_files + acceptance_criteria",
+      "description": "Add target_files and acceptance_criteria fields to task schema. Validate on task creation. Backfill for pending tasks.",
+      "target_files": [
+        "tasks.json",
+        "scripts/update_task.py",
+        "scripts/next_task.py",
+        "templates/tasks.json.template"
+      ],
+      "acceptance_criteria": [
+        "All new tasks require target_files array",
+        "acceptance_criteria field validated non-empty",
+        "Template updated"
+      ],
+      "tags": [
+        "schema",
+        "quality"
+      ],
+      "priority": "high",
+      "role": "coder"
+    },
+    {
+      "id": "R15-02",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Verifier v2 — semantic checks for generic implementation tasks",
+      "description": "Generic implementation tasks currently auto-pass verification. Add: check acceptance_criteria if present, require changed files match target_files, require targeted test existence.",
+      "target_files": [
+        "scripts/verify_task_closure.py",
+        "tests/test_verify_task_closure.py"
+      ],
+      "acceptance_criteria": [
+        "Generic impl tasks with acceptance_criteria get semantic check",
+        "Mismatch between target_files and changed_files triggers warning",
+        "Tests cover new paths"
+      ],
+      "tags": [
+        "verifier",
+        "trust"
+      ],
+      "priority": "critical",
+      "role": "coder"
+    },
+    {
+      "id": "R15-03",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Coder prompt enhancement — inject target_files + acceptance into prompt",
+      "description": "When building coder prompt in ralph.sh, include target_files and acceptance_criteria from task JSON so codex knows exactly what files to change and what to achieve.",
+      "target_files": [
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Coder prompt contains target_files list",
+        "Coder prompt contains acceptance_criteria",
+        "Test verifies prompt includes both"
+      ],
+      "tags": [
+        "prompt",
+        "quality"
+      ],
+      "priority": "high",
+      "role": "coder"
+    },
+    {
+      "id": "R15-04",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Lead diff — include ralph.sh in review scope",
+      "description": "Currently ralph.sh is excluded from task-scoped diff via :!ralph.sh. Remove exclusion so lead review sees shell changes. Add regression test.",
+      "target_files": [
+        "ralph.sh",
+        "tests/test_integration.py"
+      ],
+      "acceptance_criteria": [
+        "ralph.sh changes visible in lead review diff",
+        "Regression test: shell-only change detected by diff",
+        "No false positives on bookkeeping"
+      ],
+      "tags": [
+        "trust",
+        "security"
+      ],
+      "priority": "critical",
+      "role": "coder"
+    },
+    {
+      "id": "R15-05",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Auto-pilot pre-flight — validate task context before running codex",
+      "description": "Before running codex on a task, check: target_files present, acceptance_criteria present, dependencies resolved. Skip/defer tasks without sufficient context.",
+      "target_files": [
+        "ralph.sh",
+        "scripts/next_task.py"
+      ],
+      "acceptance_criteria": [
+        "Pre-flight check runs before codex exec",
+        "Tasks without target_files get warning in log",
+        "Tasks without acceptance_criteria deferred with reason"
+      ],
+      "tags": [
+        "reliability",
+        "quality"
+      ],
+      "priority": "high",
+      "role": "coder"
+    },
+    {
+      "id": "R15-06",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Retention policy — codex archives, audit artifacts, metrics rotation",
+      "description": "Add rotation for logs/codex_*.txt (>7d), .ralph/audit/*.json (>30d), metrics.csv (>10k lines). Add disk budget check before auto/phase runs.",
+      "target_files": [
+        "ralph.sh",
+        "tests/test_integration.py"
+      ],
+      "acceptance_criteria": [
+        "codex archives older than 7d cleaned on startup",
+        "Audit artifacts older than 30d archived",
+        "Disk check warns at <1GB free"
+      ],
+      "tags": [
+        "ops",
+        "reliability"
+      ],
+      "priority": "high",
+      "role": "coder"
+    },
+    {
+      "id": "R15-07",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Bot PGID cleanup + command rate limiting",
+      "description": "Force-stop should use PGID from ralph_codex.pgid. Add per-user command rate limit (max 5/min). Add 429 backoff for sendMessage.",
+      "target_files": [
+        "scripts/ralph_bot.py",
+        "tests/test_bot_commands.py"
+      ],
+      "acceptance_criteria": [
+        "Force-stop kills process group via PGID",
+        "Commands rate-limited to 5/min per user",
+        "429 responses trigger exponential backoff"
+      ],
+      "tags": [
+        "bot",
+        "reliability"
+      ],
+      "priority": "high",
+      "role": "coder"
     }
   ]
 }
