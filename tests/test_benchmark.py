@@ -52,6 +52,7 @@ def write_project_fixture(tmp_path: Path, *, failing: bool) -> Path:
                 "description": "Ignored task",
                 "status": "pending",
                 "complexity": "simple",
+                "target_files": ["test_file.py"],
             },
         ],
     }

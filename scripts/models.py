@@ -40,6 +40,7 @@ class TaskRecord(BaseModel):
     timeout: Optional[int] = None
     dependencies: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    target_files: list[str] = Field(default_factory=list)
     test_steps: list[str] = Field(default_factory=list)
     context_files: list[str] = Field(default_factory=list)
 

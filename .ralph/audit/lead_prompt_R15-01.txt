@@ -1,0 +1,631 @@
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R15-01",
+  "phase": "R15",
+  "status": "pending",
+  "title": "Enrich task schema — require target_files + acceptance_criteria",
+  "description": "Add target_files and acceptance_criteria fields to task schema. Validate on task creation. Backfill for pending tasks.",
+  "target_files": [
+    "tasks.json",
+    "scripts/update_task.py",
+    "scripts/next_task.py",
+    "templates/tasks.json.template"
+  ],
+  "acceptance_criteria": [
+    "All new tasks require target_files array",
+    "acceptance_criteria field validated non-empty",
+    "Template updated"
+  ],
+  "tags": [
+    "schema",
+    "quality"
+  ],
+  "priority": "high",
+  "role": "coder"
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/scripts/check_prompt_budgets.py b/scripts/check_prompt_budgets.py
+index 8640d81..a509907 100644
+--- a/scripts/check_prompt_budgets.py
++++ b/scripts/check_prompt_budgets.py
+@@ -145,6 +145,7 @@ def run_case(runner_path: Path, tmp_root: Path, profile: str) -> tuple[int, int]
+             "complexity": "moderate",
+             "category": "optimization",
+             "priority": "high",
++            "target_files": ["scripts/narrow_target.py"],
+             "acceptance_criteria": [
+                 "scripts/narrow_target.py is updated",
+                 "Exact-task prompts stay narrow even when task complexity is moderate",
+@@ -162,6 +163,7 @@ def run_case(runner_path: Path, tmp_root: Path, profile: str) -> tuple[int, int]
+             "category": "optimization",
+             "priority": "high",
+             "required_context": ["ARCHITECTURE.md"],
++            "target_files": ["scripts/narrow_target.py"],
+             "acceptance_criteria": [
+                 "scripts/narrow_target.py is updated",
+                 "ARCHITECTURE.md is included because the task explicitly requires project-wide docs",
+diff --git a/scripts/models.py b/scripts/models.py
+index 0a47b8f..3c8e183 100644
+--- a/scripts/models.py
++++ b/scripts/models.py
+@@ -2,7 +2,7 @@ from __future__ import annotations
+ 
+ from typing import Literal, Optional
+ 
+-from pydantic import BaseModel, ConfigDict, Field
++from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+ 
+ 
+ class RalphState(BaseModel):
+@@ -39,6 +39,7 @@ class TaskRecord(BaseModel):
+     role: str = "coder"
+     timeout: Optional[int] = None
+     dependencies: list[str] = Field(default_factory=list)
++    target_files: list[str] = Field(default_factory=list)
+     acceptance_criteria: list[str] = Field(default_factory=list)
+     test_steps: list[str] = Field(default_factory=list)
+     context_files: list[str] = Field(default_factory=list)
+@@ -48,6 +49,28 @@ class TaskRecord(BaseModel):
+ 
+     model_config = ConfigDict(extra="ignore")
+ 
++    @field_validator("dependencies", "target_files", "acceptance_criteria", "test_steps", "context_files", mode="before")
++    @classmethod
++    def normalize_string_lists(cls, value: object) -> list[str]:
++        if value is None:
++            return []
++        if not isinstance(value, list):
++            raise TypeError("expected a list")
++        result: list[str] = []
++        for item in value:
++            text = str(item).strip()
++            if text:
++                result.append(text)
++        return result
++
++    @model_validator(mode="after")
++    def validate_pending_task_schema(self) -> "TaskRecord":
++        if self.status == "pending" and not self.target_files:
++            raise ValueError("pending tasks must define non-empty target_files")
++        if self.status == "pending" and not self.acceptance_criteria:
++            raise ValueError("pending tasks must define non-empty acceptance_criteria")
++        return self
++
+ 
+ class LeadReview(BaseModel):
+     decision: Literal["approve", "fix", "alert"]
+diff --git a/scripts/ralph_bot.py b/scripts/ralph_bot.py
+index 17003dd..6f4dff7 100755
+--- a/scripts/ralph_bot.py
++++ b/scripts/ralph_bot.py
+@@ -1271,16 +1271,40 @@ async def cmd_resume() -> None:
+     await safe_send("▶️ Ralph resumed")
+ 
+ 
++ADD_TASK_USAGE = (
++    "Usage: /add <phase> <title> | <target1, target2> | <criterion1 ; criterion2>\n"
++    "Example: /add R15 Enrich schema | scripts/models.py, tests/test_models.py | "
++    "scripts/models.py is updated ; tests cover task schema validation"
++)
++
++
++def parse_add_task_args(args: str) -> tuple[str, str, list[str], list[str]]:
++    parts = [part.strip() for part in args.split("|")]
++    if len(parts) != 3:
++        raise ValueError(ADD_TASK_USAGE)
++
++    header, raw_targets, raw_criteria = parts
++    header_parts = header.split(maxsplit=1)
++    if len(header_parts) != 2 or not header_parts[0].strip() or not header_parts[1].strip():
++        raise ValueError(ADD_TASK_USAGE)
++
++    phase = header_parts[0].strip()
++    title = header_parts[1].strip()
++    target_files = [item.strip() for item in raw_targets.split(",") if item.strip()]
++    acceptance_criteria = [item.strip() for item in raw_criteria.split(";") if item.strip()]
++    if not target_files:
++        raise ValueError("target_files must be a non-empty comma-separated list")
++    if not acceptance_criteria:
++        raise ValueError("acceptance_criteria must be a non-empty ';'-separated list")
++    return phase, title, target_files, acceptance_criteria
++
++
+ async def cmd_add(args: str) -> None:
+     """Add a new pending task to tasks.json."""
+-    parts = args.split(maxsplit=1)
+-    if len(parts) < 2:
+-        await safe_send("Usage: /add <phase> <title>")
+-        return
+-
+-    phase, title = parts[0].strip(), parts[1].strip()
+-    if not phase or not title:
+-        await safe_send("Usage: /add <phase> <title>")
++    try:
++        phase, title, target_files, acceptance_criteria = parse_add_task_args(args)
++    except ValueError as exc:
++        await safe_send(str(exc))
+         return
+ 
+     if not TASKS_FILE.exists():
+@@ -1307,7 +1331,8 @@ async def cmd_add(args: str) -> None:
+                     "priority": "medium",
+                     "title": title,
+                     "description": title,
+-                    "acceptance_criteria": [],
++                    "target_files": target_files,
++                    "acceptance_criteria": acceptance_criteria,
+                     "test_steps": [],
+                     "dependencies": [],
+                     "status": "pending",
+@@ -1764,7 +1789,7 @@ async def cmd_help() -> None:
+         "/tasks [phase] — task list\n"
+         "/plan — phase summary and next pending tasks\n"
+         "/article [new] — get today's article or generate a new one\n"
+-        "/add [phase] [title] — add a pending task\n"
++        "/add phase title | targets | criteria — add a pending task\n"
+         "/rm [task_id] — remove a task\n"
+         "/pause — pause before next step\n"
+         "/resume — resume after pause\n"
+diff --git a/scripts/ralph_common.py b/scripts/ralph_common.py
+index faa2878..eaea263 100644
+--- a/scripts/ralph_common.py
++++ b/scripts/ralph_common.py
+@@ -214,15 +214,98 @@ def load_tasks_data(project_dir: Path) -> dict[str, Any]:
+     return _load_tasks_data_unlocked(path)
+ 
+ 
++def _import_task_record_model():
++    try:
++        from models import TaskRecord
++    except ImportError:
++        from scripts.models import TaskRecord
++    return TaskRecord
++
++
++def _normalize_string_list(values: Any) -> list[str]:
++    if not isinstance(values, list):
++        return []
++    result: list[str] = []
++    seen: set[str] = set()
++    for item in values:
++        text = str(item).strip()
++        if not text:
++            continue
++        normalized = normalize_path(text) if "/" in text or text.startswith(".") else text
++        if normalized in seen:
++            continue
++        seen.add(normalized)
++        result.append(normalized)
++    return result
++
++
++def _placeholder_acceptance_criterion(task: dict[str, Any]) -> str:
++    title = str(task.get("title", "")).strip()
++    description = str(task.get("description", "")).strip()
++    summary = " — ".join(part for part in (title, description) if part)
++    summary = re.sub(r"\s+", " ", summary).strip()
++    if len(summary) > 160:
++        summary = summary[:157].rstrip() + "..."
++    if summary:
++        return f"TODO(ralph): replace placeholder acceptance criteria for {summary}"
++    return "TODO(ralph): replace placeholder acceptance criteria"
++
++
++def _placeholder_target_file(task: dict[str, Any]) -> str:
++    task_id = str(task.get("id", "")).strip() or "UNKNOWN"
++    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", task_id)
++    return f"docs/TODO_TARGET_{normalized}.md"
++
++
++def backfill_pending_task_schema(task: dict[str, Any]) -> dict[str, Any]:
++    """Backfill legacy pending-task schema fields without touching completed history."""
++    if not isinstance(task, dict):
++        raise ValueError("each task must be a JSON object")
++    if str(task.get("status", "")).strip() != "pending":
++        return task
++
++    target_files = _normalize_string_list(task.get("target_files"))
++    if not target_files:
++        inferred_targets = extract_path_candidates(task)
++        if not inferred_targets:
++            inferred_targets = [
++                path for path in _normalize_string_list(task.get("context_files")) if not is_bookkeeping_file(path)
++            ]
++        if not inferred_targets:
++            inferred_targets = [_placeholder_target_file(task)]
++        target_files = inferred_targets
++    task["target_files"] = target_files
++
++    acceptance_criteria = _normalize_string_list(task.get("acceptance_criteria"))
++    if not acceptance_criteria:
++        if target_files:
++            acceptance_criteria = [f"{path} is updated" for path in target_files]
++        else:
++            acceptance_criteria = [_placeholder_acceptance_criterion(task)]
++    task["acceptance_criteria"] = acceptance_criteria
++    return task
++
++
++def _normalize_tasks_payload(data: dict[str, Any]) -> dict[str, Any]:
++    tasks = data.get("tasks")
++    if not isinstance(tasks, list):
++        raise ValueError("tasks payload must contain a top-level 'tasks' list")
++
++    TaskRecord = _import_task_record_model()
++    for task in tasks:
++        if not isinstance(task, dict):
++            raise ValueError("each task must be a JSON object")
++        backfill_pending_task_schema(task)
++        TaskRecord.model_validate(task)
++    return data
++
++
+ def _load_tasks_data_unlocked(path: Path) -> dict[str, Any]:
+     try:
+         data = json.loads(path.read_text(encoding="utf-8"))
+         if not isinstance(data, dict):
+             raise ValueError("tasks.json must contain a JSON object")
+-        tasks = data.get("tasks")
+-        if not isinstance(tasks, list):
+-            raise ValueError("tasks.json must contain a top-level 'tasks' list")
+-        return data
++        return _normalize_tasks_payload(data)
+     except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as exc:
+         raise ValueError(format_tasks_data_error(path, exc)) from exc
+ 
+@@ -237,9 +320,7 @@ def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
+ def _save_tasks_data_unlocked(path: Path, data: dict[str, Any]) -> None:
+     if not isinstance(data, dict):
+         raise ValueError("tasks payload must be a dict")
+-    tasks = data.get("tasks")
+-    if not isinstance(tasks, list):
+-        raise ValueError("tasks payload must contain a top-level 'tasks' list")
++    _normalize_tasks_payload(data)
+     atomic_write_json(path, data)
+ 
+ 
+diff --git a/src/ralph/resources/scripts/models.py b/src/ralph/resources/scripts/models.py
+index 0a47b8f..3c8e183 100644
+--- a/src/ralph/resources/scripts/models.py
++++ b/src/ralph/resources/scripts/models.py
+@@ -2,7 +2,7 @@ from __future__ import annotations
+ 
+ from typing import Literal, Optional
+ 
+-from pydantic import BaseModel, ConfigDict, Field
++from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+ 
+ 
+ class RalphState(BaseModel):
+@@ -39,6 +39,7 @@ class TaskRecord(BaseModel):
+     role: str = "coder"
+     timeout: Optional[int] = None
+     dependencies: list[str] = Field(default_factory=list)
++    target_files: list[str] = Field(default_factory=list)
+     acceptance_criteria: list[str] = Field(default_factory=list)
+     test_steps: list[str] = Field(default_factory=list)
+     context_files: list[str] = Field(default_factory=list)
+@@ -48,6 +49,28 @@ class TaskRecord(BaseModel):
+ 
+     model_config = ConfigDict(extra="ignore")
+ 
++    @field_validator("dependencies", "target_files", "acceptance_criteria", "test_steps", "context_files", mode="before")
++    @classmethod
++    def normalize_string_lists(cls, value: object) -> list[str]:
++        if value is None:
++            return []
++        if not isinstance(value, list):
++            raise TypeError("expected a list")
++        result: list[str] = []
++        for item in value:
++            text = str(item).strip()
++            if text:
++                result.append(text)
++        return result
++
++    @model_validator(mode="after")
++    def validate_pending_task_schema(self) -> "TaskRecord":
++        if self.status == "pending" and not self.target_files:
++            raise ValueError("pending tasks must define non-empty target_files")
++        if self.status == "pending" and not self.acceptance_criteria:
++            raise ValueError("pending tasks must define non-empty acceptance_criteria")
++        return self
++
+ 
+ class LeadReview(BaseModel):
+     decision: Literal["approve", "fix", "alert"]
+diff --git a/src/ralph/resources/scripts/ralph_bot.py b/src/ralph/resources/scripts/ralph_bot.py
+index 17003dd..6f4dff7 100755
+--- a/src/ralph/resources/scripts/ralph_bot.py
++++ b/src/ralph/resources/scripts/ralph_bot.py
+@@ -1271,16 +1271,40 @@ async def cmd_resume() -> None:
+     await safe_send("▶️ Ralph resumed")
+ 
+ 
++ADD_TASK_USAGE = (
++    "Usage: /add <phase> <title> | <target1, target2> | <criterion1 ; criterion2>\n"
++    "Example: /add R15 Enrich schema | scripts/models.py, tests/test_models.py | "
++    "scripts/models.py is updated ; tests cover task schema validation"
++)
++
++
++def parse_add_task_args(args: str) -> tuple[str, str, list[str], list[str]]:
++    parts = [part.strip() for part in args.split("|")]
++    if len(parts) != 3:
++        raise ValueError(ADD_TASK_USAGE)
++
++    header, raw_targets, raw_criteria = parts
++    header_parts = header.split(maxsplit=1)
++    if len(header_parts) != 2 or not header_parts[0].strip() or not header_parts[1].strip():
++        raise ValueError(ADD_TASK_USAGE)
++
++    phase = header_parts[0].strip()
++    title = header_parts[1].strip()
++    target_files = [item.strip() for item in raw_targets.split(",") if item.strip()]
++    acceptance_criteria = [item.strip() for item in raw_criteria.split(";") if item.strip()]
++    if not target_files:
++        raise ValueError("target_files must be a non-empty comma-separated list")
++    if not acceptance_criteria:
++        raise ValueError("acceptance_criteria must be a non-empty ';'-separated list")
++    return phase, title, target_files, acceptance_criteria
++
++
+ async def cmd_add(args: str) -> None:
+     """Add a new pending task to tasks.json."""
+-    parts = args.split(maxsplit=1)
+-    if len(parts) < 2:
+-        await safe_send("Usage: /add <phase> <title>")
+-        return
+-
+-    phase, title = parts[0].strip(), parts[1].strip()
+-    if not phase or not title:
+-        await safe_send("Usage: /add <phase> <title>")
++    try:
++        phase, title, target_files, acceptance_criteria = parse_add_task_args(args)
++    except ValueError as exc:
++        await safe_send(str(exc))
+         return
+ 
+     if not TASKS_FILE.exists():
+@@ -1307,7 +1331,8 @@ async def cmd_add(args: str) -> None:
+                     "priority": "medium",
+                     "title": title,
+                     "description": title,
+-                    "acceptance_criteria": [],
++                    "target_files": target_files,
++                    "acceptance_criteria": acceptance_criteria,
+                     "test_steps": [],
+                     "dependencies": [],
+                     "status": "pending",
+@@ -1764,7 +1789,7 @@ async def cmd_help() -> None:
+         "/tasks [phase] — task list\n"
+         "/plan — phase summary and next pending tasks\n"
+         "/article [new] — get today's article or generate a new one\n"
+-        "/add [phase] [title] — add a pending task\n"
++        "/add phase title | targets | criteria — add a pending task\n"
+         "/rm [task_id] — remove a task\n"
+         "/pause — pause before next step\n"
+         "/resume — resume after pause\n"
+diff --git a/src/ralph/resources/scripts/ralph_common.py b/src/ralph/resources/scripts/ralph_common.py
+index faa2878..eaea263 100644
+--- a/src/ralph/resources/scripts/ralph_common.py
++++ b/src/ralph/resources/scripts/ralph_common.py
+@@ -214,15 +214,98 @@ def load_tasks_data(project_dir: Path) -> dict[str, Any]:
+     return _load_tasks_data_unlocked(path)
+ 
+ 
++def _import_task_record_model():
++    try:
++        from models import TaskRecord
++    except ImportError:
++        from scripts.models import TaskRecord
++    return TaskRecord
++
++
++def _normalize_string_list(values: Any) -> list[str]:
++    if not isinstance(values, list):
++        return []
++    result: list[str] = []
++    seen: set[str] = set()
++    for item in values:
++        text = str(item).strip()
++        if not text:
++            continue
++        normalized = normalize_path(text) if "/" in text or text.startswith(".") else text
++        if normalized in seen:
++            continue
++        seen.add(normalized)
++        result.append(normalized)
++    return result
++
++
++def _placeholder_acceptance_criterion(task: dict[str, Any]) -> str:
++    title = str(task.get("title", "")).strip()
++    description = str(task.get("description", "")).strip()
++    summary = " — ".join(part for part in (title, description) if part)
++    summary = re.sub(r"\s+", " ", summary).strip()
++    if len(summary) > 160:
++        summary = summary[:157].rstrip() + "..."
++    if summary:
++        return f"TODO(ralph): replace placeholder acceptance criteria for {summary}"
++    return "TODO(ralph): replace placeholder acceptance criteria"
++
++
++def _placeholder_target_file(task: dict[str, Any]) -> str:
++    task_id = str(task.get("id", "")).strip() or "UNKNOWN"
++    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", task_id)
++    return f"docs/TODO_TARGET_{normalized}.md"
++
++
++def backfill_pending_task_schema(task: dict[str, Any]) -> dict[str, Any]:
++    """Backfill legacy pending-task schema fields without touching completed history."""
++    if not isinstance(task, dict):
++        raise ValueError("each task must be a JSON object")
++    if str(task.get("status", "")).strip() != "pending":
++        return task
++
++    target_files = _normalize_string_list(task.get("target_files"))
++    if not target_files:
++        inferred_targets = extract_path_candidates(task)
++        if not inferred_targets:
++            inferred_targets = [
++                path for path in _normalize_string_list(task.get("context_files")) if not is_bookkeeping_file(path)
++            ]
++        if not inferred_targets:
++            inferred_targets = [_placeholder_target_file(task)]
++        target_files = inferred_targets
++    task["target_files"] = target_files
++
++    acceptance_criteria = _normalize_string_list(task.get("acceptance_criteria"))
++    if not acceptance_criteria:
++        if target_files:
++            acceptance_criteria = [f"{path} is updated" for path in target_files]
++        else:
++            acceptance_criteria = [_placeholder_acceptance_criterion(task)]
++    task["acceptance_criteria"] = acceptance_criteria
++    return task
++
++
++def _normalize_tasks_payload(data: dict[str, Any]) -> dict[str, Any]:
++    tasks = data.get("tasks")
++    if not isinstance(tasks, list):
++        raise ValueError("tasks payload must contain a top-level 'tasks' list")
++
++    TaskRecord = _import_task_record_model()
++    for task in tasks:
++        if not isinstance(task, dict):
++            raise ValueError("each task must be a JSON object")
++        backfill_pending_task_schema(task)
++        TaskRecord.model_validate(task)
++    return data
++
++
+ def _load_tasks_data_unlocked(path: Path) -> dict[str, Any]:
+     try:
+         data = json.loads(path.read_text(encoding="utf-8"))
+         if not isinstance(data, dict):
+             raise ValueError("tasks.json must contain a JSON object")
+-        tasks = data.get("tasks")
+-        if not isinstance(tasks, list):
+-            raise ValueError("tasks.json must contain a top-level 'tasks' list")
+-        return data
++        return _normalize_tasks_payload(data)
+     except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as exc:
+         raise ValueError(format_tasks_data_error(path, exc)) from exc
+ 
+@@ -237,9 +320,7 @@ def save_tasks_data(project_dir: Path, data: dict[str, Any]) -> None:
+ def _save_tasks_data_unlocked(path: Path, data: dict[str, Any]) -> None:
+     if not isinstance(data, dict):
+         raise ValueError("tasks payload must be a dict")
+-    tasks = data.get("tasks")
+-    if not isinstance(tasks, list):
+-        raise ValueError("tasks payload must contain a top-level 'tasks' list")
++    _normalize_tasks_payload(data)
+     atomic_write_json(path, data)
+ 
+ 
+```
+
+Previous diff snapshot: 31263 bytes
+
+## Tests
+```
+self = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-91/test_task_scoped_worktree_diff0/project/ralph.sh')
+name = '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-91/test_task_scoped_worktree_diff0/project/ralph.sh'
+flags = 16777216, mode = 438
+
+    def _opener(self, name, flags, mode=0o666):
+        # A stub for the opener argument to built-in open()
+>       return self._accessor.open(self, flags, mode)
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-91/test_task_scoped_worktree_diff0/project/ralph.sh'
+
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1110: FileNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_cli_packaging.py::test_cli_entrypoint_install_and_core_commands
+FAILED tests/test_integration.py::test_ralph_marks_task_done_on_success - Ass...
+FAILED tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown
+FAILED tests/test_integration.py::test_ralph_injects_human_comment_into_coder_prompt_and_consumes_it
+FAILED tests/test_integration.py::test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_task_mode_fast_pre_task_check_completes_within_30_seconds
+FAILED tests/test_integration.py::test_ralph_auto_mode_runs_preflight_make_test_before_task_execution
+FAILED tests/test_integration.py::test_ralph_task_mode_can_force_preflight_make_test_explicitly
+FAILED tests/test_integration.py::test_ralph_phase_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion
+FAILED tests/test_integration.py::test_ralph_task_success_final_tail_does_not_run_nested_status_pytest
+FAILED tests/test_integration.py::test_ralph_task_success_preserves_final_state_if_success_tail_reporting_hits_formatter_error
+FAILED tests/test_integration.py::test_ralph_task_mode_runs_requested_pending_task_exactly
+FAILED tests/test_integration.py::test_ralph_phase_mode_only_runs_pending_task_from_requested_phase
+FAILED tests/test_integration.py::test_ralph_auto_mode_still_runs_next_runnable_pending_task
+FAILED tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task
+FAILED tests/test_integration.py::test_ralph_retry_prompt_includes_failed_attempt_context
+FAILED tests/test_integration.py::test_ralph_sanitizes_noisy_fix_and_keeps_exact_feature_gap
+FAILED tests/test_integration.py::test_ralph_lead_review_uses_cumulative_diff_from_task_start_across_retries
+FAILED tests/test_integration.py::test_ralph_allows_noop_retry_after_prior_attempt_already_changed_files
+FAILED tests/test_integration.py::test_ralph_blocks_idempotent_task_reentry_after_verified_done
+FAILED tests/test_integration.py::test_ralph_audit_cli_prints_expected_fields
+FAILED tests/test_integration.py::test_ralph_marks_task_skipped_on_skip_control
+FAILED tests/test_integration.py::test_ralph_pauses_and_retries_on_rate_limit
+FAILED tests/test_integration.py::test_ralph_waits_for_assets_and_resumes_when_files_arrive
+FAILED tests/test_operator_helpers.py::test_load_tasks_data_backfills_pending_schema_fields
+FAILED tests/test_ralph_shell_helpers.py::test_task_scoped_worktree_diff_includes_ralph_shell_but_excludes_bookkeeping
+============ 27 failed, 190 passed, 1 skipped in 1230.15s (0:20:30) ============
+make: *** [test] Error 1
+tests failed
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.

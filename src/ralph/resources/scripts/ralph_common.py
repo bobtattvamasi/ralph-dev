@@ -222,6 +222,7 @@ def _load_tasks_data_unlocked(path: Path) -> dict[str, Any]:
         tasks = data.get("tasks")
         if not isinstance(tasks, list):
             raise ValueError("tasks.json must contain a top-level 'tasks' list")
+        backfill_pending_task_schema(data)
         return data
     except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError(format_tasks_data_error(path, exc)) from exc
@@ -240,6 +241,7 @@ def _save_tasks_data_unlocked(path: Path, data: dict[str, Any]) -> None:
     tasks = data.get("tasks")
     if not isinstance(tasks, list):
         raise ValueError("tasks payload must contain a top-level 'tasks' list")
+    backfill_pending_task_schema(data)
     atomic_write_json(path, data)
 
 
@@ -466,6 +468,42 @@ def is_bookkeeping_file(path: str) -> bool:
 
 def is_bookkeeping(path: str) -> bool:
     return is_bookkeeping_file(path)
+
+
+def backfill_pending_task_schema(data: dict[str, Any]) -> None:
+    tasks = data.get("tasks")
+    if not isinstance(tasks, list):
+        return
+
+    for task in tasks:
+        if not isinstance(task, dict) or task.get("status") != "pending":
+            continue
+
+        acceptance_criteria = task.get("acceptance_criteria") or []
+        if not acceptance_criteria:
+            path_candidates = [path for path in extract_path_candidates(task) if not is_bookkeeping_file(path)]
+            expected_tests = extract_expected_test_names(task)
+            backfilled_criteria = [f"{path} is updated" for path in path_candidates]
+            backfilled_criteria.extend(f"{name} passes" for name in expected_tests)
+            if not backfilled_criteria:
+                task_id = str(task.get("id") or "TASK")
+                backfilled_criteria = [f"Complete task {task_id} and verify the intended behavior"]
+            task["acceptance_criteria"] = backfilled_criteria
+
+        target_files = task.get("target_files") or []
+        if not target_files:
+            target_candidates = [path for path in extract_path_candidates(task) if not is_bookkeeping_file(path)]
+            if not target_candidates:
+                context_files = task.get("context_files") or []
+                target_candidates = [
+                    normalize_path(path)
+                    for path in context_files
+                    if isinstance(path, str) and path.strip() and not is_bookkeeping_file(path)
+                ]
+            if not target_candidates:
+                task_id = str(task.get("id") or "TASK")
+                target_candidates = [f"docs/TODO_TARGET_{task_id}.md"]
+            task["target_files"] = list(dict.fromkeys(target_candidates))
 
 
 def extract_path_candidates(task: dict[str, Any]) -> list[str]:

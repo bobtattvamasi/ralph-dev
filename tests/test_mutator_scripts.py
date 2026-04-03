@@ -34,6 +34,7 @@ def make_project(tmp_path: Path) -> Path:
                         "id": "T01",
                         "title": "Primary task",
                         "status": "pending",
+                        "target_files": ["test_file.py"],
                     },
                     {
                         "id": "T02",

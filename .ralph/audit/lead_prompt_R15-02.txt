@@ -1,0 +1,629 @@
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R15-02",
+  "phase": "R15",
+  "status": "pending",
+  "title": "Verifier v2 — semantic checks for generic implementation tasks",
+  "description": "Generic implementation tasks currently auto-pass verification. Add: check acceptance_criteria if present, require changed files match target_files, require targeted test existence.",
+  "target_files": [
+    "scripts/verify_task_closure.py",
+    "tests/test_verify_task_closure.py"
+  ],
+  "acceptance_criteria": [
+    "Generic impl tasks with acceptance_criteria get semantic check",
+    "Mismatch between target_files and changed_files triggers warning",
+    "Tests cover new paths"
+  ],
+  "tags": [
+    "verifier",
+    "trust"
+  ],
+  "priority": "critical",
+  "role": "coder"
+}
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/scripts/verify_task_closure.py b/scripts/verify_task_closure.py
+index 85acb18..21791a2 100644
+--- a/scripts/verify_task_closure.py
++++ b/scripts/verify_task_closure.py
+@@ -72,7 +72,147 @@ def file_contains_required_content(task: dict, path: Path) -> bool:
+     return True
+ 
+ 
+-def result(result: str, task_class: str, reason: str, changed_files: list[str], non_bookkeeping: list[str]) -> dict:
++def dedupe_paths(paths: list[str]) -> list[str]:
++    seen: set[str] = set()
++    result: list[str] = []
++    for path in paths:
++        normalized = normalize_path(path)
++        if not normalized or normalized in seen:
++            continue
++        seen.add(normalized)
++        result.append(normalized)
++    return result
++
++
++def explicit_task_target_files(task: dict) -> list[str]:
++    raw_targets = task.get("target_files", []) or []
++    return dedupe_paths([str(path) for path in raw_targets])
++
++
++def target_file_mismatch(target_files: list[str], non_bookkeeping: list[str]) -> bool:
++    target_code_files = {path for path in target_files if not path.startswith("tests/")}
++    changed_code_files = {path for path in non_bookkeeping if not path.startswith("tests/")}
++    if not target_code_files or not changed_code_files:
++        return False
++    return changed_code_files != target_code_files
++
++
++def criterion_path_candidates(criterion: str) -> list[str]:
++    probe_task = {"title": "", "description": criterion, "acceptance_criteria": [], "test_steps": []}
++    return extract_path_candidates(probe_task)
++
++
++def find_named_tests(project_dir: Path, expected_tests: list[str]) -> list[str]:
++    found_tests: list[str] = []
++    for test_name in expected_tests:
++        for test_file in project_dir.glob("tests/test_*.py"):
++            if test_name in read_text(test_file):
++                found_tests.append(test_name)
++                break
++    return found_tests
++
++
++def semantic_test_markers(target_paths: list[str], expected_tests: list[str]) -> set[str]:
++    searchable_markers: set[str] = {test_name for test_name in expected_tests if test_name}
++    for path in target_paths:
++        normalized = normalize_path(path)
++        if not normalized or normalized.startswith("tests/"):
++            continue
++        path_obj = Path(normalized)
++        searchable_markers.add(normalized)
++        searchable_markers.add(path_obj.name)
++        searchable_markers.add(path_obj.stem)
++    return {marker.lower() for marker in searchable_markers if marker}
++
++
++def test_file_matches_semantic_targets(test_path: str, test_text: str, markers: set[str]) -> bool:
++    if not markers:
++        return False
++    normalized_path = normalize_path(test_path).lower()
++    test_name = Path(normalized_path).stem
++    haystacks = {normalized_path, Path(normalized_path).name, test_name, test_text.lower()}
++    return any(marker in haystack for marker in markers for haystack in haystacks)
++
++
++def generic_test_evidence_exists(project_dir: Path, target_paths: list[str], non_bookkeeping: list[str], expected_tests: list[str]) -> bool:
++    searchable_markers = semantic_test_markers(target_paths, expected_tests)
++    if expected_tests and len(find_named_tests(project_dir, expected_tests)) == len(expected_tests):
++        return True
++
++    if not searchable_markers:
++        return False
++
++    for changed_path in non_bookkeeping:
++        if not changed_path.startswith("tests/"):
++            continue
++        full_path = project_dir / changed_path
++        if test_file_matches_semantic_targets(changed_path, read_text(full_path), searchable_markers):
++            return True
++
++    for test_file in project_dir.glob("tests/test_*.py"):
++        test_text = read_text(test_file)
++        if test_file_matches_semantic_targets(str(test_file.relative_to(project_dir)), test_text, searchable_markers):
++            return True
++    return False
++
++
++def generic_semantic_checks(
++    task: dict,
++    project_dir: Path,
++    expected_paths: list[str],
++    expected_tests: list[str],
++    non_bookkeeping: list[str],
++) -> tuple[list[str], list[str]]:
++    failures: list[str] = []
++    warnings: list[str] = []
++    target_files = explicit_task_target_files(task)
++    semantic_targets = dedupe_paths(expected_paths + target_files)
++
++    if target_file_mismatch(target_files, non_bookkeeping):
++        warnings.append("changed_files do not match declared target_files")
++
++    acceptance_criteria = [str(item).strip() for item in (task.get("acceptance_criteria") or []) if str(item).strip()]
++    if acceptance_criteria:
++        for criterion in acceptance_criteria:
++            criterion_tests = extract_expected_test_names(
++                {"title": "", "description": criterion, "acceptance_criteria": [], "test_steps": []}
++            )
++            missing_named_tests = [
++                test_name for test_name in criterion_tests if test_name not in find_named_tests(project_dir, criterion_tests)
++            ]
++            if missing_named_tests:
++                failures.append("expected test not found: " + ", ".join(missing_named_tests))
++
++            explicit_paths = criterion_path_candidates(criterion)
++            lower_criterion = criterion.lower()
++            if explicit_paths and any(keyword in lower_criterion for keyword in (" exists", " существует", " is updated", " updated")):
++                missing_paths = [path for path in explicit_paths if not (project_dir / path).exists()]
++                if missing_paths:
++                    failures.append("expected path missing: " + ", ".join(missing_paths))
++
++            if lower_criterion.startswith("содержит ") or lower_criterion.startswith("contains "):
++                candidate_paths = explicit_paths or semantic_targets
++                if not candidate_paths:
++                    failures.append(f"cannot validate content criterion without a target file: {criterion}")
++                    continue
++                criterion_task = {"acceptance_criteria": [criterion]}
++                if not any(file_contains_required_content(criterion_task, project_dir / path) for path in candidate_paths):
++                    failures.append(f"required content missing for criterion: {criterion}")
++
++    if semantic_targets and not generic_test_evidence_exists(project_dir, semantic_targets, non_bookkeeping, expected_tests):
++        failures.append("generic implementation task has no targeted test evidence")
++
++    return failures, warnings
++
++
++def result(
++    result: str,
++    task_class: str,
++    reason: str,
++    changed_files: list[str],
++    non_bookkeeping: list[str],
++    warnings: list[str] | None = None,
++) -> dict:
+     return {
+         "result": result,
+         "task_class": task_class,
+@@ -80,6 +220,7 @@ def result(result: str, task_class: str, reason: str, changed_files: list[str],
+         "changed_files": changed_files,
+         "changed_files_non_bookkeeping": non_bookkeeping,
+         "bookkeeping_only": bool(changed_files) and not non_bookkeeping,
++        "warnings": warnings or [],
+     }
+ 
+ 
+@@ -237,7 +378,26 @@ def verify_task_completion(task: dict, project_dir: Path, changed_files: list[st
+                 return result("fail_fix", task_class, f"Verification failed: expected test not found: {test_name}", changed_files, non_bookkeeping)
+         return result("pass", task_class, "Tests verification passed.", changed_files, non_bookkeeping)
+ 
+-    return result("pass", task_class, "Generic implementation verification passed.", changed_files, non_bookkeeping)
++    semantic_failures, semantic_warnings = generic_semantic_checks(
++        task,
++        project_dir,
++        expected_paths,
++        expected_tests,
++        non_bookkeeping,
++    )
++    if semantic_failures:
++        return result(
++            "fail_fix",
++            task_class,
++            "Verification failed: " + "; ".join(semantic_failures),
++            changed_files,
++            non_bookkeeping,
++            semantic_warnings,
++        )
++    reason = "Generic implementation verification passed."
++    if semantic_warnings:
++        reason += " Warnings: " + "; ".join(semantic_warnings)
++    return result("pass", task_class, reason, changed_files, non_bookkeeping, semantic_warnings)
+ 
+ 
+ def main() -> None:
+diff --git a/src/ralph/resources/scripts/verify_task_closure.py b/src/ralph/resources/scripts/verify_task_closure.py
+index 85acb18..21791a2 100644
+--- a/src/ralph/resources/scripts/verify_task_closure.py
++++ b/src/ralph/resources/scripts/verify_task_closure.py
+@@ -72,7 +72,147 @@ def file_contains_required_content(task: dict, path: Path) -> bool:
+     return True
+ 
+ 
+-def result(result: str, task_class: str, reason: str, changed_files: list[str], non_bookkeeping: list[str]) -> dict:
++def dedupe_paths(paths: list[str]) -> list[str]:
++    seen: set[str] = set()
++    result: list[str] = []
++    for path in paths:
++        normalized = normalize_path(path)
++        if not normalized or normalized in seen:
++            continue
++        seen.add(normalized)
++        result.append(normalized)
++    return result
++
++
++def explicit_task_target_files(task: dict) -> list[str]:
++    raw_targets = task.get("target_files", []) or []
++    return dedupe_paths([str(path) for path in raw_targets])
++
++
++def target_file_mismatch(target_files: list[str], non_bookkeeping: list[str]) -> bool:
++    target_code_files = {path for path in target_files if not path.startswith("tests/")}
++    changed_code_files = {path for path in non_bookkeeping if not path.startswith("tests/")}
++    if not target_code_files or not changed_code_files:
++        return False
++    return changed_code_files != target_code_files
++
++
++def criterion_path_candidates(criterion: str) -> list[str]:
++    probe_task = {"title": "", "description": criterion, "acceptance_criteria": [], "test_steps": []}
++    return extract_path_candidates(probe_task)
++
++
++def find_named_tests(project_dir: Path, expected_tests: list[str]) -> list[str]:
++    found_tests: list[str] = []
++    for test_name in expected_tests:
++        for test_file in project_dir.glob("tests/test_*.py"):
++            if test_name in read_text(test_file):
++                found_tests.append(test_name)
++                break
++    return found_tests
++
++
++def semantic_test_markers(target_paths: list[str], expected_tests: list[str]) -> set[str]:
++    searchable_markers: set[str] = {test_name for test_name in expected_tests if test_name}
++    for path in target_paths:
++        normalized = normalize_path(path)
++        if not normalized or normalized.startswith("tests/"):
++            continue
++        path_obj = Path(normalized)
++        searchable_markers.add(normalized)
++        searchable_markers.add(path_obj.name)
++        searchable_markers.add(path_obj.stem)
++    return {marker.lower() for marker in searchable_markers if marker}
++
++
++def test_file_matches_semantic_targets(test_path: str, test_text: str, markers: set[str]) -> bool:
++    if not markers:
++        return False
++    normalized_path = normalize_path(test_path).lower()
++    test_name = Path(normalized_path).stem
++    haystacks = {normalized_path, Path(normalized_path).name, test_name, test_text.lower()}
++    return any(marker in haystack for marker in markers for haystack in haystacks)
++
++
++def generic_test_evidence_exists(project_dir: Path, target_paths: list[str], non_bookkeeping: list[str], expected_tests: list[str]) -> bool:
++    searchable_markers = semantic_test_markers(target_paths, expected_tests)
++    if expected_tests and len(find_named_tests(project_dir, expected_tests)) == len(expected_tests):
++        return True
++
++    if not searchable_markers:
++        return False
++
++    for changed_path in non_bookkeeping:
++        if not changed_path.startswith("tests/"):
++            continue
++        full_path = project_dir / changed_path
++        if test_file_matches_semantic_targets(changed_path, read_text(full_path), searchable_markers):
++            return True
++
++    for test_file in project_dir.glob("tests/test_*.py"):
++        test_text = read_text(test_file)
++        if test_file_matches_semantic_targets(str(test_file.relative_to(project_dir)), test_text, searchable_markers):
++            return True
++    return False
++
++
++def generic_semantic_checks(
++    task: dict,
++    project_dir: Path,
++    expected_paths: list[str],
++    expected_tests: list[str],
++    non_bookkeeping: list[str],
++) -> tuple[list[str], list[str]]:
++    failures: list[str] = []
++    warnings: list[str] = []
++    target_files = explicit_task_target_files(task)
++    semantic_targets = dedupe_paths(expected_paths + target_files)
++
++    if target_file_mismatch(target_files, non_bookkeeping):
++        warnings.append("changed_files do not match declared target_files")
++
++    acceptance_criteria = [str(item).strip() for item in (task.get("acceptance_criteria") or []) if str(item).strip()]
++    if acceptance_criteria:
++        for criterion in acceptance_criteria:
++            criterion_tests = extract_expected_test_names(
++                {"title": "", "description": criterion, "acceptance_criteria": [], "test_steps": []}
++            )
++            missing_named_tests = [
++                test_name for test_name in criterion_tests if test_name not in find_named_tests(project_dir, criterion_tests)
++            ]
++            if missing_named_tests:
++                failures.append("expected test not found: " + ", ".join(missing_named_tests))
++
++            explicit_paths = criterion_path_candidates(criterion)
++            lower_criterion = criterion.lower()
++            if explicit_paths and any(keyword in lower_criterion for keyword in (" exists", " существует", " is updated", " updated")):
++                missing_paths = [path for path in explicit_paths if not (project_dir / path).exists()]
++                if missing_paths:
++                    failures.append("expected path missing: " + ", ".join(missing_paths))
++
++            if lower_criterion.startswith("содержит ") or lower_criterion.startswith("contains "):
++                candidate_paths = explicit_paths or semantic_targets
++                if not candidate_paths:
++                    failures.append(f"cannot validate content criterion without a target file: {criterion}")
++                    continue
++                criterion_task = {"acceptance_criteria": [criterion]}
++                if not any(file_contains_required_content(criterion_task, project_dir / path) for path in candidate_paths):
++                    failures.append(f"required content missing for criterion: {criterion}")
++
++    if semantic_targets and not generic_test_evidence_exists(project_dir, semantic_targets, non_bookkeeping, expected_tests):
++        failures.append("generic implementation task has no targeted test evidence")
++
++    return failures, warnings
++
++
++def result(
++    result: str,
++    task_class: str,
++    reason: str,
++    changed_files: list[str],
++    non_bookkeeping: list[str],
++    warnings: list[str] | None = None,
++) -> dict:
+     return {
+         "result": result,
+         "task_class": task_class,
+@@ -80,6 +220,7 @@ def result(result: str, task_class: str, reason: str, changed_files: list[str],
+         "changed_files": changed_files,
+         "changed_files_non_bookkeeping": non_bookkeeping,
+         "bookkeeping_only": bool(changed_files) and not non_bookkeeping,
++        "warnings": warnings or [],
+     }
+ 
+ 
+@@ -237,7 +378,26 @@ def verify_task_completion(task: dict, project_dir: Path, changed_files: list[st
+                 return result("fail_fix", task_class, f"Verification failed: expected test not found: {test_name}", changed_files, non_bookkeeping)
+         return result("pass", task_class, "Tests verification passed.", changed_files, non_bookkeeping)
+ 
+-    return result("pass", task_class, "Generic implementation verification passed.", changed_files, non_bookkeeping)
++    semantic_failures, semantic_warnings = generic_semantic_checks(
++        task,
++        project_dir,
++        expected_paths,
++        expected_tests,
++        non_bookkeeping,
++    )
++    if semantic_failures:
++        return result(
++            "fail_fix",
++            task_class,
++            "Verification failed: " + "; ".join(semantic_failures),
++            changed_files,
++            non_bookkeeping,
++            semantic_warnings,
++        )
++    reason = "Generic implementation verification passed."
++    if semantic_warnings:
++        reason += " Warnings: " + "; ".join(semantic_warnings)
++    return result("pass", task_class, reason, changed_files, non_bookkeeping, semantic_warnings)
+ 
+ 
+ def main() -> None:
+diff --git a/tests/test_verify_task_closure.py b/tests/test_verify_task_closure.py
+index a3c645d..63b3db3 100644
+--- a/tests/test_verify_task_closure.py
++++ b/tests/test_verify_task_closure.py
+@@ -217,3 +217,127 @@ def test_generic_implementation_task_still_fails_on_report_and_state_files_only(
+     assert result["result"] == "fail_fix"
+     assert result["task_class"] == "implementation"
+     assert "only bookkeeping/state/report files changed" in result["reason"]
++
++
++def test_generic_implementation_checks_content_acceptance_criteria(tmp_path: Path) -> None:
++    project = make_project(tmp_path)
++    write(project / "src" / "feature.py", "def run_feature():\n    return 'ok'\n")
++    write(
++        project / "tests" / "test_feature_runtime.py",
++        "def test_feature_runtime():\n    assert 'src/feature.py'\n",
++    )
++    task = {
++        "id": "R15-X1",
++        "title": "Improve feature reliability",
++        "description": "Tighten src/feature.py behavior.",
++        "target_files": ["src/feature.py"],
++        "acceptance_criteria": ["contains missing-token"],
++    }
++
++    result = verify_task_completion(task, project, ["src/feature.py"])
++
++    assert result["result"] == "fail_fix"
++    assert "required content missing for criterion: contains missing-token" in result["reason"]
++
++
++def test_generic_implementation_warns_when_changed_files_miss_target_files(tmp_path: Path) -> None:
++    project = make_project(tmp_path)
++    write(project / "src" / "feature.py", "def run_feature():\n    return 'ok'\n")
++    write(
++        project / "tests" / "test_feature_runtime.py",
++        "def test_feature_runtime():\n    assert 'src/feature.py'\n",
++    )
++    task = {
++        "id": "R15-X2",
++        "title": "Improve feature reliability",
++        "description": "Tighten generic runtime behavior.",
++        "target_files": ["src/feature.py"],
++        "acceptance_criteria": ["contains run_feature"],
++    }
++
++    result = verify_task_completion(task, project, ["scripts/ralph_bot.py"])
++
++    assert result["result"] == "pass"
++    assert "changed_files do not match declared target_files" in result["warnings"]
++    assert "Warnings:" in result["reason"]
++
++
++def test_generic_implementation_warns_when_changed_files_include_extra_implementation_file(tmp_path: Path) -> None:
++    project = make_project(tmp_path)
++    write(project / "src" / "feature.py", "def run_feature():\n    return 'ok'\n")
++    write(
++        project / "tests" / "test_feature_runtime.py",
++        "def test_feature_runtime():\n    assert 'src/feature.py'\n",
++    )
++    task = {
++        "id": "R15-X2B",
++        "title": "Improve feature reliability",
++        "description": "Tighten generic runtime behavior.",
++        "target_files": ["src/feature.py"],
++        "acceptance_criteria": ["contains run_feature"],
++    }
++
++    result = verify_task_completion(task, project, ["src/feature.py", "scripts/ralph_bot.py"])
++
++    assert result["result"] == "pass"
++    assert "changed_files do not match declared target_files" in result["warnings"]
++    assert "Warnings:" in result["reason"]
++
++
++def test_generic_implementation_requires_targeted_test_evidence_for_new_paths(tmp_path: Path) -> None:
++    project = make_project(tmp_path)
++    write(project / "src" / "feature.py", "def run_feature():\n    return 'ok'\n")
++    task = {
++        "id": "R15-X3",
++        "title": "Improve feature reliability",
++        "description": "Tighten generic runtime behavior.",
++        "target_files": ["src/feature.py"],
++        "acceptance_criteria": ["src/feature.py is updated"],
++    }
++
++    result = verify_task_completion(task, project, ["src/feature.py"])
++
++    assert result["result"] == "fail_fix"
++    assert "no targeted test evidence" in result["reason"]
++
++
++def test_generic_implementation_passes_with_targeted_test_evidence(tmp_path: Path) -> None:
++    project = make_project(tmp_path)
++    write(project / "src" / "feature.py", "def run_feature():\n    return 'ok'\n")
++    write(
++        project / "tests" / "test_feature_runtime.py",
++        "def test_feature_runtime():\n    assert 'src/feature.py'\n",
++    )
++    task = {
++        "id": "R15-X4",
++        "title": "Improve feature reliability",
++        "description": "Tighten generic runtime behavior.",
++        "target_files": ["src/feature.py"],
++        "acceptance_criteria": ["src/feature.py is updated"],
++    }
++
++    result = verify_task_completion(task, project, ["src/feature.py", "tests/test_feature_runtime.py"])
++
++    assert result["result"] == "pass"
++    assert result["warnings"] == []
++
++
++def test_generic_implementation_rejects_unrelated_changed_test_evidence(tmp_path: Path) -> None:
++    project = make_project(tmp_path)
++    write(project / "src" / "feature.py", "def run_feature():\n    return 'ok'\n")
++    write(
++        project / "tests" / "test_unrelated.py",
++        "def test_other_behavior():\n    assert True\n",
++    )
++    task = {
++        "id": "R15-X5",
+```
+
+Previous diff snapshot: 22079 bytes
+
+## Tests
+```
+tests/test_verify_task_closure.py::test_generic_implementation_task_still_fails_on_report_and_state_files_only PASSED [ 97%]
+tests/test_verify_task_closure.py::test_generic_implementation_checks_content_acceptance_criteria PASSED [ 97%]
+tests/test_verify_task_closure.py::test_generic_implementation_warns_when_changed_files_miss_target_files PASSED [ 98%]
+tests/test_verify_task_closure.py::test_generic_implementation_warns_when_changed_files_include_extra_implementation_file PASSED [ 98%]
+tests/test_verify_task_closure.py::test_generic_implementation_requires_targeted_test_evidence_for_new_paths PASSED [ 99%]
+tests/test_verify_task_closure.py::test_generic_implementation_passes_with_targeted_test_evidence PASSED [ 99%]
+tests/test_verify_task_closure.py::test_generic_implementation_rejects_unrelated_changed_test_evidence PASSED [100%]
+
+=================================== FAILURES ===================================
+____________ test_ralph_benchmark_reports_auto_vs_manual_breakdown _____________
+
+tmp_path = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-88/test_ralph_benchmark_reports_a0')
+
+    def test_ralph_benchmark_reports_auto_vs_manual_breakdown(tmp_path: Path) -> None:
+        project_dir, env = create_benchmark_project(tmp_path)
+    
+        result = subprocess.run(
+            [str(RALPH_SH), "benchmark"],
+            cwd=project_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    
+        assert result.returncode == 0, result.stdout + result.stderr
+        report_path = project_dir / "logs" / "benchmark_auto_vs_manual.json"
+        assert report_path.exists(), result.stdout + result.stderr
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert report["sample_size"] == 3
+        assert report["task_ids"] == ["T01", "T02", "T03"]
+        assert report["comparison"]["assertion"] == "pass"
+>       assert report["comparison"]["auto_to_manual_ratio"] < 5.0
+E       assert 5.085 < 5.0
+
+tests/test_integration.py:513: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown
+============= 1 failed, 209 passed, 1 skipped in 949.78s (0:15:49) =============
+make: *** [test] Error 1
+tests failed
+```
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.

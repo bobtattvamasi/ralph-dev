@@ -12,6 +12,16 @@
       "Commit with message format: feat(TASK_ID): title"
     ]
   },
+  "task_template": {
+    "id": "TASK-ID",
+    "phase": "R1",
+    "title": "Task title",
+    "description": "Task description",
+    "status": "pending",
+    "dependencies": [],
+    "acceptance_criteria": [],
+    "target_files": []
+  },
   "phases": {},
   "tasks": []
 }

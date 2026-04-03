@@ -30,6 +30,7 @@ def bot_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object
                         "title": "Test task",
                         "description": "Test task",
                         "status": "pending",
+                        "target_files": ["test_file.py"],
                     }
                 ],
             },
@@ -279,12 +280,13 @@ async def test_cmd_progress_shows_phase_bars(bot_env: dict[str, object]) -> None
                 "tasks": [
                     {"id": "R0-01", "phase": "R0", "title": "Init", "status": "done"},
                     {"id": "R1-01", "phase": "R1", "title": "Retry", "status": "done"},
-                    {"id": "R1-02", "phase": "R1", "title": "Watchdog", "status": "pending"},
+                    {"id": "R1-02", "phase": "R1", "title": "Watchdog", "status": "pending", "target_files": ["test_file.py"]},
                     {
                         "id": "R2-01",
                         "phase": "R2",
                         "title": "Plan",
                         "status": "pending",
+                        "target_files": ["test_file.py"],
                         "dependencies": ["R1-02"],
                     },
                 ],
@@ -319,12 +321,13 @@ def test_get_tasks_summary_counts_verified_done_and_keeps_dependency_hints(
                 "tasks": [
                     {"id": "T01", "phase": "R1", "title": "Verified", "status": "verified_done"},
                     {"id": "T02", "phase": "R1", "title": "Done", "status": "done"},
-                    {"id": "T03", "phase": "R1", "title": "Free pending", "status": "pending"},
+                    {"id": "T03", "phase": "R1", "title": "Free pending", "status": "pending", "target_files": ["test_file.py"]},
                     {
                         "id": "T04",
                         "phase": "R1",
                         "title": "Depends on verified",
                         "status": "pending",
+                        "target_files": ["test_file.py"],
                         "dependencies": ["T01"],
                     },
                     {
@@ -332,6 +335,7 @@ def test_get_tasks_summary_counts_verified_done_and_keeps_dependency_hints(
                         "phase": "R1",
                         "title": "Depends on false positive",
                         "status": "pending",
+                        "target_files": ["test_file.py"],
                         "dependencies": ["T06"],
                     },
                     {"id": "T06", "phase": "R1", "title": "False positive", "status": "false_positive"},
@@ -364,7 +368,7 @@ async def test_handle_update_routes_tasks_with_trust_aware_counts(bot_env: dict[
                 "project": "test-project",
                 "tasks": [
                     {"id": "T01", "phase": "R1", "title": "Verified", "status": "verified_done"},
-                    {"id": "T02", "phase": "R1", "title": "Todo", "status": "pending", "dependencies": ["T01"]},
+                    {"id": "T02", "phase": "R1", "title": "Todo", "status": "pending", "target_files": ["test_file.py"], "dependencies": ["T01"]},
                 ],
             },
             indent=2,

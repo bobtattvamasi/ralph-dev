@@ -1,0 +1,44 @@
+{
+  "task_id": "R15-04",
+  "title": "Lead diff — include ralph.sh in review scope",
+  "status": "blocked",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap.",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R15-04\",\"summary\":\"Изменение в ralph.sh внесено, но задача не может быть одобрена: регрессионный тест добавлен не в заявленную интеграционную точку и сейчас падает, а прогон тестов не зелёный.\",\"quality_score\":52,\"issues\":[{\"severity\":\"high\",\"file\":\"tests/test_ralph_shell_helpers.py\",\"issue\":\"Новый регрессионный тест `test_task_scoped_worktree_diff_includes_ralph_shell_but_excludes_bookkeeping` невалиден для текущего фикстурного layout: он читает `project/ralph.sh`, которого нет, поэтому критерий `shell-only change detected by diff` не доказан.\"},{\"severity\":\"medium\",\"file\":\"tests/test_integration.py\",\"issue\":\"По результатам `make test` suite не проходит; без зелёного прогона задача не удовлетворяет выходному контракту lead review.\"}],\"fix_instructions\":\"Исправь регрессионное покрытие так, чтобы оно проверяло реальный путь к shell-файлу в тестовой фикстуре и доказывало, что shell-only изменение в `ralph.sh` попадает в task-scoped diff, а `progress.md` по-прежнему исключается; после этого добейся зелёного `make test`.\",\"alert_reason\":\"\",\"progress_note\":\"Удаление `:!ralph.sh` из diff-фильтров выглядит правильным, но текущее доказательство поведения тестами недостаточно и прогон не проходит.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {
+      "decision": "fix",
+      "task_id": "R15-04",
+      "summary": "Изменение в ralph.sh внесено, но задача не может быть одобрена: регрессионный тест добавлен не в заявленную интеграционную точку и сейчас падает, а прогон тестов не зелёный.",
+      "quality_score": 52,
+      "issues": [
+        {
+          "severity": "high",
+          "file": "tests/test_ralph_shell_helpers.py",
+          "issue": "Новый регрессионный тест `test_task_scoped_worktree_diff_includes_ralph_shell_but_excludes_bookkeeping` невалиден для текущего фикстурного layout: он читает `project/ralph.sh`, которого нет, поэтому критерий `shell-only change detected by diff` не доказан."
+        },
+        {
+          "severity": "medium",
+          "file": "tests/test_integration.py",
+          "issue": "По результатам `make test` suite не проходит; без зелёного прогона задача не удовлетворяет выходному контракту lead review."
+        }
+      ],
+      "fix_instructions": "Исправь регрессионное покрытие так, чтобы оно проверяло реальный путь к shell-файлу в тестовой фикстуре и доказывало, что shell-only изменение в `ralph.sh` попадает в task-scoped diff, а `progress.md` по-прежнему исключается; после этого добейся зелёного `make test`.",
+      "alert_reason": "",
+      "progress_note": "Удаление `:!ralph.sh` из diff-фильтров выглядит правильным, но текущее доказательство поведения тестами недостаточно и прогон не проходит."
+    }
+  },
+  "attempts": 1,
+  "duration_sec": 1099,
+  "timestamp": "2026-04-03T07:47:33Z",
+  "runtime_success": true,
+  "verified_success": false
+}

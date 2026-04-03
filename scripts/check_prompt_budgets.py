@@ -145,6 +145,7 @@ def run_case(runner_path: Path, tmp_root: Path, profile: str) -> tuple[int, int]
             "complexity": "moderate",
             "category": "optimization",
             "priority": "high",
+            "target_files": ["scripts/narrow_target.py"],
             "acceptance_criteria": [
                 "scripts/narrow_target.py is updated",
                 "Exact-task prompts stay narrow even when task complexity is moderate",
@@ -162,6 +163,7 @@ def run_case(runner_path: Path, tmp_root: Path, profile: str) -> tuple[int, int]
             "category": "optimization",
             "priority": "high",
             "required_context": ["ARCHITECTURE.md"],
+            "target_files": ["scripts/narrow_target.py"],
             "acceptance_criteria": [
                 "scripts/narrow_target.py is updated",
                 "ARCHITECTURE.md is included because the task explicitly requires project-wide docs",

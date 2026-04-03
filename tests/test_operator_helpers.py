@@ -51,6 +51,7 @@ def create_project(tmp_path: Path) -> Path:
                         "title": "Runnable task",
                         "description": "Use /audit and trust report docs.",
                         "status": "pending",
+                        "target_files": ["test_file.py"],
                         "dependencies": [],
                     },
                     {
@@ -59,6 +60,7 @@ def create_project(tmp_path: Path) -> Path:
                         "title": "Blocked task",
                         "description": "Depends on T99.",
                         "status": "pending",
+                        "target_files": ["test_file.py"],
                         "dependencies": ["T99"],
                     },
                     {
@@ -332,6 +334,7 @@ def test_shared_tasks_io_round_trips_validated_payload(tmp_path: Path) -> None:
             "title": "New task",
             "description": "Shared save path",
             "status": "pending",
+            "target_files": ["test_file.py"],
             "dependencies": [],
         }
     )

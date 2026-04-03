@@ -45,6 +45,7 @@ def test_task_record_full():
             "status": "pending",
             "dependencies": ["R5-03"],
             "acceptance_criteria": ["make test passes"],
+            "target_files": ["test_file.py"],
             "revision_notes": "",
             "completed_at": None,
         }

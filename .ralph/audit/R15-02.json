@@ -1,0 +1,35 @@
+{
+  "task_id": "R15-02",
+  "title": "Verifier v2 — semantic checks for generic implementation tasks",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "R15-02 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R15-02\",\"summary\":\"Семантические проверки для generic implementation задач и целевые unit-тесты добавлены, но задача не может быть одобрена из-за падающего полного тестового прогона.\",\"quality_score\":84,\"issues\":[\"Полный `make test` не проходит: `tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown` упал, потому что `report[\\\"comparison\\\"][\\\"auto_to_manual_ratio\\\"]` оказался `5.085`, а порог теста требует `< 5.0`.\"],\"fix_instructions\":\"Стабилизируй benchmark-путь так, чтобы `tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown` снова проходил с `auto_to_manual_ratio < 5.0` в полном прогоне; после этого задача станет одобряемой.\",\"alert_reason\":\"\",\"progress_note\":\"По diff критерии задачи покрыты: acceptance_criteria проверяются, mismatch `target_files` vs `changed_files` даёт warning, и добавлена проверка целевого тестового evidence.\"}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {
+      "decision": "fix",
+      "task_id": "R15-02",
+      "summary": "Семантические проверки для generic implementation задач и целевые unit-тесты добавлены, но задача не может быть одобрена из-за падающего полного тестового прогона.",
+      "quality_score": 84,
+      "issues": [
+        "Полный `make test` не проходит: `tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown` упал, потому что `report[\"comparison\"][\"auto_to_manual_ratio\"]` оказался `5.085`, а порог теста требует `< 5.0`."
+      ],
+      "fix_instructions": "Стабилизируй benchmark-путь так, чтобы `tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown` снова проходил с `auto_to_manual_ratio < 5.0` в полном прогоне; после этого задача станет одобряемой.",
+      "alert_reason": "",
+      "progress_note": "По diff критерии задачи покрыты: acceptance_criteria проверяются, mismatch `target_files` vs `changed_files` даёт warning, и добавлена проверка целевого тестового evidence."
+    }
+  },
+  "attempts": 3,
+  "duration_sec": 3579,
+  "timestamp": "2026-04-03T07:29:10Z",
+  "runtime_success": false,
+  "verified_success": false
+}

@@ -433,7 +433,7 @@ def test_next_task_still_only_picks_pending() -> None:
         {"id": "B", "status": "false_positive", "priority": "high", "phase": "R1"},
         {"id": "C", "status": "partial", "priority": "high", "phase": "R1"},
         {"id": "D", "status": "needs_human_review", "priority": "high", "phase": "R1"},
-        {"id": "E", "status": "pending", "priority": "medium", "phase": "R1"},
+        {"id": "E", "status": "pending", "priority": "medium", "phase": "R1", "target_files": ["test_file.py"]},
     ]
     picked = pick_next(tasks)
     assert picked is not None

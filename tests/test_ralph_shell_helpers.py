@@ -33,6 +33,7 @@ def build_shell_fixture(tmp_path: Path, *, broken_verifier: bool = False) -> Pat
                         "description": "Wire /auto in the bot",
                         "status": "pending",
                         "acceptance_criteria": ["test_auto_route covers /auto"],
+                        "target_files": ["scripts/ralph_bot.py"],
                     }
                 ],
             },
@@ -146,7 +147,9 @@ def test_handoff_worktree_evidence_paths_only_returns_dirty_candidate_paths(tmp_
         "phase": "OPS",
         "title": "scripts/run_eval.py",
         "description": "Add scripts/run_eval.py and keep it importable.",
+        "status": "pending",
         "acceptance_criteria": ["scripts/run_eval.py exists and is safely executable or importable"],
+        "target_files": ["scripts/run_eval.py"],
     }
 
     result = run_helper(

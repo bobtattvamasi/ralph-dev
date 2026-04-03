@@ -17,6 +17,7 @@ def sample_tasks_full():
                 "priority": "high",
                 "timeout": 120,
                 "status": "pending",
+                "target_files": ["test_file.py"],
                 "dependencies": []
             },
             {
@@ -45,7 +46,8 @@ def sample_tasks_minimal():
                 "title": "Add subtract",
                 "prompt": "Add subtract function",
                 "timeout": 120,
-                "status": "pending"
+                "status": "pending",
+                "target_files": ["test_file.py"]
             },
             {
                 "id": "T02",
@@ -54,7 +56,8 @@ def sample_tasks_minimal():
                 "prompt": "Add power function",
                 "dependencies": ["T01"],
                 "timeout": 120,
-                "status": "pending"
+                "status": "pending",
+                "target_files": ["test_file.py"]
             }
         ]
     }
