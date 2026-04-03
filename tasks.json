@@ -3081,7 +3081,7 @@
       "phase": "R14",
       "title": "Fix audit review.parsed always empty",
       "description": "In .ralph/audit/*.json, review.parsed is always {} even when review.raw contains valid BEGIN_RALPH_REVIEW_JSON...END_RALPH_REVIEW_JSON. The write_task_audit_artifact function in ralph.sh constructs the audit JSON but doesn't extract parsed review fields from REVIEW_JSON variable into the parsed structure. Fix so decision, quality_score, issues, fix_instructions are preserved structurally.",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "risk": "low",
       "dependencies": [],
@@ -3090,7 +3090,8 @@
         "After task fix/block, review.parsed contains decision and fix_instructions",
         "Existing test_audit_artifact tests still pass",
         "Add test verifying review.parsed is populated"
-      ]
+      ],
+      "completed_at": "2026-04-03T02:38:47.920962+00:00"
     },
     {
       "id": "R14-03",

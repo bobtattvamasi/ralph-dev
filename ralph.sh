@@ -769,7 +769,7 @@ PY
         RALPH_AUDIT_STATUS="$audit_status" \
         RALPH_AUDIT_VERIFICATION_JSON="$verification_json_payload" \
         RALPH_AUDIT_CHANGED_FILES_JSON="$changed_files_json" \
-        RALPH_AUDIT_REVIEW_JSON="${REVIEW_JSON:-{}}" \
+        RALPH_AUDIT_REVIEW_JSON="${REVIEW_JSON:-\{\}}" \
         RALPH_AUDIT_REVIEW_RAW="${REVIEW:-}" \
         RALPH_AUDIT_ATTEMPTS="$CURRENT_ATTEMPT" \
         RALPH_AUDIT_DURATION="$audit_duration" \
@@ -789,7 +789,14 @@ def safe_json_load(raw: str, default):
 task = safe_json_load(os.environ.get("RALPH_AUDIT_TASK_JSON", "{}"), {})
 verification = safe_json_load(os.environ.get("RALPH_AUDIT_VERIFICATION_JSON", "{}"), {})
 changes = safe_json_load(os.environ.get("RALPH_AUDIT_CHANGED_FILES_JSON", "[]"), [])
-parsed_review = safe_json_load(os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}"), {})
+review_json_raw = os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}")
+# Strip wrapper markers if present
+if "BEGIN_RALPH_REVIEW_JSON" in review_json_raw:
+    import re as _re
+    m = _re.search(r"BEGIN_RALPH_REVIEW_JSON\s*(\{.*?\})\s*END_RALPH_REVIEW_JSON", review_json_raw, _re.DOTALL)
+    if m:
+        review_json_raw = m.group(1)
+parsed_review = safe_json_load(review_json_raw, {})
 
 payload = {
     "task_id": task.get("id", ""),

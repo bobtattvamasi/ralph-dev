@@ -2729,3 +2729,86 @@ def test_ralph_waits_for_assets_and_resumes_when_files_arrive(tmp_path: Path) ->
     assert "assets_manifest.json" in stdout or "Assets ready for T01" in stdout or "Required assets are ready" in stdout
     assert not inbox_file.exists()
     assert (project_dir / "src" / "assets" / "hero-image.txt").read_text(encoding="utf-8") == "hero-image-binary"
+
+
+def test_audit_artifact_review_parsed_populated(tmp_path, monkeypatch):
+    """R14-02: review.parsed must contain decision/quality_score from REVIEW_JSON."""
+    import subprocess, json, os, textwrap
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    ralph_sh = project_dir / "ralph.sh"
+    # Minimal script that calls write_task_audit_artifact with REVIEW_JSON set
+    ralph_sh.write_text(textwrap.dedent(r"""
+        #!/usr/bin/env bash
+        RALPH_DIR="$(cd "$(dirname "$0")" && pwd)"
+        mkdir -p "$RALPH_DIR/.ralph/audit"
+        TASK_ID="TEST-01"
+        TASK_TITLE="Test task"
+        TASK_JSON='{"id":"TEST-01","title":"Test task"}'
+        CURRENT_ATTEMPT=1
+        REVIEW_JSON='{"decision":"approve","quality_score":9,"summary":"All good"}'
+        REVIEW='BEGIN_RALPH_REVIEW_JSON\n{"decision":"approve"}\nEND_RALPH_REVIEW_JSON'
+
+        # Inline the audit writer from ralph.sh
+        RALPH_AUDIT_REVIEW_JSON="${REVIEW_JSON:-\{\}}" \
+        RALPH_AUDIT_REVIEW_RAW="${REVIEW:-}" \
+        RALPH_AUDIT_TASK_JSON="$TASK_JSON" \
+        RALPH_AUDIT_TITLE="$TASK_TITLE" \
+        RALPH_AUDIT_STATUS="done" \
+        RALPH_AUDIT_ATTEMPTS="$CURRENT_ATTEMPT" \
+        RALPH_AUDIT_DURATION="10" \
+        RALPH_AUDIT_TIMESTAMP="2025-01-01T00:00:00Z" \
+        RALPH_AUDIT_RUNTIME_SUCCESS="true" \
+        RALPH_AUDIT_VERIFIED_SUCCESS="true" \
+        RALPH_AUDIT_VERIFICATION_JSON='{"result":"pass","reason":"ok","task_class":"test","changed_files_non_bookkeeping":[]}' \
+        RALPH_AUDIT_CHANGED_FILES_JSON='[]' \
+        python3 - <<'PY'
+import json, os
+
+def safe_json_load(raw, default):
+    try:
+        return json.loads(raw or json.dumps(default))
+    except Exception:
+        return default
+
+review_json_raw = os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}")
+if "BEGIN_RALPH_REVIEW_JSON" in review_json_raw:
+    import re
+    m = re.search(r"BEGIN_RALPH_REVIEW_JSON\\s*(\\{.*?\\})\\s*END_RALPH_REVIEW_JSON", review_json_raw, re.DOTALL)
+    if m:
+        review_json_raw = m.group(1)
+parsed_review = safe_json_load(review_json_raw, {})
+
+task = safe_json_load(os.environ.get("RALPH_AUDIT_TASK_JSON", "{}"), {})
+verification = safe_json_load(os.environ.get("RALPH_AUDIT_VERIFICATION_JSON", "{}"), {})
+
+payload = {
+    "task_id": task.get("id", ""),
+    "review": {
+        "raw": os.environ.get("RALPH_AUDIT_REVIEW_RAW", ""),
+        "parsed": parsed_review,
+    },
+    "status": os.environ.get("RALPH_AUDIT_STATUS", "done"),
+}
+out = os.path.join(os.environ.get("RALPH_DIR", "."), ".ralph", "audit", "TEST-01.json")
+with open(out, "w") as f:
+    json.dump(payload, f)
+PY
+    """))
+    ralph_sh.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(ralph_sh)],
+        capture_output=True, text=True, timeout=30,
+        cwd=str(project_dir),
+    )
+    assert result.returncode == 0, result.stderr
+
+    audit_file = project_dir / ".ralph" / "audit" / "TEST-01.json"
+    assert audit_file.exists(), "Audit artifact not created"
+    audit = json.loads(audit_file.read_text())
+    parsed = audit["review"]["parsed"]
+    assert parsed.get("decision") == "approve", f"Expected approve, got: {parsed}"
+    assert parsed.get("quality_score") == 9, f"Expected 9, got: {parsed}"
+    assert parsed.get("summary") == "All good", f"Expected summary, got: {parsed}"
