@@ -3050,6 +3050,20 @@ run_coder_agent() {
 self_heal_environment() {
     local check_scope="${PRETASK_CHECK_SCOPE:-pre-task validation}"
     local heal_description="${PRETASK_HEAL_DESCRIPTION:-Before starting the task queue, pre-task validation is failing. Find the root cause and fix it without changing tasks.json or progress.md. Do NOT add new features.}"
+    local pretask_log_file="/tmp/ralph_test.log"
+    local test_failure_output=""
+
+    if [ -f "$pretask_log_file" ]; then
+        test_failure_output=$(tail -n 60 "$pretask_log_file" 2>/dev/null || true)
+        if [ -n "$test_failure_output" ]; then
+            heal_description="${heal_description}
+
+## Test Failure Output (last 60 lines)
+\`\`\`
+${test_failure_output}
+\`\`\`"
+        fi
+    fi
 
     log "🩹 $check_scope broken before start. Attempting self-heal..."
     notify "🩹 $check_scope broken before start. Ralph will try to fix automatically."

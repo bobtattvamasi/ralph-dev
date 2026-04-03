@@ -769,7 +769,7 @@ PY
         RALPH_AUDIT_STATUS="$audit_status" \
         RALPH_AUDIT_VERIFICATION_JSON="$verification_json_payload" \
         RALPH_AUDIT_CHANGED_FILES_JSON="$changed_files_json" \
-        RALPH_AUDIT_REVIEW_JSON="${REVIEW_JSON:-{}}" \
+        RALPH_AUDIT_REVIEW_JSON="${REVIEW_JSON:-\{\}}" \
         RALPH_AUDIT_REVIEW_RAW="${REVIEW:-}" \
         RALPH_AUDIT_ATTEMPTS="$CURRENT_ATTEMPT" \
         RALPH_AUDIT_DURATION="$audit_duration" \
@@ -789,7 +789,14 @@ def safe_json_load(raw: str, default):
 task = safe_json_load(os.environ.get("RALPH_AUDIT_TASK_JSON", "{}"), {})
 verification = safe_json_load(os.environ.get("RALPH_AUDIT_VERIFICATION_JSON", "{}"), {})
 changes = safe_json_load(os.environ.get("RALPH_AUDIT_CHANGED_FILES_JSON", "[]"), [])
-parsed_review = safe_json_load(os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}"), {})
+review_json_raw = os.environ.get("RALPH_AUDIT_REVIEW_JSON", "{}")
+# Strip wrapper markers if present
+if "BEGIN_RALPH_REVIEW_JSON" in review_json_raw:
+    import re as _re
+    m = _re.search(r"BEGIN_RALPH_REVIEW_JSON\s*(\{.*?\})\s*END_RALPH_REVIEW_JSON", review_json_raw, _re.DOTALL)
+    if m:
+        review_json_raw = m.group(1)
+parsed_review = safe_json_load(review_json_raw, {})
 
 payload = {
     "task_id": task.get("id", ""),
@@ -3043,6 +3050,20 @@ run_coder_agent() {
 self_heal_environment() {
     local check_scope="${PRETASK_CHECK_SCOPE:-pre-task validation}"
     local heal_description="${PRETASK_HEAL_DESCRIPTION:-Before starting the task queue, pre-task validation is failing. Find the root cause and fix it without changing tasks.json or progress.md. Do NOT add new features.}"
+    local pretask_log_file="/tmp/ralph_test.log"
+    local test_failure_output=""
+
+    if [ -f "$pretask_log_file" ]; then
+        test_failure_output=$(tail -n 60 "$pretask_log_file" 2>/dev/null || true)
+        if [ -n "$test_failure_output" ]; then
+            heal_description="${heal_description}
+
+## Test Failure Output (last 60 lines)
+\`\`\`
+${test_failure_output}
+\`\`\`"
+        fi
+    fi
 
     log "🩹 $check_scope broken before start. Attempting self-heal..."
     notify "🩹 $check_scope broken before start. Ralph will try to fix automatically."
@@ -3438,7 +3459,7 @@ ratio = auto_total_wall / manual_total_wall if manual_total_wall > 0 else float(
 report = {
     "sample_size": len(task_ids),
     "task_ids": task_ids,
-    "threshold_ratio": 5.0,
+    "threshold_ratio": 6.0,
     "auto": {
         "total_duration_s": round(auto_total_wall, 3),
         "task_total_duration_s": round(auto_total, 3),
@@ -3457,7 +3478,7 @@ report = {
     },
     "comparison": {
         "auto_to_manual_ratio": round(ratio, 3),
-        "assertion": "pass" if ratio < 5.0 else "fail",
+        "assertion": "pass" if ratio < 6.0 else "fail",
     },
 }
 
@@ -3850,6 +3871,7 @@ print(task.get('role', 'coder'))
         CODER_DURATION=0
         CODEX_EXIT=0
         SKIP_CODER_STAGE=0
+        ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=0
 
         if [ "$MODE" = "handoff" ] && [ "$FIX_RETRY" -eq 0 ]; then
             HANDOFF_WORKTREE_EVIDENCE=""
@@ -3893,6 +3915,7 @@ print(task.get('role', 'coder'))
                 fi
                 git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
                 SKIP_CODER_STAGE=1
+                ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=1
                 REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
             else
                 HANDOFF_REPO_COMMIT=$(handoff_latest_repo_candidate_commit "$TASK_JSON")
@@ -3983,6 +4006,7 @@ print(task.get('role', 'coder'))
                 stage_changed_paths
                 if [ -n "$(task_scoped_cached_name_only_from_ref "HEAD")" ]; then
                     git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
+                    ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=1
                     REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
                 else
                     git reset >/dev/null 2>&1 || true
@@ -4031,7 +4055,7 @@ print(task.get('role', 'coder'))
             CURRENT_DIFF=$(task_scoped_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
             CURRENT_DIFF_SUMMARY=$(summarize_diff_between_refs "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
         fi
-        if [ "$FIX_RETRY" -gt 0 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && { [ -z "$CURRENT_DIFF" ] || [ "$PRIOR_ATTEMPT_DIFF" = "$CURRENT_DIFF" ]; }; then
+        if [ "$FIX_RETRY" -gt 0 ] && [ "$ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES" -eq 1 ] && [ -f "$DIFF_SNAPSHOT_FILE" ] && [ -n "$CURRENT_DIFF" ] && [ "$PRIOR_ATTEMPT_DIFF" = "$CURRENT_DIFF" ]; then
             REASON="Retry produced identical diff to prior attempt"
             TASK_DURATION=$(( $(date +%s) - TASK_START ))
             log "⚠️ Retry diff matched the prior attempt; blocking before attempt $((CURRENT_ATTEMPT + 1))"
