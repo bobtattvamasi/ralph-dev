@@ -2805,7 +2805,7 @@ task_scoped_diff_between_refs() {
     local base_hash="$1"
     local target_hash="$2"
     git diff "$base_hash" "$target_hash" -- \
-        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
         ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
         ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
         2>/dev/null || true
@@ -2814,7 +2814,7 @@ task_scoped_diff_between_refs() {
 task_scoped_cached_name_only_from_ref() {
     local base_hash="$1"
     git diff --cached --name-only "$base_hash" -- \
-        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
         ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
         ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
         2>/dev/null || true
@@ -2823,7 +2823,7 @@ task_scoped_cached_name_only_from_ref() {
 task_scoped_cached_diff_from_ref() {
     local base_hash="$1"
     git diff --cached "$base_hash" -- \
-        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
         ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
         ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
         2>/dev/null || true
@@ -2832,7 +2832,7 @@ task_scoped_cached_diff_from_ref() {
 task_scoped_worktree_diff_from_ref() {
     local base_hash="$1"
     git diff "$base_hash" -- \
-        ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
+        ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
         ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
         ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
         2>/dev/null || true
@@ -4080,7 +4080,7 @@ print(task.get('role', 'coder'))
         if [ "${REVIEW_BASE_HASH:-$PRE_HASH}" = "${REVIEW_TARGET_HASH:-$POST_HASH}" ]; then
             GIT_DIFF="(no changes committed)"
         else
-            GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph.sh' ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
+            GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
         TEST_START=$(date +%s)
         TEST_OUTPUT=$(make test 2>&1 | tail -40 || echo "tests failed")

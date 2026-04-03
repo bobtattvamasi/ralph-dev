@@ -241,6 +241,41 @@ def test_run_task_closure_verification_falls_back_when_verifier_crashes(tmp_path
     assert lines[2] == "Verification script failed unexpectedly."
 
 
+def test_task_scoped_diff_between_refs_includes_ralph_shell_changes(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+    base_hash = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    ralph_path = project_dir / "ralph.sh"
+    ralph_path.write_text(ralph_path.read_text(encoding="utf-8") + "\n# shell change\n", encoding="utf-8")
+    subprocess.run(["git", "add", "ralph.sh"], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "change ralph shell"], cwd=project_dir, check=True, capture_output=True, text=True)
+    head_hash = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    result = run_helper(
+        project_dir,
+        f"task_scoped_diff_between_refs '{base_hash}' '{head_hash}'\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "diff --git a/ralph.sh b/ralph.sh" in result.stdout
+    assert "+# shell change" in result.stdout
+
+
 def test_write_benchmark_report_clamps_other_time_and_accepts_missing_manual_duration(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     auto_logs = project_dir / "auto" / "logs"
