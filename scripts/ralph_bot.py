@@ -2106,7 +2106,12 @@ async def main() -> None:
                 p.unlink(missing_ok=True)  # dead process, clean up
 
     await safe_send("🤖 Ralph Bot started! Type /help for commands.")
-    await asyncio.gather(poll_updates(), watch_state())
+    try:
+        await asyncio.gather(poll_updates(), watch_state())
+    except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
+        pass
+    finally:
+        await safe_send("🔴 Ralph Bot going offline.")
 
 
 if __name__ == "__main__":
@@ -2151,4 +2156,7 @@ if __name__ == "__main__":
     print(f"   Tasks:       {TASKS_FILE}")
     print("   caffeinate: enabled during auto mode")
 
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n🔴 Ralph Bot stopped.")
