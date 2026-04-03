@@ -3319,6 +3319,26 @@
       ],
       "priority": "high",
       "role": "coder"
+    },
+    {
+      "id": "R15-08",
+      "phase": "R15",
+      "status": "pending",
+      "title": "Pass test failure output to ENV-FIX coder prompt",
+      "description": "When pre-task make test fails, capture stderr/stdout and inject into ENV-FIX coder prompt so codex sees actual test errors instead of guessing.",
+      "target_files": [
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "ENV-FIX prompt includes last 50 lines of make test output",
+        "Coder can see which test failed and the assertion error"
+      ],
+      "tags": [
+        "reliability",
+        "prompt"
+      ],
+      "priority": "high",
+      "role": "coder"
     }
   ]
 }

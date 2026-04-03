@@ -16,14 +16,24 @@ try:
 except ImportError:
     from scripts.ralph_common import infer_task_context, load_tasks_data, resolve_project_dir, save_tasks_data
 
-from verify_task_closure import (
-    extract_command_tokens,
-    extract_expected_test_names,
-    extract_path_candidates,
-    file_contains_required_content,
-    normalize_path,
-    read_text,
-)
+try:
+    from verify_task_closure import (
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        file_contains_required_content,
+        normalize_path,
+        read_text,
+    )
+except ImportError:
+    from scripts.verify_task_closure import (
+        extract_command_tokens,
+        extract_expected_test_names,
+        extract_path_candidates,
+        file_contains_required_content,
+        normalize_path,
+        read_text,
+    )
 
 
 PROJECT_DIR = resolve_project_dir(script_path=__file__)

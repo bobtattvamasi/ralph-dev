@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 from pathlib import Path
@@ -9,6 +10,11 @@ from scripts.next_task import pick_next
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REAUDIT = REPO_ROOT / "scripts" / "re_audit_tasks.py"
+
+
+def test_reaudit_module_imports_from_repo_root() -> None:
+    module = importlib.import_module("scripts.re_audit_tasks")
+    assert module.__name__ == "scripts.re_audit_tasks"
 
 
 def write_tasks(project_dir: Path, tasks: list[dict]) -> None:
