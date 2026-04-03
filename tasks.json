@@ -3073,7 +3073,7 @@
         "Audit artifact shows verification.result = fail_fix",
         "No other test regressions"
       ],
-      "completed_at": "2026-04-01T17:46:33.614907+00:00",
+      "completed_at": "2026-04-03T02:45:40.366245+00:00",
       "revision_notes": "verified_done"
     },
     {
@@ -3081,7 +3081,7 @@
       "phase": "R14",
       "title": "Fix audit review.parsed always empty",
       "description": "In .ralph/audit/*.json, review.parsed is always {} even when review.raw contains valid BEGIN_RALPH_REVIEW_JSON...END_RALPH_REVIEW_JSON. The write_task_audit_artifact function in ralph.sh constructs the audit JSON but doesn't extract parsed review fields from REVIEW_JSON variable into the parsed structure. Fix so decision, quality_score, issues, fix_instructions are preserved structurally.",
-      "status": "done",
+      "status": "verified_done",
       "priority": "high",
       "risk": "low",
       "dependencies": [],
@@ -3091,7 +3091,7 @@
         "Existing test_audit_artifact tests still pass",
         "Add test verifying review.parsed is populated"
       ],
-      "completed_at": "2026-04-03T02:38:47.920962+00:00"
+      "completed_at": "2026-04-03T02:45:40.014912+00:00"
     },
     {
       "id": "R14-03",
@@ -3134,7 +3134,7 @@
       "phase": "R14",
       "title": "Resolve remaining R12 blocked tasks",
       "description": "R12 has 2 blocked tasks. Investigate what blocks them, determine if they are still relevant or should be marked false_positive/partial. If relevant, unblock and fix.",
-      "status": "verified_done",
+      "status": "done",
       "priority": "low",
       "risk": "low",
       "dependencies": [],
@@ -3142,7 +3142,7 @@
         "All R12 tasks have terminal status (verified_done, false_positive, or partial)",
         "No R12 tasks remain in blocked status"
       ],
-      "completed_at": "2026-04-01T17:50:31.777700+00:00"
+      "completed_at": "2026-04-03T02:45:40.720428+00:00"
     },
     {
       "id": "R14-06",
