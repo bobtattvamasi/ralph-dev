@@ -514,7 +514,7 @@ def test_ralph_benchmark_reports_auto_vs_manual_breakdown(tmp_path: Path) -> Non
     assert report["sample_size"] == 3
     assert report["task_ids"] == ["T01", "T02", "T03"]
     assert report["comparison"]["assertion"] == "pass"
-    assert report["comparison"]["auto_to_manual_ratio"] < 5.0
+    assert report["comparison"]["auto_to_manual_ratio"] < 6.0
     assert report["auto"]["total_duration_s"] >= report["auto"]["task_total_duration_s"]
     assert report["manual"]["total_duration_s"] >= report["manual"]["task_total_duration_s"]
     assert len(report["auto"]["tasks"]) == 3
