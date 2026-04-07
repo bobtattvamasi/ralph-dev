@@ -4135,10 +4135,19 @@ else:
             LEAD_START=$(date +%s)
             apply_timeout_override
 
+            LEAD_TARGET_FILES=$(printf '%s' "$TASK_JSON" | python3 -c '
+import json, sys
+task = json.load(sys.stdin)
+items = [str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()]
+print("\n".join(f"- {item}" for item in items) if items else "- None specified")
+')
             LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${LEAD_ROLE_FILE} first.
 
 ## Task
 $TASK_JSON
+
+## Target Files
+$LEAD_TARGET_FILES
 
 ## Role Instructions (${LEAD_ROLE_FILE})
 ${LEAD_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_LEAD.md conventions.}
@@ -4154,6 +4163,16 @@ Previous diff snapshot: ${DIFF_SNAPSHOT_BYTES:-0} bytes
 \`\`\`
 $TEST_OUTPUT
 \`\`\`
+
+## Review Checklist — evaluate each item:
+1. SCOPE: Did coder modify ONLY the target files listed in the task? List any out-of-scope files.
+2. TESTS: Do all tests pass? Were new tests added for new functionality?
+3. ACCEPTANCE: Are all acceptance_criteria from the task satisfied by this diff?
+4. REGRESSIONS: Could any change break existing functionality?
+5. QUALITY: Is the code clean, no debug prints, no hardcoded secrets, no TODO hacks?
+
+Your final JSON must include:
+- checklist: { scope_ok: bool, tests_ok: bool, acceptance_ok: bool, regressions_ok: bool, quality_ok: bool }
 
 Return exactly one final review block in this format:
 BEGIN_RALPH_REVIEW_JSON
