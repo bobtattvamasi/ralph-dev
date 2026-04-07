@@ -4377,6 +4377,15 @@ except Exception:
                     write_task_audit_artifact "done" "true" "true" "$TASK_DURATION"
                     AUDIT_WRITTEN=true
                     log "📋 TASK_DONE task_id=$TASK_ID status=approved runtime_success=true verified_success=true quality=$QUALITY duration=${TOTAL}s attempts=$FIX_RETRY timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    TRUST_JSON=$(python3 "$RALPH_DIR/scripts/trust_score.py" --audit-dir "$RALPH_DIR/.ralph/audit" --window 20 2>/dev/null || echo '{}')
+                    TRUST_SCORE=$(printf '%s' "$TRUST_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("trust_score", -1))' 2>/dev/null || echo '-1')
+                    log "Trust score after task $TASK_ID: $TRUST_SCORE/100"
+                    if python3 -c "import sys; sys.exit(0 if float(sys.argv[1]) < 50 else 1)" "$TRUST_SCORE" 2>/dev/null; then
+                        log "⚠️ Trust score below 50 — consider pausing auto-pilot"
+                        if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
+                            python3 "$RALPH_DIR/scripts/ralph_notify.py" "⚠️ Trust score dropped to $TRUST_SCORE/100 after task $TASK_ID" >/dev/null 2>&1 || true
+                        fi
+                    fi
                     log "╔═══════════════════════════════════════════╗"
                     log "║ ✅ TASK COMPLETE                          ║"
                     log "║ Task:     ${TASK_ID}                       ║"
