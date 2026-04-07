@@ -1614,6 +1614,13 @@ if criteria:
     if remaining > 0:
         lines.append(f"- ... [{remaining} more criteria truncated]")
 
+target_files = [str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()]
+if target_files:
+    lines.append("")
+    lines.append("Target Files (modify ONLY these unless absolutely necessary):")
+    for item in target_files:
+        lines.append(f"- {item}")
+
 revision_notes = task.get("revision_notes")
 if revision_notes not in (None, ""):
     lines.append("")
