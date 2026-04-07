@@ -4100,6 +4100,24 @@ print(task.get('role', 'coder'))
         else
             rm -f "$RETRY_TEST_OUTPUT_FILE"
         fi
+        ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+        SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
+import json
+import os
+
+task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
+target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
+actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
+out_of_scope = [path for path in actual_changed if path not in target_files]
+print("\n".join(out_of_scope), end="")
+PY
+)
+        if [ -n "$SCOPE_ANOMALY" ]; then
+            log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
+            if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
+                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: out-of-scope files: $SCOPE_ANOMALY" >/dev/null 2>&1 || true
+            fi
+        fi
 
         REVIEW_FILE="/tmp/ralph_review_$$.txt"
         LEAD_OUTPUT="/tmp/ralph_lead_$$.txt"
@@ -4141,6 +4159,15 @@ task = json.load(sys.stdin)
 items = [str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()]
 print("\n".join(f"- {item}" for item in items) if items else "- None specified")
 ')
+            LEAD_SCOPE_ANOMALY_WARNING=""
+            if [ -n "$SCOPE_ANOMALY" ]; then
+                LEAD_SCOPE_ANOMALY_WARNING="
+## Scope Anomaly Warning
+The following files were modified but are NOT in target_files:
+$SCOPE_ANOMALY
+Please evaluate whether these changes are justified.
+"
+            fi
             LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${LEAD_ROLE_FILE} first.
 
 ## Task
@@ -4148,6 +4175,7 @@ $TASK_JSON
 
 ## Target Files
 $LEAD_TARGET_FILES
+$LEAD_SCOPE_ANOMALY_WARNING
 
 ## Role Instructions (${LEAD_ROLE_FILE})
 ${LEAD_ROLE_CONTENT:-No role-specific instructions found. Fall back to AGENTS_LEAD.md conventions.}
