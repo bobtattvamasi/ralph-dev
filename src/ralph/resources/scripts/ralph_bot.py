@@ -29,12 +29,14 @@ try:
     from ralph_common import (
         CRASH_ROLLBACK_COMMANDS,
         DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
+        atomic_write_json,
         get_article_generation_timeout_sec,
         get_telegram_poll_backoff_initial_sec,
         get_telegram_poll_backoff_max_sec,
         get_telegram_poll_request_timeout_sec,
         get_telegram_poll_timeout_sec,
         get_telegram_timeout_sec,
+        locked_path,
         load_tasks_data as shared_load_tasks_data,
         mutate_tasks_data as shared_mutate_tasks_data,
         resolve_project_dir,
@@ -47,12 +49,14 @@ except ImportError:
     from scripts.ralph_common import (
         CRASH_ROLLBACK_COMMANDS,
         DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
+        atomic_write_json,
         get_article_generation_timeout_sec,
         get_telegram_poll_backoff_initial_sec,
         get_telegram_poll_backoff_max_sec,
         get_telegram_poll_request_timeout_sec,
         get_telegram_poll_timeout_sec,
         get_telegram_timeout_sec,
+        locked_path,
         load_tasks_data as shared_load_tasks_data,
         mutate_tasks_data as shared_mutate_tasks_data,
         resolve_project_dir,
@@ -64,6 +68,11 @@ except ImportError:
 
 RALPH_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path.cwd()  # overridden in __main__
+REGISTRY_DIR = Path.home() / ".ralph"
+REGISTRY_FILE = REGISTRY_DIR / "projects.json"
+DEFAULT_PROJECT_NAME = "ralph-dev"
+DEFAULT_TEST_CMD = "make test"
+ACTIVE_PROJECT_NAME = DEFAULT_PROJECT_NAME
 STATE_FILE = PROJECT_DIR / "ralph_state.json"
 CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
 TASKS_FILE = PROJECT_DIR / "tasks.json"
@@ -118,6 +127,8 @@ HOT_RELOAD_EXPORTS = [
     "safe_send",
     "send_split_message",
     "set_idle_state",
+    "cmd_projects",
+    "cmd_switch",
     "cmd_status",
     "cmd_start_task",
     "cmd_start_phase",
@@ -150,6 +161,11 @@ HOT_RELOAD_EXPORTS = [
 def configure_module_runtime(module: ModuleType) -> None:
     """Inject current runtime state into a freshly loaded hot-reload module."""
     module.RALPH_DIR = RALPH_DIR
+    module.REGISTRY_DIR = REGISTRY_DIR
+    module.REGISTRY_FILE = REGISTRY_FILE
+    module.DEFAULT_PROJECT_NAME = DEFAULT_PROJECT_NAME
+    module.DEFAULT_TEST_CMD = DEFAULT_TEST_CMD
+    module.ACTIVE_PROJECT_NAME = ACTIVE_PROJECT_NAME
     module.PROJECT_DIR = PROJECT_DIR
     module.STATE_FILE = PROJECT_DIR / "ralph_state.json"
     module.CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
@@ -189,6 +205,170 @@ def apply_hot_reload(module: ModuleType) -> None:
 
     for name in HOT_RELOAD_EXPORTS:
         globals()[name] = getattr(module, name)
+
+
+def default_project_entry() -> dict[str, str]:
+    """Return the built-in registry entry for the Ralph repo itself."""
+    return {
+        "path": str(RALPH_DIR),
+        "test_cmd": DEFAULT_TEST_CMD,
+    }
+
+
+def default_projects_registry() -> dict[str, object]:
+    """Return the default registry payload when none exists yet."""
+    return {
+        "version": 1,
+        "active_project": DEFAULT_PROJECT_NAME,
+        "projects": {
+            DEFAULT_PROJECT_NAME: default_project_entry(),
+        },
+    }
+
+
+def save_projects_registry(data: dict[str, object]) -> None:
+    """Persist ~/.ralph/projects.json with the shared Ralph file lock."""
+    with locked_path(REGISTRY_FILE):
+        atomic_write_json(REGISTRY_FILE, data)
+
+
+def load_projects_registry() -> dict[str, object]:
+    """Load the Ralph project registry, creating the default file when missing."""
+    if not REGISTRY_FILE.exists():
+        data = default_projects_registry()
+        save_projects_registry(data)
+        return data
+
+    try:
+        data = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Malformed registry JSON: {exc.msg}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError("Registry must contain a JSON object.")
+
+    projects = data.get("projects")
+    if not isinstance(projects, dict):
+        raise ValueError("Registry must contain a top-level 'projects' object.")
+
+    data.setdefault("version", 1)
+    data.setdefault("active_project", DEFAULT_PROJECT_NAME)
+    if DEFAULT_PROJECT_NAME not in projects:
+        projects[DEFAULT_PROJECT_NAME] = default_project_entry()
+    if data.get("active_project") not in projects:
+        data["active_project"] = DEFAULT_PROJECT_NAME
+
+    save_projects_registry(data)
+    return data
+
+
+def apply_project_runtime(project_dir: Path, *, project_name: str | None = None) -> None:
+    """Update all project-scoped globals after a context switch."""
+    global PROJECT_DIR, ACTIVE_PROJECT_NAME, STATE_FILE, CONTROL_FILE, TASKS_FILE
+    global PROGRESS_FILE, LOG_DIR, AUDIT_DIR, BLOG_DRAFTS_FILE, RALPH_MAIN_PID_FILE
+
+    PROJECT_DIR = project_dir.resolve()
+    if project_name:
+        ACTIVE_PROJECT_NAME = project_name
+    STATE_FILE = PROJECT_DIR / "ralph_state.json"
+    CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
+    TASKS_FILE = PROJECT_DIR / "tasks.json"
+    PROGRESS_FILE = PROJECT_DIR / "progress.md"
+    LOG_DIR = PROJECT_DIR / "logs"
+    AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
+    BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
+    RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
+
+
+def get_project_display_name(project_dir: Path, registry: dict[str, object] | None = None) -> str:
+    """Return the registry name for a project path if available."""
+    project_dir_resolved = project_dir.resolve()
+    if registry is None:
+        try:
+            registry = load_projects_registry()
+        except ValueError:
+            return project_dir_resolved.name
+
+    projects = registry.get("projects", {})
+    if isinstance(projects, dict):
+        for name, payload in projects.items():
+            if not isinstance(name, str) or not isinstance(payload, dict):
+                continue
+            raw_path = payload.get("path")
+            if not isinstance(raw_path, str):
+                continue
+            try:
+                if Path(raw_path).expanduser().resolve() == project_dir_resolved:
+                    return name
+            except OSError:
+                continue
+
+    return project_dir_resolved.name
+
+
+def get_project_snapshot(project_name: str, project_path: Path) -> dict[str, object]:
+    """Collect lightweight status/progress data for one registered project."""
+    snapshot: dict[str, object] = {
+        "name": project_name,
+        "path": project_path,
+        "has_tasks": False,
+        "status": "missing",
+        "done_total": 0,
+        "all_total": 0,
+        "pct": 0,
+        "current_task": None,
+    }
+
+    tasks_path = project_path / "tasks.json"
+    state_path = project_path / "ralph_state.json"
+    snapshot["has_tasks"] = tasks_path.exists()
+    if tasks_path.exists():
+        try:
+            summary = get_task_summary(tasks_path)
+        except (json.JSONDecodeError, OSError):
+            snapshot["status"] = "tasks_error"
+        else:
+            snapshot.update(summary)
+            snapshot["status"] = "idle"
+
+    if state_path.exists():
+        try:
+            raw_state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            snapshot["status"] = "state_error"
+        else:
+            state = normalize_state_for_display(raw_state)
+            snapshot["status"] = str(state.get("status", snapshot["status"]))
+            snapshot["current_task"] = state.get("current_task")
+
+    return snapshot
+
+
+def resolve_initial_project_context(cli_project_dir: str | None) -> tuple[Path, str]:
+    """Resolve startup context from explicit input first, then the active registry project."""
+    if cli_project_dir or os.environ.get("RALPH_PROJECT_DIR"):
+        project_dir = resolve_project_dir(cli_project_dir)
+        return project_dir, get_project_display_name(project_dir)
+
+    try:
+        registry = load_projects_registry()
+    except ValueError:
+        project_dir = resolve_project_dir(None)
+        return project_dir, project_dir.name
+
+    active_name = str(registry.get("active_project", DEFAULT_PROJECT_NAME))
+    projects = registry.get("projects", {})
+    if isinstance(projects, dict):
+        payload = projects.get(active_name)
+        if isinstance(payload, dict):
+            raw_path = payload.get("path")
+            if isinstance(raw_path, str):
+                candidate = Path(raw_path).expanduser().resolve()
+                if (candidate / "tasks.json").exists():
+                    return candidate, active_name
+
+    project_dir = resolve_project_dir(None)
+    return project_dir, get_project_display_name(project_dir, registry)
 
 
 def read_state() -> dict:
@@ -1051,6 +1231,8 @@ async def cmd_status() -> None:
     icon = icons.get(status, "❓")
 
     lines = [f"{icon} Status: <b>{status}</b>"]
+    lines.append(f"📁 Project: <b>{html.escape(ACTIVE_PROJECT_NAME)}</b>")
+    lines.append(f"📍 Path: <code>{html.escape(str(PROJECT_DIR))}</code>")
     if state.get("current_task"):
         lines.append(f"📋 Task: {state['current_task']}")
     if state.get("current_phase_step"):
@@ -1064,6 +1246,104 @@ async def cmd_status() -> None:
     )
 
     await safe_send("\n".join(lines))
+
+
+async def cmd_projects() -> None:
+    """List registered projects with active marker and short status/progress."""
+    try:
+        registry = load_projects_registry()
+    except ValueError as exc:
+        await safe_send(f"❌ Cannot read projects registry: {html.escape(str(exc))}")
+        return
+
+    active_name = str(registry.get("active_project", ACTIVE_PROJECT_NAME))
+    projects = registry.get("projects", {})
+    if not isinstance(projects, dict) or not projects:
+        await safe_send("No registered projects found")
+        return
+
+    lines = ["📚 <b>Projects</b>"]
+    for project_name in sorted(projects):
+        payload = projects.get(project_name)
+        if not isinstance(payload, dict):
+            continue
+
+        raw_path = payload.get("path")
+        if not isinstance(raw_path, str):
+            continue
+
+        project_path = Path(raw_path).expanduser()
+        snapshot = get_project_snapshot(project_name, project_path)
+        marker = "👉" if project_name == active_name else "•"
+        status = html.escape(str(snapshot.get("status", "unknown")))
+        done_total = int(snapshot.get("done_total", 0))
+        all_total = int(snapshot.get("all_total", 0))
+        pct = int(snapshot.get("pct", 0))
+        path_text = html.escape(str(project_path.resolve()))
+        current_task = snapshot.get("current_task")
+
+        lines.append(
+            f"{marker} <b>{html.escape(project_name)}</b> [{status}] {done_total}/{all_total} ({pct}%)"
+        )
+        lines.append(f"   <code>{path_text}</code>")
+        if current_task:
+            lines.append(f"   task: {html.escape(str(current_task))}")
+
+    await send_split_message("\n".join(lines))
+
+
+async def cmd_switch(project_name: str) -> None:
+    """Switch active bot context to a different registered project."""
+    normalized_name = project_name.strip()
+    if not normalized_name:
+        await safe_send("Usage: /switch <project>")
+        return
+
+    state = read_state()
+    if state.get("status") in {"running", "waiting_human", "paused"} or get_live_ralph_pid():
+        await safe_send("⚠️ Cannot switch project while Ralph is active. Stop the current run first.")
+        return
+
+    try:
+        registry = load_projects_registry()
+    except ValueError as exc:
+        await safe_send(f"❌ Cannot read projects registry: {html.escape(str(exc))}")
+        return
+
+    projects = registry.get("projects", {})
+    if not isinstance(projects, dict):
+        await safe_send("❌ Projects registry is invalid")
+        return
+
+    payload = projects.get(normalized_name)
+    if not isinstance(payload, dict):
+        await safe_send(f"❌ Unknown project: {html.escape(normalized_name)}")
+        return
+
+    raw_path = payload.get("path")
+    if not isinstance(raw_path, str):
+        await safe_send(f"❌ Project {html.escape(normalized_name)} has no valid path")
+        return
+
+    project_dir = Path(raw_path).expanduser().resolve()
+    if not (project_dir / "tasks.json").exists():
+        await safe_send(f"❌ No tasks.json in {html.escape(str(project_dir))}")
+        return
+
+    registry["active_project"] = normalized_name
+    save_projects_registry(registry)
+    apply_project_runtime(project_dir, project_name=normalized_name)
+
+    summary = get_task_summary(TASKS_FILE)
+    await safe_send(
+        "\n".join(
+            [
+                f"🔀 Switched to <b>{html.escape(normalized_name)}</b>",
+                f"📍 <code>{html.escape(str(PROJECT_DIR))}</code>",
+                f"📊 {summary['done_total']}/{summary['all_total']} ({summary['pct']}%) complete",
+            ]
+        )
+    )
 
 
 async def cmd_start_task(task_id: str) -> None:
@@ -1761,6 +2041,8 @@ async def cmd_help() -> None:
     await safe_send(
         "🤖 <b>Ralph Bot</b>\n\n"
         "/status — current state\n"
+        "/projects — list registered projects\n"
+        "/switch <name> — switch active project context\n"
         "/tasks [phase] — task list\n"
         "/plan — phase summary and next pending tasks\n"
         "/article [new] — get today's article or generate a new one\n"
@@ -1829,6 +2111,12 @@ async def handle_update(update: dict) -> None:
     if cmd == "/status":
         handler_name = "cmd_status"
         handler_coro = cmd_status()
+    elif cmd == "/projects":
+        handler_name = "cmd_projects"
+        handler_coro = cmd_projects()
+    elif cmd == "/switch":
+        handler_name = "cmd_switch"
+        handler_coro = cmd_switch(args)
     elif cmd == "/tasks":
         handler_name = "tasks_summary"
         handler_coro = safe_send(get_tasks_summary(args or None))
@@ -2131,7 +2419,7 @@ if __name__ == "__main__":
     RALPH_DIR = Path(__file__).resolve().parent.parent
 
     # PROJECT_DIR priority: --project-dir > RALPH_PROJECT_DIR env > cwd
-    PROJECT_DIR = resolve_project_dir(args.project_dir)
+    PROJECT_DIR, ACTIVE_PROJECT_NAME = resolve_initial_project_context(args.project_dir)
 
     if not (PROJECT_DIR / "tasks.json").exists():
         print(f"❌ No tasks.json in {PROJECT_DIR}")
@@ -2139,11 +2427,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Update all paths that depend on PROJECT_DIR
-    STATE_FILE = PROJECT_DIR / "ralph_state.json"
-    CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
-    TASKS_FILE = PROJECT_DIR / "tasks.json"
-    PROGRESS_FILE = PROJECT_DIR / "progress.md"
-    LOG_DIR = PROJECT_DIR / "logs"
+    apply_project_runtime(PROJECT_DIR, project_name=ACTIVE_PROJECT_NAME)
 
     load_dotenv(PROJECT_DIR / ".env")
     TOKEN = os.environ.get("RALPH_TELEGRAM_TOKEN", "")
@@ -2152,6 +2436,7 @@ if __name__ == "__main__":
 
     print("🤖 Ralph Bot")
     print(f"   RALPH_DIR:   {RALPH_DIR}")
+    print(f"   PROJECT:     {ACTIVE_PROJECT_NAME}")
     print(f"   PROJECT_DIR: {PROJECT_DIR}")
     print(f"   Tasks:       {TASKS_FILE}")
     print("   caffeinate: enabled during auto mode")
