@@ -3133,6 +3133,9 @@
         "Report contains task_results array with id, status, attempts, duration",
         "Report contains aggregate stats: total_tokens, total_cost, success_rate",
         "Add test for report generation"
+      ],
+      "target_files": [
+        "docs/TODO_TARGET_R14-04.md"
       ]
     },
     {
@@ -3168,7 +3171,7 @@
     {
       "id": "R15-01",
       "phase": "R15",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Enrich task schema — require target_files + acceptance_criteria",
       "description": "Add target_files and acceptance_criteria fields to task schema. Validate on task creation. Backfill for pending tasks.",
       "target_files": [
@@ -3187,12 +3190,13 @@
         "quality"
       ],
       "priority": "high",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T05:16:59.161804+00:00"
     },
     {
       "id": "R15-02",
       "phase": "R15",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Verifier v2 — semantic checks for generic implementation tasks",
       "description": "Generic implementation tasks currently auto-pass verification. Add: check acceptance_criteria if present, require changed files match target_files, require targeted test existence.",
       "target_files": [
@@ -3209,12 +3213,13 @@
         "trust"
       ],
       "priority": "critical",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T05:16:59.267734+00:00"
     },
     {
       "id": "R15-03",
       "phase": "R15",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Coder prompt enhancement — inject target_files + acceptance into prompt",
       "description": "When building coder prompt in ralph.sh, include target_files and acceptance_criteria from task JSON so codex knows exactly what files to change and what to achieve.",
       "target_files": [
@@ -3230,12 +3235,13 @@
         "quality"
       ],
       "priority": "high",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T05:16:59.372877+00:00"
     },
     {
       "id": "R15-04",
       "phase": "R15",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Lead diff — include ralph.sh in review scope",
       "description": "Currently ralph.sh is excluded from task-scoped diff via :!ralph.sh. Remove exclusion so lead review sees shell changes. Add regression test.",
       "target_files": [
@@ -3252,12 +3258,13 @@
         "security"
       ],
       "priority": "critical",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T05:16:59.462337+00:00"
     },
     {
       "id": "R15-05",
       "phase": "R15",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Auto-pilot pre-flight — validate task context before running codex",
       "description": "Before running codex on a task, check: target_files present, acceptance_criteria present, dependencies resolved. Skip/defer tasks without sufficient context.",
       "target_files": [
@@ -3274,12 +3281,13 @@
         "quality"
       ],
       "priority": "high",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T05:16:59.554392+00:00"
     },
     {
       "id": "R15-06",
       "phase": "R15",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Retention policy — codex archives, audit artifacts, metrics rotation",
       "description": "Add rotation for logs/codex_*.txt (>7d), .ralph/audit/*.json (>30d), metrics.csv (>10k lines). Add disk budget check before auto/phase runs.",
       "target_files": [
@@ -3296,7 +3304,8 @@
         "reliability"
       ],
       "priority": "high",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T05:16:59.655711+00:00"
     },
     {
       "id": "R15-07",
@@ -3323,7 +3332,7 @@
     {
       "id": "R15-08",
       "phase": "R15",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Pass test failure output to ENV-FIX coder prompt",
       "description": "When pre-task make test fails, capture stderr/stdout and inject into ENV-FIX coder prompt so codex sees actual test errors instead of guessing.",
       "target_files": [
@@ -3338,6 +3347,271 @@
         "prompt"
       ],
       "priority": "high",
+      "role": "coder",
+      "completed_at": "2026-04-08T05:16:59.742572+00:00"
+    },
+    {
+      "id": "R16-01",
+      "phase": "R16",
+      "status": "pending",
+      "title": "projects.json registry + CRUD helpers",
+      "description": "Create ~/.ralph/projects.json schema and scripts/manage_projects.py with add/remove/list/switch/active functions. Auto-register ralph-dev itself as an active project with path=RALPH_DIR and test_cmd='make test'.",
+      "target_files": [
+        "scripts/manage_projects.py",
+        "tests/test_manage_projects.py"
+      ],
+      "acceptance_criteria": [
+        "projects.json created with ralph-dev entry",
+        "manage_projects.py has add/remove/list/switch commands",
+        "tests pass"
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R16-02",
+      "phase": "R16",
+      "status": "pending",
+      "title": "Configurable test command",
+      "description": "Create .ralph/project.json per-project config with test_cmd field. Make ralph.sh read test_cmd from .ralph/project.json instead of hardcoded 'make test', with fallback to 'make test'.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "ralph.sh uses configurable test_cmd",
+        ".ralph/project.json schema defined",
+        "backward compatible"
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R16-03",
+      "phase": "R16",
+      "status": "pending",
+      "title": "PROJECT_DIR full separation",
+      "description": "Make ralph.sh work cleanly from any directory via --project flag or RALPH_PROJECT env var. Resolve tasks.json, AGENTS.md, .ralph/, and related paths relative to PROJECT_DIR.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "ralph.sh --project /path/to/other auto works",
+        "tasks.json is read from the provided project path"
+      ],
+      "priority": "high",
+      "complexity": "complex",
+      "role": "coder"
+    },
+    {
+      "id": "R16-04",
+      "phase": "R16",
+      "status": "pending",
+      "title": "Bot /projects + /switch commands",
+      "description": "Extend ralph_bot.py to read projects.json, list projects with status/progress, and switch active project context with /switch <name> so later commands operate on that project.",
+      "target_files": [
+        "scripts/ralph_bot.py",
+        "src/ralph/resources/scripts/ralph_bot.py"
+      ],
+      "acceptance_criteria": [
+        "/projects lists all projects",
+        "/switch changes context",
+        "/status shows switched project"
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R16-05",
+      "phase": "R16",
+      "status": "pending",
+      "title": "Self-registration on init",
+      "description": "Make ralph-init.sh and ralph.sh auto-register the current project in projects.json on first run if it is not already present.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Running ralph.sh in a new project auto-adds it to projects.json"
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder"
+    },
+    {
+      "id": "R17-01",
+      "phase": "R17",
+      "status": "pending",
+      "title": "ralph kickoff CLI command",
+      "description": "Add new ralph.sh mode 'kickoff <path> <description>' that creates the target directory, runs ralph-init.sh there, and passes the description into AI generation steps.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "ralph.sh kickoff ~/projects/test \"desc\" creates a directory with .ralph/ scaffold"
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R17-02",
+      "phase": "R17",
+      "status": "pending",
+      "title": "AI architecture generation",
+      "description": "Generate ARCHITECTURE.md from project description during kickoff. The prompt should include project type, stack, features, and target audience.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "kickoff produces meaningful ARCHITECTURE.md specific to the described project"
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R17-03",
+      "phase": "R17",
+      "status": "pending",
+      "title": "AI task generation",
+      "description": "Generate tasks.json with phases P0-P3 from architecture plus project description. Produced tasks must include id, title, acceptance_criteria, priority, complexity, and target_files.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "kickoff produces tasks.json with 15-25 actionable tasks in phases"
+      ],
+      "priority": "high",
+      "complexity": "complex",
+      "role": "coder"
+    },
+    {
+      "id": "R17-04",
+      "phase": "R17",
+      "status": "pending",
+      "title": "Skeleton code generation",
+      "description": "Generate initial project files such as main entrypoint, config, and tests/ from the architecture. Support at minimum python-telegram-bot, fastapi, and cli project types.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "kickoff produces working skeleton that passes make test or configured test_cmd"
+      ],
+      "priority": "medium",
+      "complexity": "complex",
+      "role": "coder"
+    },
+    {
+      "id": "R17-05",
+      "phase": "R17",
+      "status": "pending",
+      "title": "Bot /kickoff interactive command",
+      "description": "Add /kickoff to ralph_bot.py as an interactive conversation that asks for name, description, stack, and type, then calls ralph.sh kickoff and reports progress back to Telegram.",
+      "target_files": [
+        "scripts/ralph_bot.py",
+        "src/ralph/resources/scripts/ralph_bot.py"
+      ],
+      "acceptance_criteria": [
+        "/kickoff in Telegram creates a new project through conversation"
+      ],
+      "priority": "medium",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R17-06",
+      "phase": "R17",
+      "status": "pending",
+      "title": "Auto-registration after kickoff",
+      "description": "After kickoff completes, automatically add the new project to projects.json and notify via Telegram that the project is available.",
+      "target_files": [
+        "ralph.sh",
+        "scripts/manage_projects.py"
+      ],
+      "acceptance_criteria": [
+        "kickoff, projects.json entry, and Telegram notification all happen automatically"
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder"
+    },
+    {
+      "id": "R18-01",
+      "phase": "R18",
+      "status": "pending",
+      "title": "/dashboard command — all projects summary",
+      "description": "Add a single Telegram dashboard message showing all projects with name, progress percent, trust score, and last activity.",
+      "target_files": [
+        "scripts/ralph_bot.py",
+        "src/ralph/resources/scripts/ralph_bot.py"
+      ],
+      "acceptance_criteria": [
+        "/dashboard shows formatted summary of all projects"
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder"
+    },
+    {
+      "id": "R18-02",
+      "phase": "R18",
+      "status": "pending",
+      "title": "Per-project trust scores",
+      "description": "Compute trust score separately per project using project-local .ralph/audit/. Expose current project trust in /trust and aggregate values in /dashboard.",
+      "target_files": [
+        "scripts/trust_score.py",
+        "src/ralph/resources/scripts/trust_score.py"
+      ],
+      "acceptance_criteria": [
+        "trust_score.py accepts project_dir parameter",
+        "per-project scores appear in dashboard"
+      ],
+      "priority": "medium",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R18-03",
+      "phase": "R18",
+      "status": "pending",
+      "title": "Auto-switch on project completion",
+      "description": "When all tasks in the active project are complete, make auto mode suggest or auto-switch to the next project with pending tasks.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "auto mode switches to the next active project when the current one is complete"
+      ],
+      "priority": "low",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R18-04",
+      "phase": "R18",
+      "status": "pending",
+      "title": "Project archival",
+      "description": "Add /archive <name> support to mark a project as archived in projects.json and hide archived projects from /projects by default unless /projects --all is used.",
+      "target_files": [
+        "scripts/ralph_bot.py",
+        "scripts/manage_projects.py"
+      ],
+      "acceptance_criteria": [
+        "/archive works",
+        "archived projects are filtered from the default list"
+      ],
+      "priority": "low",
+      "complexity": "simple",
       "role": "coder"
     }
   ]
