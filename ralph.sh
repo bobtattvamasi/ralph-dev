@@ -5,18 +5,73 @@ set -euo pipefail
 # RALPH_DIR = where ralph.sh lives (ralph-dev/)
 # PROJECT_DIR = where the project lives (has tasks.json, AGENTS.md)
 
+RALPH_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+resolve_dir_path() {
+    local candidate="${1:-}"
+
+    [ -n "$candidate" ] || return 1
+    if [ -d "$candidate" ]; then
+        (cd "$candidate" && pwd)
+    else
+        return 1
+    fi
+}
+
+PROJECT_ARG=""
+POSITIONAL_ARGS=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --project)
+            if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+                echo "❌ --project requires a directory path"
+                exit 1
+            fi
+            PROJECT_ARG="$2"
+            shift 2
+            ;;
+        --project=*)
+            PROJECT_ARG="${1#*=}"
+            if [ -z "$PROJECT_ARG" ]; then
+                echo "❌ --project requires a directory path"
+                exit 1
+            fi
+            shift
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
+
 MODE="${1:-status}"
 TARGET="${2:-}"
 EXTRA="${3:-}"
 
-RALPH_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR=""
+if [ -n "$PROJECT_ARG" ]; then
+    PROJECT_DIR="$(resolve_dir_path "$PROJECT_ARG" || true)"
+elif [ -n "${RALPH_PROJECT:-}" ]; then
+    PROJECT_DIR="$(resolve_dir_path "$RALPH_PROJECT" || true)"
+fi
 
-if [ -f "./tasks.json" ]; then
-    PROJECT_DIR="$(pwd)"
-elif [ -f "$RALPH_DIR/../tasks.json" ]; then
-    PROJECT_DIR="$(cd "$RALPH_DIR/.." && pwd)"
-else
-    echo "❌ No tasks.json found. Run from project dir or run ralph-init.sh first."
+if [ -z "$PROJECT_DIR" ]; then
+    if [ -f "./tasks.json" ]; then
+        PROJECT_DIR="$(pwd)"
+    elif [ -f "$RALPH_DIR/../tasks.json" ]; then
+        PROJECT_DIR="$(cd "$RALPH_DIR/.." && pwd)"
+    fi
+fi
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "❌ No tasks.json found. Pass --project /path/to/project, set RALPH_PROJECT, or run from project dir."
+    exit 1
+fi
+
+if [ ! -f "$PROJECT_DIR/tasks.json" ]; then
+    echo "❌ No tasks.json found in project dir: $PROJECT_DIR"
     exit 1
 fi
 
