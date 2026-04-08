@@ -12,33 +12,52 @@ import pytest
 import scripts.ralph_bot as bot
 
 
-@pytest.fixture
-def bot_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
-    project_dir = tmp_path / "project"
+def write_project_fixture(
+    project_dir: Path,
+    *,
+    project_name: str,
+    tasks: list[dict[str, object]],
+    state: dict[str, object] | None = None,
+) -> None:
     project_dir.mkdir()
     (project_dir / "logs").mkdir()
-    (project_dir / "scripts").mkdir()
     (project_dir / "tasks.json").write_text(
         json.dumps(
             {
                 "version": 1,
-                "project": "test-project",
-                "tasks": [
-                    {
-                        "id": "T01",
-                        "phase": "R1",
-                        "title": "Test task",
-                        "description": "Test task",
-                        "status": "pending",
-                        "target_files": ["test_file.py"],
-                    }
-                ],
+                "project": project_name,
+                "tasks": tasks,
             },
             indent=2,
         )
         + "\n",
         encoding="utf-8",
     )
+    if state is not None:
+        (project_dir / "ralph_state.json").write_text(
+            json.dumps(state, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
+@pytest.fixture
+def bot_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    project_dir = tmp_path / "project"
+    write_project_fixture(
+        project_dir,
+        project_name="test-project",
+        tasks=[
+            {
+                "id": "T01",
+                "phase": "R1",
+                "title": "Test task",
+                "description": "Test task",
+                "status": "pending",
+                "target_files": ["test_file.py"],
+            }
+        ],
+    )
+    (project_dir / "scripts").mkdir()
     (project_dir / "scripts" / "ralph_bot.py").write_text(
         "def cmd_ask(prompt: str) -> None:\n"
         "    return None\n",
@@ -70,6 +89,179 @@ def bot_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object
         "safe_send": safe_send_mock,
         "send_message": send_message_mock,
     }
+
+
+@pytest.mark.asyncio
+async def test_cmd_projects_lists_registered_projects_with_status_and_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_project = tmp_path / "active-project"
+    secondary_project = tmp_path / "demo-project"
+    write_project_fixture(
+        active_project,
+        project_name="active-project",
+        tasks=[
+            {"id": "A-01", "phase": "R1", "title": "Done", "status": "done"},
+            {"id": "A-02", "phase": "R1", "title": "Pending", "status": "pending"},
+        ],
+        state={"status": "running", "current_task": "A-02"},
+    )
+    write_project_fixture(
+        secondary_project,
+        project_name="demo-project",
+        tasks=[
+            {"id": "D-01", "phase": "R1", "title": "Done", "status": "verified_done"},
+        ],
+        state={"status": "idle"},
+    )
+
+    registry_file = tmp_path / "projects.json"
+    registry_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "active_project": "active",
+                "projects": {
+                    "active": {"path": str(active_project), "test_cmd": "make test"},
+                    "demo": {"path": str(secondary_project), "test_cmd": "pnpm test"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    split_send = AsyncMock()
+    monkeypatch.setattr(bot, "REGISTRY_FILE", registry_file)
+    monkeypatch.setattr(bot, "send_split_message", split_send)
+
+    await bot.cmd_projects()
+
+    split_send.assert_awaited_once()
+    message = split_send.await_args.args[0]
+    assert "📚 <b>Projects</b>" in message
+    assert "👉 <b>active</b> [running] 1/2 (50%)" in message
+    assert "task: A-02" in message
+    assert "• <b>demo</b> [idle] 1/1 (100%)" in message
+    assert str(active_project.resolve()) in message
+    assert str(secondary_project.resolve()) in message
+
+
+@pytest.mark.asyncio
+async def test_cmd_switch_updates_active_project_context_and_registry(
+    bot_env: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_project = bot_env["project_dir"]
+    other_project = tmp_path / "demo-project"
+    write_project_fixture(
+        other_project,
+        project_name="demo-project",
+        tasks=[
+            {"id": "D-01", "phase": "R2", "title": "Done", "status": "done"},
+            {"id": "D-02", "phase": "R2", "title": "Pending", "status": "pending"},
+        ],
+        state={"status": "idle"},
+    )
+
+    registry_file = tmp_path / "projects.json"
+    registry_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "active_project": "current",
+                "projects": {
+                    "current": {"path": str(current_project), "test_cmd": "make test"},
+                    "demo": {"path": str(other_project), "test_cmd": "pnpm test"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(bot, "REGISTRY_FILE", registry_file)
+    monkeypatch.setattr(bot, "get_live_ralph_pid", lambda: None)
+
+    await bot.cmd_switch("demo")
+
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once()
+    message = safe_send.await_args.args[0]
+    assert "🔀 Switched to <b>demo</b>" in message
+    assert str(other_project.resolve()) in message
+    assert "📊 1/2 (50%) complete" in message
+    assert bot.ACTIVE_PROJECT_NAME == "demo"
+    assert bot.PROJECT_DIR == other_project.resolve()
+    assert bot.TASKS_FILE == other_project.resolve() / "tasks.json"
+
+    registry = json.loads(registry_file.read_text(encoding="utf-8"))
+    assert registry["active_project"] == "demo"
+
+
+@pytest.mark.asyncio
+async def test_cmd_status_after_switch_uses_new_project_context(
+    bot_env: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_project = bot_env["project_dir"]
+    other_project = tmp_path / "demo-project"
+    write_project_fixture(
+        other_project,
+        project_name="demo-project",
+        tasks=[
+            {"id": "D-01", "phase": "R2", "title": "Done", "status": "done"},
+            {"id": "D-02", "phase": "R2", "title": "Pending", "status": "pending"},
+        ],
+        state={
+            "status": "waiting_human",
+            "current_task": "D-02",
+            "current_phase_step": "review",
+            "last_update": "2026-04-08T08:30:00+00:00",
+            "message": "Need screenshots",
+        },
+    )
+
+    registry_file = tmp_path / "projects.json"
+    registry_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "active_project": "current",
+                "projects": {
+                    "current": {"path": str(current_project), "test_cmd": "make test"},
+                    "demo": {"path": str(other_project), "test_cmd": "pnpm test"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(bot, "REGISTRY_FILE", registry_file)
+    monkeypatch.setattr(bot, "get_live_ralph_pid", lambda: None)
+
+    await bot.cmd_switch("demo")
+    bot_env["safe_send"].reset_mock()
+
+    await bot.cmd_status()
+
+    safe_send = bot_env["safe_send"]
+    safe_send.assert_awaited_once()
+    message = safe_send.await_args.args[0]
+    assert "🚨 Status: <b>waiting_human</b>" in message
+    assert "📁 Project: <b>demo</b>" in message
+    assert f"📍 Path: <code>{other_project.resolve()}</code>" in message
+    assert "📋 Task: D-02" in message
+    assert "🔄 Step: review" in message
+    assert "💬 Need screenshots" in message
+    assert "📊 1/2 (50%) complete" in message
 
 
 @pytest.mark.asyncio
