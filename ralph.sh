@@ -44,7 +44,7 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
-set -- "${POSITIONAL_ARGS[@]}"
+set -- ${POSITIONAL_ARGS[@]+"${POSITIONAL_ARGS[@]}"}
 
 MODE="${1:-status}"
 TARGET="${2:-}"
