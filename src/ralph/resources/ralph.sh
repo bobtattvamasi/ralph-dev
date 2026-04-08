@@ -169,6 +169,51 @@ FINAL_NOTIFY_MESSAGE="🎉 Ralph finished! Run /status for details."
 QUEUE_EXIT_LOG="🎉 All tasks complete!"
 FINAL_EXIT_CODE=0
 REASON=""
+PROJECT_CONFIG_FILE="$PROJECT_DIR/.ralph/project.json"
+
+load_project_test_command() {
+    python3 - "$PROJECT_CONFIG_FILE" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+default_command = "make test"
+
+# Schema:
+# {
+#   "test_cmd": "<shell command string, optional>"
+# }
+if not config_path.exists():
+    print(default_command)
+    raise SystemExit(0)
+
+try:
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    print(default_command)
+    raise SystemExit(0)
+
+if not isinstance(payload, dict):
+    print(default_command)
+    raise SystemExit(0)
+
+test_cmd = payload.get("test_cmd", default_command)
+if not isinstance(test_cmd, str) or not test_cmd.strip():
+    print(default_command)
+    raise SystemExit(0)
+
+print(test_cmd.strip())
+PY
+}
+
+PROJECT_TEST_CMD="$(load_project_test_command)"
+
+run_project_test_command() {
+    bash -lc "$PROJECT_TEST_CMD"
+}
 
 is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
@@ -3279,9 +3324,9 @@ run_pre_task_check() {
     local log_file="${1:-/tmp/ralph_test.log}"
 
     if should_run_full_pre_task_suite; then
-        PRETASK_CHECK_SCOPE="make test"
-        PRETASK_HEAL_DESCRIPTION="Before starting the task queue, make test is failing. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features."
-        make test >"$log_file" 2>&1
+        PRETASK_CHECK_SCOPE="$PROJECT_TEST_CMD"
+        PRETASK_HEAL_DESCRIPTION="Before starting the task queue, the configured test command is failing: $PROJECT_TEST_CMD. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features."
+        run_project_test_command >"$log_file" 2>&1
     else
         PRETASK_CHECK_SCOPE="fast Python validation"
         PRETASK_HEAL_DESCRIPTION="Before starting the task queue, fast Python validation is failing. Fix Python syntax errors and unresolved imports without changing tasks.json or progress.md. Do NOT add new features."
@@ -3690,7 +3735,7 @@ fi
 check_and_recover_state
 
 if should_run_full_pre_task_suite; then
-    log "🔍 Pre-task check: make test"
+    log "🔍 Pre-task check: $PROJECT_TEST_CMD"
 else
     log "🔍 Pre-task check: fast Python validation"
 fi
@@ -4090,7 +4135,7 @@ print(task.get('role', 'coder'))
             GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
         TEST_START=$(date +%s)
-        TEST_OUTPUT=$(make test 2>&1 | tail -40 || echo "tests failed")
+        TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
         TEST_DURATION=$(( $(date +%s) - TEST_START ))
         log "⏱️ Test gate took ${TEST_DURATION}s"
         log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
