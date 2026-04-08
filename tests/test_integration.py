@@ -57,6 +57,13 @@ def write_test_logging_makefile(
     return log_path
 
 
+def write_project_test_command(project_dir: Path, test_cmd: str) -> None:
+    (project_dir / ".ralph" / "project.json").write_text(
+        json.dumps({"test_cmd": test_cmd}, indent=2),
+        encoding="utf-8",
+    )
+
+
 def make_fake_binaries(bin_dir: Path) -> None:
     write_executable(
         bin_dir / "codex",
@@ -818,6 +825,33 @@ def test_ralph_task_mode_can_force_preflight_make_test_explicitly(tmp_path: Path
     assert result.returncode == 0, result.stdout + result.stderr
     assert make_log.read_text(encoding="utf-8").splitlines() == ["pre", "post"]
     assert "Pre-task check: make test" in read_latest_ralph_log(project_dir)
+
+
+def test_ralph_preflight_uses_project_configured_test_command(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    make_log = write_test_logging_makefile(project_dir)
+    custom_log = project_dir / "custom_test.log"
+    write_project_test_command(
+        project_dir,
+        "python3 -c \"from pathlib import Path; Path('custom_test.log').write_text('pre\\n', encoding='utf-8')\"",
+    )
+    env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
+    env["RALPH_PRETASK_FULL_TEST"] = "1"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert custom_log.read_text(encoding="utf-8").splitlines() == ["pre"]
+    assert make_log.read_text(encoding="utf-8").splitlines() == ["post"]
+    assert "Pre-task check: python3 -c " in read_latest_ralph_log(project_dir)
 
 
 def test_ralph_self_heal_for_preflight_make_test_skips_runtime_artifacts_in_wip_commit(tmp_path: Path) -> None:
