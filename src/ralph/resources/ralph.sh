@@ -169,6 +169,7 @@ lock_path.parent.mkdir(parents=True, exist_ok=True)
 with lock_path.open("a+", encoding="utf-8") as lock_handle:
     fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
 
+    registry_exists = registry_path.exists()
     registry = load_registry()
     projects = registry["projects"]
     project_path = str(project_dir)
@@ -191,7 +192,8 @@ with lock_path.open("a+", encoding="utf-8") as lock_handle:
 
     resolved_name = next_available_name(projects, project_name)
     projects[resolved_name] = {"path": project_path, "test_cmd": project_test_cmd}
-    registry["active_project"] = resolved_name
+    if not registry_exists:
+        registry["active_project"] = resolved_name
     atomic_write_json(registry_path, registry)
 PY
 }
