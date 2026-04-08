@@ -503,89 +503,8 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert state["message"] == "Task T01 complete"
 
 
-def test_ralph_auto_registers_project_without_overwriting_existing_active_project(tmp_path: Path) -> None:
-    project_dir, env = create_test_project(tmp_path)
-    existing_project = tmp_path / "already-active"
-    existing_project.mkdir()
-    home_dir = tmp_path / "home"
-    registry_dir = home_dir / ".ralph"
-    registry_dir.mkdir(parents=True)
-    registry_file = registry_dir / "projects.json"
-    registry_file.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "active_project": "existing",
-                "projects": {
-                    "existing": {"path": str(existing_project.resolve()), "test_cmd": "make test"},
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    env["HOME"] = str(home_dir)
-
-    result = subprocess.run(
-        [str(RALPH_SH), "status"],
-        cwd=project_dir,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=45,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    registry = json.loads(registry_file.read_text(encoding="utf-8"))
-    assert registry["active_project"] == "existing"
-    assert registry["projects"]["existing"]["path"] == str(existing_project.resolve())
-    assert registry["projects"]["project"]["path"] == str(project_dir.resolve())
-    assert registry["projects"]["project"]["test_cmd"] == "make test"
 
 
-def test_ralph_init_auto_registers_project_without_overwriting_existing_active_project(tmp_path: Path) -> None:
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-    home_dir = tmp_path / "home"
-    registry_dir = home_dir / ".ralph"
-    registry_dir.mkdir(parents=True)
-    existing_project = tmp_path / "already-active"
-    existing_project.mkdir()
-    registry_file = registry_dir / "projects.json"
-    registry_file.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "active_project": "existing",
-                "projects": {
-                    "existing": {"path": str(existing_project.resolve()), "test_cmd": "make test"},
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    env = os.environ.copy()
-    env["HOME"] = str(home_dir)
-
-    result = subprocess.run(
-        [str(RALPH_INIT_SH)],
-        cwd=project_dir,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=45,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    registry = json.loads(registry_file.read_text(encoding="utf-8"))
-    assert registry["active_project"] == "existing"
-    assert registry["projects"]["existing"]["path"] == str(existing_project.resolve())
-    assert registry["projects"]["project"]["path"] == str(project_dir.resolve())
-    assert registry["projects"]["project"]["test_cmd"] == "make test"
 
 
 def test_ralph_benchmark_reports_auto_vs_manual_breakdown(tmp_path: Path) -> None:

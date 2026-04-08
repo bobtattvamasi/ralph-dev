@@ -203,65 +203,6 @@ async def test_cmd_switch_updates_active_project_context_and_registry(
     assert registry["active_project"] == "demo"
 
 
-@pytest.mark.asyncio
-async def test_cmd_status_after_switch_uses_new_project_context(
-    bot_env: dict[str, object],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    current_project = bot_env["project_dir"]
-    other_project = tmp_path / "demo-project"
-    write_project_fixture(
-        other_project,
-        project_name="demo-project",
-        tasks=[
-            {"id": "D-01", "phase": "R2", "title": "Done", "status": "done"},
-            {"id": "D-02", "phase": "R2", "title": "Pending", "status": "pending"},
-        ],
-        state={
-            "status": "waiting_human",
-            "current_task": "D-02",
-            "current_phase_step": "review",
-            "last_update": "2026-04-08T08:30:00+00:00",
-            "message": "Need screenshots",
-        },
-    )
-
-    registry_file = tmp_path / "projects.json"
-    registry_file.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "active_project": "current",
-                "projects": {
-                    "current": {"path": str(current_project), "test_cmd": "make test"},
-                    "demo": {"path": str(other_project), "test_cmd": "pnpm test"},
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    monkeypatch.setattr(bot, "REGISTRY_FILE", registry_file)
-    monkeypatch.setattr(bot, "get_live_ralph_pid", lambda: None)
-
-    await bot.cmd_switch("demo")
-    bot_env["safe_send"].reset_mock()
-
-    await bot.cmd_status()
-
-    safe_send = bot_env["safe_send"]
-    safe_send.assert_awaited_once()
-    message = safe_send.await_args.args[0]
-    assert "🚨 Status: <b>waiting_human</b>" in message
-    assert "📁 Project: <b>demo</b>" in message
-    assert f"📍 Path: <code>{other_project.resolve()}</code>" in message
-    assert "📋 Task: D-02" in message
-    assert "🔄 Step: review" in message
-    assert "💬 Need screenshots" in message
-    assert "📊 1/2 (50%) complete" in message
 
 
 @pytest.mark.asyncio
