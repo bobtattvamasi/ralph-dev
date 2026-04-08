@@ -833,7 +833,12 @@ def test_ralph_preflight_uses_project_configured_test_command(tmp_path: Path) ->
     custom_log = project_dir / "custom_test.log"
     write_project_test_command(
         project_dir,
-        "python3 -c \"from pathlib import Path; Path('custom_test.log').write_text('pre\\n', encoding='utf-8')\"",
+        "python3 -c \"from pathlib import Path; "
+        "log_path = Path('custom_test.log'); "
+        "phase = 'post' if Path('coder_started').exists() else 'pre'; "
+        "fh = log_path.open('a', encoding='utf-8'); "
+        "fh.write(phase + '\\n'); "
+        "fh.close()\"",
     )
     env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
     env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
@@ -849,8 +854,8 @@ def test_ralph_preflight_uses_project_configured_test_command(tmp_path: Path) ->
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert custom_log.read_text(encoding="utf-8").splitlines() == ["pre"]
-    assert make_log.read_text(encoding="utf-8").splitlines() == ["post"]
+    assert custom_log.read_text(encoding="utf-8").splitlines() == ["pre", "post"]
+    assert not make_log.exists()
     assert "Pre-task check: python3 -c " in read_latest_ralph_log(project_dir)
 
 
