@@ -280,6 +280,33 @@ def apply_project_runtime(project_dir: Path, *, project_name: str | None = None)
     RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
 
 
+def sync_active_project_runtime() -> None:
+    """Refresh project-scoped globals from the registry active project."""
+    try:
+        registry = load_projects_registry()
+    except ValueError:
+        return
+
+    active_name = registry.get("active_project")
+    projects = registry.get("projects", {})
+    if not isinstance(active_name, str) or not isinstance(projects, dict):
+        return
+
+    payload = projects.get(active_name)
+    if not isinstance(payload, dict):
+        return
+
+    raw_path = payload.get("path")
+    if not isinstance(raw_path, str):
+        return
+
+    project_dir = Path(raw_path).expanduser().resolve()
+    if not (project_dir / "tasks.json").exists():
+        return
+
+    apply_project_runtime(project_dir, project_name=active_name)
+
+
 def get_project_display_name(project_dir: Path, registry: dict[str, object] | None = None) -> str:
     """Return the registry name for a project path if available."""
     project_dir_resolved = project_dir.resolve()
@@ -1224,6 +1251,7 @@ def set_idle_state(message: str = "Idle") -> None:
 
 async def cmd_status() -> None:
     """Send status overview."""
+    sync_active_project_runtime()
     state = read_state()
     summary = get_task_summary(TASKS_FILE)
     status = state.get("status", "idle")
