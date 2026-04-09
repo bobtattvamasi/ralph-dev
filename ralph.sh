@@ -4189,10 +4189,23 @@ print(task.get('role', 'coder'))
         else
             GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
+        # R19-02: bash syntax gate before expensive test suite
+        SHELL_SYNTAX_FAIL=""
+        for _shf in $(git diff --name-only "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" 2>/dev/null | grep '\.sh$' || true); do
+            if [ -f "$_shf" ] && ! bash -n "$_shf" 2>/dev/null; then
+                SHELL_SYNTAX_FAIL="${SHELL_SYNTAX_FAIL}${SHELL_SYNTAX_FAIL:+ }$_shf"
+            fi
+        done
+        if [ -n "$SHELL_SYNTAX_FAIL" ]; then
+            log "🛑 Bash syntax errors in: $SHELL_SYNTAX_FAIL — skipping test suite"
+            TEST_OUTPUT="BASH SYNTAX ERROR in: $SHELL_SYNTAX_FAIL"
+            TEST_DURATION=0
+        else
         TEST_START=$(date +%s)
         TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
         TEST_DURATION=$(( $(date +%s) - TEST_START ))
         log "⏱️ Test gate took ${TEST_DURATION}s"
+        fi
         log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
         RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
         if [ -n "$RETRY_TEST_OUTPUT" ]; then
