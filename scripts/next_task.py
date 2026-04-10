@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Pick next pending task from tasks.json."""
 import argparse
+from datetime import datetime
 import json
 import sys
+from pathlib import Path
 try:
     from ralph_common import explain_non_runnable, load_tasks_data, pick_next_task, resolve_project_dir
 except ImportError:
@@ -11,6 +13,20 @@ except ImportError:
 
 pick_next = pick_next_task
 TARGET_FILES_LIMIT = 3
+
+
+def log_selection_warning(project_dir: Path, warning: str) -> None:
+    log_dir = project_dir / "logs"
+    if not log_dir.exists():
+        return
+    stamp = datetime.now()
+    log_file = log_dir / f"ralph_{stamp:%Y-%m-%d}.log"
+    message = f"[ralph] {stamp:%H:%M:%S} ⚠️ Task selection warning: {warning}\n"
+    try:
+        with log_file.open("a", encoding="utf-8") as handle:
+            handle.write(message)
+    except OSError:
+        return
 
 
 def build_scope_warnings(task):
@@ -50,6 +66,8 @@ def main():
         task = dict(task)
         task["scope_too_wide"] = True
         task["selection_warnings"] = warnings
+        for warning in warnings:
+            log_selection_warning(project_dir, warning)
     print(json.dumps(task, indent=2, ensure_ascii=False))
 
 

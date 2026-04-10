@@ -1744,6 +1744,51 @@ def test_ralph_auto_mode_still_runs_next_runnable_pending_task(tmp_path: Path) -
     assert load_task_status(project_dir, "T01") == "pending"
 
 
+def test_ralph_auto_mode_logs_scope_warning_for_tasks_with_more_than_three_target_files(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["target_files"] = [
+        "src/generated_by_codex.ts",
+        "scripts/one.py",
+        "scripts/two.py",
+        "scripts/three.py",
+    ]
+    write_tasks(project_dir, tasks)
+
+    next_task_result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "next_task.py")],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert next_task_result.returncode == 0, next_task_result.stdout + next_task_result.stderr
+    next_task_payload = json.loads(next_task_result.stdout)
+    assert next_task_payload["scope_too_wide"] is True
+    assert next_task_payload["selection_warnings"] == [
+        "scope-too-wide: task declares 4 target_files (limit: 3). Consider splitting into narrower tasks."
+    ]
+
+    result = subprocess.run(
+        [str(RALPH_SH), "auto"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert load_task_status(project_dir) == "verified_done"
+    log_text = read_latest_ralph_log(project_dir)
+    assert (
+        "⚠️ Task selection warning: scope-too-wide: task declares 4 target_files (limit: 3). "
+        "Consider splitting into narrower tasks."
+    ) in log_text
+
+
 def test_ralph_phase_mode_explains_deadlocked_pending_tasks(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     tasks = load_tasks(project_dir)
