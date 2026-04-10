@@ -141,6 +141,56 @@ for path in Path("/tmp").glob("ralph_coder_*.txt"):
 PY
 }
 
+RUNTIME_PROTECTED_PATHS=(tasks.json progress.md .ralph/memory)
+RUNTIME_PROTECTION_STASH_REF=""
+
+find_runtime_protection_stash_ref() {
+    local stash_message="$1"
+
+    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '$2 == msg { print $1; exit }'
+}
+
+protect_runtime_files_before_coder() {
+    RUNTIME_PROTECTION_STASH_REF=""
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+    local stash_message=""
+    local runtime_status=""
+    runtime_status=$(git status --short -- "${RUNTIME_PROTECTED_PATHS[@]}" 2>/dev/null || true)
+    if [ -n "$runtime_status" ]; then
+        stash_message="ralph-runtime-protect-$$-$(date +%s)-$RANDOM"
+        if git stash push --include-untracked -m "$stash_message" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1; then
+            RUNTIME_PROTECTION_STASH_REF=$(find_runtime_protection_stash_ref "$stash_message")
+            if [ -n "$RUNTIME_PROTECTION_STASH_REF" ]; then
+                log "🔒 Stashed runtime-owned files before coder exec"
+            else
+                log "⚠️ Runtime protection stash was created but could not be resolved"
+            fi
+        else
+            log "⚠️ Failed to stash runtime-owned files before coder exec"
+        fi
+    fi
+
+    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
+    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
+}
+
+restore_runtime_files_after_coder() {
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
+    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
+
+    if [ -n "${RUNTIME_PROTECTION_STASH_REF:-}" ]; then
+        if git stash pop --index "$RUNTIME_PROTECTION_STASH_REF" >/dev/null 2>&1; then
+            log "🔒 Restored runtime-owned files after coder exec"
+        else
+            log "⚠️ Failed to restore stashed runtime-owned files from $RUNTIME_PROTECTION_STASH_REF"
+        fi
+        RUNTIME_PROTECTION_STASH_REF=""
+    fi
+}
+
 cleanup() {
     # Prevent recursive cleanup (explicit call + trap).
     if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
@@ -3445,6 +3495,7 @@ run_manual_benchmark_for_task() {
 
     coder_output="/tmp/ralph_benchmark_manual_${task_id}_$$.txt"
     manual_start=$(python3 -c 'import time; print(f"{time.time():.6f}")')
+    protect_runtime_files_before_coder
     set +e
     if [ -n "$model" ]; then
         codex exec -s danger-full-access -m "$model" "$CODER_PROMPT" >"$coder_output" 2>&1
@@ -3453,6 +3504,7 @@ run_manual_benchmark_for_task() {
     fi
     codex_status=$?
     set -e
+    restore_runtime_files_after_coder
     manual_end=$(python3 -c 'import time; print(f"{time.time():.6f}")')
     manual_duration=$(python3 - "$manual_start" "$manual_end" <<'PY'
 import sys
@@ -3971,14 +4023,6 @@ print(task.get('role', 'coder'))
         fi
 
         PRE_HASH=$(git rev-parse HEAD)
-        # R19-05: snapshot runtime files before coder touches anything
-        RUNTIME_SNAPSHOT_DIR=$(mktemp -d)
-        for _rf in tasks.json progress.md .ralph/memory/recent.md; do
-            if [ -f "$PROJECT_DIR/$_rf" ]; then
-                mkdir -p "$RUNTIME_SNAPSHOT_DIR/$(dirname "$_rf")"
-                cp "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf"
-            fi
-        done
         REVIEW_BASE_HASH="${TASK_START_COMMIT:-$PRE_HASH}"
         REVIEW_TARGET_HASH="HEAD"
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
@@ -4109,9 +4153,11 @@ print(task.get('role', 'coder'))
 
             set +e
             # run_codex handles retries/backoff for codex execution
+            protect_runtime_files_before_coder
             run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
             CODEX_EXIT=$?
             set -e
+            restore_runtime_files_after_coder
             CONTROL_STATUS=0
             SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
             log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
@@ -4222,21 +4268,6 @@ print(task.get('role', 'coder'))
             rm -f "$RETRY_TEST_OUTPUT_FILE"
         fi
         ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
-        # R19-05: restore runtime files coder should never modify
-        RUNTIME_REVERTED=""
-        if [ -d "${RUNTIME_SNAPSHOT_DIR:-}" ]; then
-            for _rf in tasks.json progress.md .ralph/memory/recent.md; do
-                if [ -f "$RUNTIME_SNAPSHOT_DIR/$_rf" ] && ! diff -q "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf" >/dev/null 2>&1; then
-                    cp "$RUNTIME_SNAPSHOT_DIR/$_rf" "$PROJECT_DIR/$_rf"
-                    RUNTIME_REVERTED="${RUNTIME_REVERTED}${RUNTIME_REVERTED:+ }$_rf"
-                fi
-            done
-            rm -rf "$RUNTIME_SNAPSHOT_DIR"
-        fi
-        if [ -n "$RUNTIME_REVERTED" ]; then
-            log "🔒 Auto-reverted runtime files: $RUNTIME_REVERTED"
-            ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
-        fi
         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
 import os
