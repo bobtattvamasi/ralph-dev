@@ -63,13 +63,15 @@ def extract_json_object(text: str) -> dict | None:
         text,
         flags=re.DOTALL,
     )
-    if len(marker_blocks) > 1:
-        return None
-    if len(marker_blocks) == 1:
-        parsed = try_load(marker_blocks[0].strip())
-        if parsed is None or not is_review_candidate(parsed) or is_placeholder_review(parsed):
-            return None
-        return parsed
+    # R20-03: filter marker blocks — drop placeholders/unparseable, take last real one
+    real_marker_reviews: list[dict] = []
+    for block in marker_blocks:
+        parsed = try_load(block.strip())
+        if parsed is not None and is_review_candidate(parsed) and not is_placeholder_review(parsed):
+            real_marker_reviews.append(parsed)
+    if len(real_marker_reviews) >= 1:
+        # Take last — Codex echoes template first, real review last
+        return real_marker_reviews[-1]
 
     fenced_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
     candidates: list[dict] = []
