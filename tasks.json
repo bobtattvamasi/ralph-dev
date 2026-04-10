@@ -3353,7 +3353,7 @@
     {
       "id": "R16-01",
       "phase": "R16",
-      "status": "pending",
+      "status": "verified_done",
       "title": "projects.json registry + CRUD helpers",
       "description": "Create ~/.ralph/projects.json schema and scripts/manage_projects.py with add/remove/list/switch/active functions. Auto-register ralph-dev itself as an active project with path=RALPH_DIR and test_cmd='make test'.",
       "target_files": [
@@ -3367,12 +3367,13 @@
       ],
       "priority": "high",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T07:16:05.731588+00:00"
     },
     {
       "id": "R16-02",
       "phase": "R16",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Configurable test command",
       "description": "Create .ralph/project.json per-project config with test_cmd field. Make ralph.sh read test_cmd from .ralph/project.json instead of hardcoded 'make test', with fallback to 'make test'.",
       "target_files": [
@@ -3386,7 +3387,8 @@
       ],
       "priority": "high",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-08T08:04:29.553812+00:00"
     },
     {
       "id": "R16-03",
@@ -3404,7 +3406,9 @@
       ],
       "priority": "high",
       "complexity": "complex",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": null,
+      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
     },
     {
       "id": "R16-04",
@@ -3423,7 +3427,9 @@
       ],
       "priority": "high",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": null,
+      "revision_notes": "R16-04 failed after 2 retries"
     },
     {
       "id": "R16-05",
@@ -3440,7 +3446,9 @@
       ],
       "priority": "medium",
       "complexity": "simple",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": null,
+      "revision_notes": "R16-05 failed after 2 retries"
     },
     {
       "id": "R17-01",
@@ -3613,6 +3621,106 @@
       "priority": "low",
       "complexity": "simple",
       "role": "coder"
+    },
+    {
+      "id": "R19-01",
+      "phase": "R19",
+      "status": "false_positive",
+      "title": "Runtime file protection gate",
+      "description": "Before coder codex exec, stash changes to tasks.json, progress.md, .ralph/memory/. After coder finishes, restore them via git checkout. This prevents coder from modifying runtime-owned files.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Coder cannot persist changes to tasks.json, progress.md, or .ralph/memory/",
+        "Runtime files are restored after coder exec even on failure"
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "completed_at": null,
+      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
+    },
+    {
+      "id": "R19-02",
+      "phase": "R19",
+      "status": "verified_done",
+      "title": "Bash syntax gate before test run",
+      "description": "Add bash -n validation for all .sh files modified by coder BEFORE running make test. If syntax check fails, skip tests and return fix immediately. This catches heredoc/inline-python parse errors early.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "bash -n runs on all modified .sh files before test gate",
+        "Syntax failure triggers immediate fix cycle without waiting for full test suite"
+      ],
+      "priority": "critical",
+      "complexity": "simple",
+      "role": "coder",
+      "completed_at": "2026-04-09T11:55:01.532886+00:00",
+      "revision_notes": "R19-02 failed after 2 retries"
+    },
+    {
+      "id": "R19-03",
+      "phase": "R19",
+      "status": "pending",
+      "title": "Enforce target_files limit of 3",
+      "description": "In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
+      "target_files": [
+        "scripts/next_task.py",
+        "src/ralph/resources/scripts/next_task.py"
+      ],
+      "acceptance_criteria": [
+        "Tasks with >3 target_files get warning in next_task output",
+        "Auto mode logs scope-too-wide warning for such tasks"
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "completed_at": null,
+      "revision_notes": "R19-03 failed after 2 retries"
+    },
+    {
+      "id": "R19-04",
+      "phase": "R19",
+      "status": "pending",
+      "title": "Ban inline Python heredoc >10 lines in bash",
+      "description": "Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Post-coder diff scan detects Python heredocs >10 lines in .sh files",
+        "Detected violations are reported as scope anomaly to lead"
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "completed_at": null,
+      "revision_notes": "R19-04 failed after 2 retries"
+    },
+    {
+      "id": "R19-05",
+      "phase": "R19",
+      "status": "verified_done",
+      "title": "Scope guard revert for out-of-scope files",
+      "description": "When scope anomaly detects modifications outside target_files, automatically git checkout those files before lead review instead of just warning. Runtime files (tasks.json, progress.md, .ralph/) are always reverted. Other out-of-scope files are reverted unless lead approves.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Out-of-scope file changes are reverted before lead review",
+        "Log shows which files were auto-reverted"
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "completed_at": "2026-04-10T10:50:58.581791+00:00",
+      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
     }
   ]
 }
