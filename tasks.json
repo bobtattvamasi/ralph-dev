@@ -3310,7 +3310,7 @@
     {
       "id": "R15-07",
       "phase": "R15",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Bot PGID cleanup + command rate limiting",
       "description": "Force-stop should use PGID from ralph_codex.pgid. Add per-user command rate limit (max 5/min). Add 429 backoff for sendMessage.",
       "target_files": [
@@ -3327,7 +3327,8 @@
         "reliability"
       ],
       "priority": "high",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": null
     },
     {
       "id": "R15-08",
