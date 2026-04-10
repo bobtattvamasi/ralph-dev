@@ -147,7 +147,10 @@ RUNTIME_PROTECTION_STASH_REF=""
 find_runtime_protection_stash_ref() {
     local stash_message="$1"
 
-    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '$2 == msg { print $1; exit }'
+    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '
+        $2 == msg { print $1; exit }
+        index($2, ": " msg) == length($2) - length(msg) - 1 { print $1; exit }
+    '
 }
 
 protect_runtime_files_before_coder() {
