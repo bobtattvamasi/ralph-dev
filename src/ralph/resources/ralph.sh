@@ -221,6 +221,16 @@ revert_paths_from_worktree() {
     git clean -fd -- "${paths[@]}" >/dev/null 2>&1 || true
 }
 
+worktree_changed_files() {
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+    {
+        git diff --name-only HEAD 2>/dev/null
+        git diff --cached --name-only 2>/dev/null
+        git ls-files --others --exclude-standard 2>/dev/null
+    } | awk 'NF' | sort -u
+}
+
 auto_revert_out_of_scope_files() {
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 
@@ -4342,7 +4352,7 @@ print(task.get('role', 'coder'))
         else
             rm -f "$RETRY_TEST_OUTPUT_FILE"
         fi
-        ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+        ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
 import os
@@ -4365,7 +4375,7 @@ PY
             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
             auto_revert_out_of_scope_files "$SCOPE_ANOMALY"
             SCOPE_ANOMALY_REVERTED="$AUTO_REVERTED_OUT_OF_SCOPE_PATHS"
-            ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+            ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
             SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
 import os
