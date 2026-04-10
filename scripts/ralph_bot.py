@@ -1451,6 +1451,17 @@ async def cmd_stop(force: bool = False) -> None:
     if force:
         # 1. Kill all ralph processes by PID files
         killed_pids = []
+        # R20-01: kill process group first (catches all Codex descendants)
+        pgid_file = PROJECT_DIR / "ralph_codex.pgid"
+        if pgid_file.exists():
+            try:
+                pgid = int(pgid_file.read_text().strip())
+                os.killpg(pgid, signal.SIGKILL)
+                killed_pids.append(f"pgid:{pgid}")
+            except (ProcessLookupError, ValueError, PermissionError, OSError):
+                pass
+            pgid_file.unlink(missing_ok=True)
+
         for pf in ["ralph_codex.pid", "ralph_main.pid"]:
             p = PROJECT_DIR / pf
             if p.exists():
