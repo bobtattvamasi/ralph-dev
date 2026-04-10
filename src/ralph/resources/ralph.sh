@@ -410,6 +410,62 @@ validate_modified_shell_scripts() {
     fi
 }
 
+detect_long_python_heredocs_in_modified_shell_scripts() {
+    local base_hash="$1"
+    local target_hash="$2"
+    local file_path=""
+    local violations=""
+    local output=""
+
+    while IFS= read -r file_path; do
+        [ -n "$file_path" ] || continue
+        [ -f "$file_path" ] || continue
+
+        output=$(awk -v file_path="$file_path" '
+function flush_violation() {
+    if (in_block && body_lines > 10) {
+        printf "%s:%d python heredoc (%s) is %d lines; extract to scripts/\n", file_path, start_line, marker, body_lines
+    }
+}
+{
+    if (!in_block) {
+        if (match($0, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
+            token = substr($0, RSTART, RLENGTH)
+            gsub(/^.*<</, "", token)
+            gsub(/-/, "", token)
+            gsub(/[[:space:]]/, "", token)
+            gsub(/["'\'']/, "", token)
+            marker = token
+            in_block = 1
+            body_lines = 0
+            start_line = NR
+        }
+        next
+    }
+
+    if ($0 == marker) {
+        flush_violation()
+        in_block = 0
+        marker = ""
+        body_lines = 0
+        start_line = 0
+        next
+    }
+
+    body_lines++
+}
+END {
+    flush_violation()
+}
+' "$file_path")
+        if [ -n "$output" ]; then
+            violations="${violations}${violations:+$'\n'}$output"
+        fi
+    done < <(git diff --name-only "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null || true)
+
+    printf '%s' "$violations"
+}
+
 is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
 }
@@ -4352,6 +4408,10 @@ print(task.get('role', 'coder'))
         else
             rm -f "$RETRY_TEST_OUTPUT_FILE"
         fi
+        LONG_PYTHON_HEREDOC_ANOMALY=$(detect_long_python_heredocs_in_modified_shell_scripts "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}")
+        if [ -n "$LONG_PYTHON_HEREDOC_ANOMALY" ]; then
+            log "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts: $(printf '%s' "$LONG_PYTHON_HEREDOC_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
+        fi
         ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
@@ -4445,6 +4505,14 @@ print("\n".join(f"- {item}" for item in items) if items else "- None specified")
 The following files were modified but are NOT in target_files:
 $SCOPE_ANOMALY
 Please evaluate whether these changes are justified.
+"
+            fi
+            if [ -n "$LONG_PYTHON_HEREDOC_ANOMALY" ]; then
+                LEAD_SCOPE_ANOMALY_WARNING="${LEAD_SCOPE_ANOMALY_WARNING}
+## Scope Anomaly Warning
+The following modified shell scripts contain Python heredocs longer than 10 lines:
+$LONG_PYTHON_HEREDOC_ANOMALY
+Require extraction into scripts/ before approval.
 "
             fi
             LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${LEAD_ROLE_FILE} first.
