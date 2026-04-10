@@ -10,6 +10,20 @@ except ImportError:
 
 
 pick_next = pick_next_task
+TARGET_FILES_LIMIT = 3
+
+
+def build_scope_warnings(task):
+    target_files = [str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()]
+    if len(target_files) <= TARGET_FILES_LIMIT:
+        return []
+    return [
+        (
+            "scope-too-wide: task declares "
+            f"{len(target_files)} target_files (limit: {TARGET_FILES_LIMIT}). "
+            "Consider splitting into narrower tasks."
+        )
+    ]
 
 
 def main():
@@ -31,6 +45,11 @@ def main():
     if task is None:
         print("null")
         sys.exit(0)
+    warnings = build_scope_warnings(task)
+    if warnings:
+        task = dict(task)
+        task["scope_too_wide"] = True
+        task["selection_warnings"] = warnings
     print(json.dumps(task, indent=2, ensure_ascii=False))
 
 
