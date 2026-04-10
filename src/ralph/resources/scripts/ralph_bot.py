@@ -491,6 +491,7 @@ def reset_stale_state() -> None:
                 state["current_phase_step"] = ""
                 state["message"] = "Auto-reset stale state on /auto"
                 write_state_payload(STATE_FILE, state)
+                write_control("", "")  # R20-02: reset control too
     except json.JSONDecodeError as exc:
         log_bot(f"Failed to reset stale state: malformed {STATE_FILE.name}: {exc}")
     except OSError as exc:
@@ -1251,6 +1252,7 @@ def set_idle_state(message: str = "Idle") -> None:
 
 async def cmd_status() -> None:
     """Send status overview."""
+    reset_stale_state()  # R20-02: auto-heal before showing status
     sync_active_project_runtime()
     state = read_state()
     summary = get_task_summary(TASKS_FILE)
