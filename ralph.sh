@@ -414,54 +414,100 @@ detect_long_python_heredocs_in_modified_shell_scripts() {
     local base_hash="$1"
     local target_hash="$2"
     local file_path=""
+    local start_line=""
+    local marker=""
+    local body_lines=""
     local violations=""
-    local output=""
 
-    while IFS= read -r file_path; do
+    while IFS=$'\t' read -r file_path start_line marker; do
         [ -n "$file_path" ] || continue
         [ -f "$file_path" ] || continue
+        [ -n "$start_line" ] || continue
+        [ -n "$marker" ] || continue
 
-        output=$(awk -v file_path="$file_path" '
-function flush_violation() {
-    if (in_block && body_lines > 10) {
-        printf "%s:%d python heredoc (%s) is %d lines; extract to scripts/\n", file_path, start_line, marker, body_lines
-    }
+        body_lines=$(awk -v start_line="$start_line" -v marker="$marker" '
+NR < start_line {
+    next
 }
-{
-    if (!in_block) {
-        if (match($0, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
-            token = substr($0, RSTART, RLENGTH)
-            gsub(/^.*<</, "", token)
-            gsub(/-/, "", token)
-            gsub(/[[:space:]]/, "", token)
-            gsub(/["'\'']/, "", token)
-            marker = token
-            in_block = 1
-            body_lines = 0
-            start_line = NR
-        }
-        next
-    }
-
+NR == start_line {
+    in_block = 1
+    next
+}
+in_block {
     if ($0 == marker) {
-        flush_violation()
-        in_block = 0
-        marker = ""
-        body_lines = 0
-        start_line = 0
-        next
+        found = 1
+        print body_lines
+        exit
     }
-
     body_lines++
 }
 END {
-    flush_violation()
+    if (!found) {
+        print ""
+    }
 }
 ' "$file_path")
-        if [ -n "$output" ]; then
-            violations="${violations}${violations:+$'\n'}$output"
+        case "$body_lines" in
+            ''|*[!0-9]*)
+                continue
+                ;;
+        esac
+
+        if [ "$body_lines" -gt 10 ]; then
+            violations="${violations}${violations:+$'\n'}$(printf '%s:%d python heredoc (%s) is %d lines; extract to scripts/' "$file_path" "$start_line" "$marker" "$body_lines")"
         fi
-    done < <(git diff --name-only "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null || true)
+    done < <(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | awk '
+function extract_marker(line, token) {
+    if (match(line, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
+        token = substr(line, RSTART, RLENGTH)
+        gsub(/^.*<</, "", token)
+        gsub(/-/, "", token)
+        gsub(/[[:space:]]/, "", token)
+        gsub(/["'\'']/, "", token)
+        return token
+    }
+    return ""
+}
+/^diff --git / {
+    current_file = ""
+    in_hunk = 0
+    next
+}
+/^\+\+\+ b\// {
+    current_file = substr($0, 7)
+    next
+}
+/^@@ / {
+    in_hunk = 1
+    if (match($0, /\+([0-9]+)/, parts)) {
+        new_line = parts[1] + 0
+    } else {
+        new_line = 0
+    }
+    next
+}
+!in_hunk || current_file == "" {
+    next
+}
+/^\+/ && $0 !~ /^\+\+\+/ {
+    marker = extract_marker(substr($0, 2))
+    if (marker != "") {
+        printf "%s\t%d\t%s\n", current_file, new_line, marker
+    }
+    new_line++
+    next
+}
+/^-/ && $0 !~ /^---/ {
+    next
+}
+/^ / {
+    new_line++
+    next
+}
+{
+    in_hunk = 0
+}
+')
 
     printf '%s' "$violations"
 }

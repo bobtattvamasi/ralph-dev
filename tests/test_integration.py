@@ -461,6 +461,14 @@ def load_audit(project_dir: Path, task_id: str = "T01") -> dict:
     return json.loads((project_dir / ".ralph" / "audit" / f"{task_id}.json").read_text(encoding="utf-8"))
 
 
+def long_python_heredoc_script(extra_lines: str = "") -> str:
+    body = "\n".join(f"print({idx})" for idx in range(1, 13))
+    script = "#!/usr/bin/env bash\npython3 - <<'PY'\n" + body + "\nPY\n"
+    if extra_lines:
+        script += extra_lines
+    return script
+
+
 def process_is_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -1965,6 +1973,83 @@ def test_ralph_phase_mode_auto_reverts_non_runtime_out_of_scope_files_without_re
     state = load_state(project_dir)
     assert state["current_phase_step"] == "deadlocked"
     assert state["message"] == "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02"
+
+
+def test_ralph_flags_long_python_heredoc_only_when_added_in_post_coder_diff(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Shell heredoc task"
+    tasks["tasks"][0]["description"] = "Update scripts/embedded.sh with a Python heredoc."
+    tasks["tasks"][0]["acceptance_criteria"] = ["scripts/embedded.sh is updated"]
+    tasks["tasks"][0]["target_files"] = ["scripts/embedded.sh"]
+    write_tasks(project_dir, tasks)
+
+    lead_prompt_file = tmp_path / "lead_prompt.txt"
+    env["MOCK_CODEX_CAPTURE_LEAD_PROMPT_FILE"] = str(lead_prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/embedded.sh"
+    env["MOCK_CODEX_WRITE_CONTENT"] = long_python_heredoc_script()
+    env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts:" in result.stdout
+    assert "scripts/embedded.sh:2 python heredoc (PY) is 12 lines; extract to scripts/" in result.stdout
+    lead_prompt = lead_prompt_file.read_text(encoding="utf-8")
+    assert "The following modified shell scripts contain Python heredocs longer than 10 lines:" in lead_prompt
+    assert "scripts/embedded.sh:2 python heredoc (PY) is 12 lines; extract to scripts/" in lead_prompt
+    assert "Require extraction into scripts/ before approval." in lead_prompt
+
+
+def test_ralph_does_not_flag_preexisting_long_python_heredoc_when_diff_touches_other_lines(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["title"] = "Shell tail edit task"
+    tasks["tasks"][0]["description"] = "Append a non-heredoc line to scripts/embedded.sh."
+    tasks["tasks"][0]["acceptance_criteria"] = ["scripts/embedded.sh is updated"]
+    tasks["tasks"][0]["target_files"] = ["scripts/embedded.sh"]
+    write_tasks(project_dir, tasks)
+
+    scripts_dir = project_dir / "scripts"
+    scripts_dir.mkdir(exist_ok=True)
+    embedded = scripts_dir / "embedded.sh"
+    embedded.write_text(long_python_heredoc_script("echo 'before tail change'\n"), encoding="utf-8")
+    subprocess.run(["git", "add", "scripts/embedded.sh"], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "test: seed long python heredoc"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    lead_prompt_file = tmp_path / "lead_prompt.txt"
+    env["MOCK_CODEX_CAPTURE_LEAD_PROMPT_FILE"] = str(lead_prompt_file)
+    env["MOCK_CODEX_WRITE_FILE"] = "scripts/embedded.sh"
+    env["MOCK_CODEX_WRITE_CONTENT"] = "echo 'after tail change'\n"
+    env["MOCK_CODEX_WRITE_MODE"] = "append"
+
+    result = subprocess.run(
+        [str(RALPH_SH), "task", "T01"],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts:" not in result.stdout
+    lead_prompt = lead_prompt_file.read_text(encoding="utf-8")
+    assert "The following modified shell scripts contain Python heredocs longer than 10 lines:" not in lead_prompt
+    assert "Require extraction into scripts/ before approval." not in lead_prompt
 
 
 def test_ralph_auto_mode_does_not_report_complete_when_only_blocked_statuses_remain(tmp_path: Path) -> None:
