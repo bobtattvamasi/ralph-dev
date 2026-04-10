@@ -413,50 +413,8 @@ validate_modified_shell_scripts() {
 detect_long_python_heredocs_in_modified_shell_scripts() {
     local base_hash="$1"
     local target_hash="$2"
-    local file_path=""
-    local start_line=""
-    local marker=""
-    local body_lines=""
     local violations=""
-
-    while IFS=$'\t' read -r file_path start_line marker; do
-        [ -n "$file_path" ] || continue
-        [ -f "$file_path" ] || continue
-        [ -n "$start_line" ] || continue
-        [ -n "$marker" ] || continue
-
-        body_lines=$(awk -v start_line="$start_line" -v marker="$marker" '
-NR < start_line {
-    next
-}
-NR == start_line {
-    in_block = 1
-    next
-}
-in_block {
-    if ($0 == marker) {
-        found = 1
-        print body_lines
-        exit
-    }
-    body_lines++
-}
-END {
-    if (!found) {
-        print ""
-    }
-}
-' "$file_path")
-        case "$body_lines" in
-            ''|*[!0-9]*)
-                continue
-                ;;
-        esac
-
-        if [ "$body_lines" -gt 10 ]; then
-            violations="${violations}${violations:+$'\n'}$(printf '%s:%d python heredoc (%s) is %d lines; extract to scripts/' "$file_path" "$start_line" "$marker" "$body_lines")"
-        fi
-    done < <(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | awk '
+    violations=$(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | awk '
 function extract_marker(line, token) {
     if (match(line, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
         token = substr(line, RSTART, RLENGTH)
@@ -468,16 +426,30 @@ function extract_marker(line, token) {
     }
     return ""
 }
+function flush_block() {
+    if (block_active && block_complete && body_lines > 10) {
+        printf "%s%s:%d python heredoc (%s) is %d lines; extract to scripts/", output ? ORS : "", current_file, block_start_line, block_marker, body_lines
+        output = 1
+    }
+    block_active = 0
+    block_complete = 0
+    block_marker = ""
+    block_start_line = 0
+    body_lines = 0
+}
 /^diff --git / {
+    flush_block()
     current_file = ""
     in_hunk = 0
     next
 }
 /^\+\+\+ b\// {
+    flush_block()
     current_file = substr($0, 7)
     next
 }
 /^@@ / {
+    flush_block()
     in_hunk = 1
     if (match($0, /\+([0-9]+)/, parts)) {
         new_line = parts[1] + 0
@@ -490,9 +462,25 @@ function extract_marker(line, token) {
     next
 }
 /^\+/ && $0 !~ /^\+\+\+/ {
-    marker = extract_marker(substr($0, 2))
+    line = substr($0, 2)
+    if (block_active) {
+        if (line == block_marker) {
+            block_complete = 1
+            flush_block()
+        } else {
+            body_lines++
+        }
+        new_line++
+        next
+    }
+
+    marker = extract_marker(line)
     if (marker != "") {
-        printf "%s\t%d\t%s\n", current_file, new_line, marker
+        block_active = 1
+        block_complete = 0
+        block_marker = marker
+        block_start_line = new_line
+        body_lines = 0
     }
     new_line++
     next
@@ -501,11 +489,16 @@ function extract_marker(line, token) {
     next
 }
 /^ / {
+    flush_block()
     new_line++
     next
 }
 {
+    flush_block()
     in_hunk = 0
+}
+END {
+    flush_block()
 }
 ')
 
