@@ -1,0 +1,67 @@
+{
+  "task_id": "R16-05",
+  "title": "Self-registration on init",
+  "status": "blocked",
+  "verification": {
+    "result": "pass",
+    "reason": "Tests verification passed.",
+    "task_class": "tests-only",
+    "evidence_files": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py",
+      "ralph/memory/recent.md"
+    ]
+  },
+  "changes": {
+    "all": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py",
+      ".ralph/memory/recent.md",
+      "progress.md",
+      "tasks.json",
+      ".ralph/audit/R16-01.json",
+      ".ralph/audit/lead_prompt_R16-01.txt",
+      ".ralph/audit/lead_prompt_R16-02.txt",
+      ".ralph/audit/lead_reasoning_R16-01.txt",
+      ".ralph/audit/lead_reasoning_R16-02.txt"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py",
+      "ralph/memory/recent.md"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R16-05\",\"summary\":\"Задача не готова к approve: тесты падают, новые проверки авт регистрации не добавлены, и diff выходит за scope target_files.\",\"quality_score\":35,\"issues\":[\"SCOPE: изменены out-of-scope файлы [ralph-init.sh](/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph-init.sh) и [src/ralph/resources/ralph-init.sh](/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/src/ralph/resources/ralph-init.sh); также во входе отмечены изменённые .ralph/memory/recent.md, progress.md и tasks.json вне target_files, и их необходимость не доказана.\",\"TESTS: `make test` не проходит: 9 failed, 205 passed, 1 skipped. По контракту review это блокер для approve.\",\"TESTS: в diff нет новых тестов, которые доказывают acceptance `Running ralph.sh in a new project auto-adds it to projects.json`.\",\"REGRESSIONS: новая логика регистрации дублируется inline в нескольких shell-скриптах, что повышает риск расхождения поведения между entrypoints и усложняет поддержку.\"],\"fix_instructions\":\"Сделай минимальный проход до зелёного состояния: убери изменения вне `ralph.sh` и `src/ralph/resources/ralph.sh`, затем добавь точечный тест на автодобавление проекта в `projects.json` при первом запуске `ralph.sh` и доведи `make test` до полного pass.\",\"alert_reason\":\"\",\"progress_note\":\"\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {
+      "decision": "fix",
+      "task_id": "R16-05",
+      "summary": "Задача не готова к approve: тесты падают, новые проверки авт регистрации не добавлены, и diff выходит за scope target_files.",
+      "quality_score": 35,
+      "issues": [
+        "SCOPE: изменены out-of-scope файлы [ralph-init.sh](/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph-init.sh) и [src/ralph/resources/ralph-init.sh](/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/src/ralph/resources/ralph-init.sh); также во входе отмечены изменённые .ralph/memory/recent.md, progress.md и tasks.json вне target_files, и их необходимость не доказана.",
+        "TESTS: `make test` не проходит: 9 failed, 205 passed, 1 skipped. По контракту review это блокер для approve.",
+        "TESTS: в diff нет новых тестов, которые доказывают acceptance `Running ralph.sh in a new project auto-adds it to projects.json`.",
+        "REGRESSIONS: новая логика регистрации дублируется inline в нескольких shell-скриптах, что повышает риск расхождения поведения между entrypoints и усложняет поддержку."
+      ],
+      "fix_instructions": "Сделай минимальный проход до зелёного состояния: убери изменения вне `ralph.sh` и `src/ralph/resources/ralph.sh`, затем добавь точечный тест на автодобавление проекта в `projects.json` при первом запуске `ralph.sh` и доведи `make test` до полного pass.",
+      "alert_reason": "",
+      "progress_note": "",
+      "checklist": {
+        "scope_ok": false,
+        "tests_ok": false,
+        "acceptance_ok": false,
+        "regressions_ok": false,
+        "quality_ok": false
+      }
+    }
+  },
+  "attempts": 3,
+  "duration_sec": 3374,
+  "timestamp": "2026-04-08T10:51:22Z",
+  "runtime_success": true,
+  "verified_success": false
+}

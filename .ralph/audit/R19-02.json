@@ -1,0 +1,45 @@
+{
+  "task_id": "R19-02",
+  "title": "Bash syntax gate before test run",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "R19-02 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-02\",\"summary\":\"Bash syntax gate is not complete: modified/untracked shell files are not reliably included before `make test`, and the test suite is failing.\",\"quality_score\":3,\"issues\":[\"Scope is not clean: out-of-scope changes are present in `tests/test_integration.py`, and the workspace also contains runtime/bookkeeping changes in `.ralph/memory/recent.md`, `progress.md`, and `tasks.json` outside the task target files.\",\"Acceptance is not met: the new gate does not catch the modified shell candidate in the integration scenario, so tests still run through the normal flow instead of failing fast on `bash -n`.\",\"Tests do not pass: 8 integration tests are failing, so the task cannot be approved.\",\"Regression risk exists because the new changed-file collection relies on git diff output that misses untracked files, which is exactly the class of coder-produced shell files this gate needs to validate.\"],\"fix_instructions\":\"Update the modified-shell discovery used by the syntax gate so it includes untracked `.sh` files created or edited by the coder before the test phase, then rerun the full test suite and keep the fast-fail path only when `bash -n` actually reports a syntax error.\",\"alert_reason\":\"\",\"progress_note\":\"R19-02 review failed: bash syntax preflight does not yet cover the real modified-file set, and the suite remains red.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {
+      "decision": "fix",
+      "task_id": "R19-02",
+      "summary": "Bash syntax gate is not complete: modified/untracked shell files are not reliably included before `make test`, and the test suite is failing.",
+      "quality_score": 3,
+      "issues": [
+        "Scope is not clean: out-of-scope changes are present in `tests/test_integration.py`, and the workspace also contains runtime/bookkeeping changes in `.ralph/memory/recent.md`, `progress.md`, and `tasks.json` outside the task target files.",
+        "Acceptance is not met: the new gate does not catch the modified shell candidate in the integration scenario, so tests still run through the normal flow instead of failing fast on `bash -n`.",
+        "Tests do not pass: 8 integration tests are failing, so the task cannot be approved.",
+        "Regression risk exists because the new changed-file collection relies on git diff output that misses untracked files, which is exactly the class of coder-produced shell files this gate needs to validate."
+      ],
+      "fix_instructions": "Update the modified-shell discovery used by the syntax gate so it includes untracked `.sh` files created or edited by the coder before the test phase, then rerun the full test suite and keep the fast-fail path only when `bash -n` actually reports a syntax error.",
+      "alert_reason": "",
+      "progress_note": "R19-02 review failed: bash syntax preflight does not yet cover the real modified-file set, and the suite remains red.",
+      "checklist": {
+        "scope_ok": false,
+        "tests_ok": false,
+        "acceptance_ok": false,
+        "regressions_ok": false,
+        "quality_ok": false
+      }
+    }
+  },
+  "attempts": 3,
+  "duration_sec": 3156,
+  "timestamp": "2026-04-08T19:36:09Z",
+  "runtime_success": false,
+  "verified_success": false
+}

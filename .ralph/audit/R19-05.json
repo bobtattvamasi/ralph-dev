@@ -1,0 +1,61 @@
+{
+  "task_id": "R19-05",
+  "title": "Scope guard revert for out-of-scope files",
+  "status": "blocked",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap.",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-05\",\"summary\":\"Auto-revert behavior is not approvable: scope handling is partially implemented, but the current change regresses existing task and handoff flows and the test suite is failing.\",\"quality_score\":31,\"issues\":[{\"severity\":\"high\",\"category\":\"tests\",\"detail\":\"`tests/test_integration.py` reports 14 failing integration tests, including `test_ralph_blocks_bookkeeping_only_closure`, multiple `handoff` flows, lead-review mismatch handling, and preflight/benchmark scenarios.\"},{\"severity\":\"high\",\"category\":\"regression\",\"detail\":\"The new unconditional `git checkout --` in `revert_tracked_paths()` runs before lead review and can revert tracked runtime-owned files such as `tasks.json` and `progress.md` mid-run, which is consistent with the observed regressions across task lifecycle and handoff behavior.\"},{\"severity\":\"medium\",\"category\":\"scope\",\"detail\":\"Out-of-scope files were modified during execution: `.ralph/memory/recent.md`, `progress.md`, `tasks.json`. These are runtime-owned and justified as runtime artifacts, but the review cannot mark scope clean because the run still produced out-of-scope tracked changes.\"},{\"severity\":\"medium\",\"category\":\"acceptance\",\"detail\":\"The diff logs auto-reverted files, but acceptance is not met because the implementation is not validated by passing tests and introduces behavior that breaks existing flows.\"}],\"fix_instructions\":\"Replace the current raw `git checkout --` scope-revert path with logic that reverts out-of-scope tracked files without clobbering active runtime state for `tasks.json`, `progress.md`, and `.ralph/` during the same run; then add/adjust the integration coverage for that exact scope-anomaly path so existing task-mode and handoff flows stay green.\",\"alert_reason\":\"\",\"progress_note\":\"Reviewed R19-05: target-file diff is limited to `ralph.sh` and `src/ralph/resources/ralph.sh`, but the implementation causes broad integration regressions.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {
+      "decision": "fix",
+      "task_id": "R19-05",
+      "summary": "Auto-revert behavior is not approvable: scope handling is partially implemented, but the current change regresses existing task and handoff flows and the test suite is failing.",
+      "quality_score": 31,
+      "issues": [
+        {
+          "severity": "high",
+          "category": "tests",
+          "detail": "`tests/test_integration.py` reports 14 failing integration tests, including `test_ralph_blocks_bookkeeping_only_closure`, multiple `handoff` flows, lead-review mismatch handling, and preflight/benchmark scenarios."
+        },
+        {
+          "severity": "high",
+          "category": "regression",
+          "detail": "The new unconditional `git checkout --` in `revert_tracked_paths()` runs before lead review and can revert tracked runtime-owned files such as `tasks.json` and `progress.md` mid-run, which is consistent with the observed regressions across task lifecycle and handoff behavior."
+        },
+        {
+          "severity": "medium",
+          "category": "scope",
+          "detail": "Out-of-scope files were modified during execution: `.ralph/memory/recent.md`, `progress.md`, `tasks.json`. These are runtime-owned and justified as runtime artifacts, but the review cannot mark scope clean because the run still produced out-of-scope tracked changes."
+        },
+        {
+          "severity": "medium",
+          "category": "acceptance",
+          "detail": "The diff logs auto-reverted files, but acceptance is not met because the implementation is not validated by passing tests and introduces behavior that breaks existing flows."
+        }
+      ],
+      "fix_instructions": "Replace the current raw `git checkout --` scope-revert path with logic that reverts out-of-scope tracked files without clobbering active runtime state for `tasks.json`, `progress.md`, and `.ralph/` during the same run; then add/adjust the integration coverage for that exact scope-anomaly path so existing task-mode and handoff flows stay green.",
+      "alert_reason": "",
+      "progress_note": "Reviewed R19-05: target-file diff is limited to `ralph.sh` and `src/ralph/resources/ralph.sh`, but the implementation causes broad integration regressions.",
+      "checklist": {
+        "scope_ok": false,
+        "tests_ok": false,
+        "acceptance_ok": false,
+        "regressions_ok": false,
+        "quality_ok": false
+      }
+    }
+  },
+  "attempts": 1,
+  "duration_sec": 955,
+  "timestamp": "2026-04-08T19:52:07Z",
+  "runtime_success": true,
+  "verified_success": false
+}

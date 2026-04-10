@@ -1,0 +1,649 @@
+Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
+
+## Task
+{
+  "id": "R16-04",
+  "phase": "R16",
+  "status": "pending",
+  "title": "Bot /projects + /switch commands",
+  "description": "Extend ralph_bot.py to read projects.json, list projects with status/progress, and switch active project context with /switch <name> so later commands operate on that project.",
+  "target_files": [
+    "scripts/ralph_bot.py",
+    "src/ralph/resources/scripts/ralph_bot.py"
+  ],
+  "acceptance_criteria": [
+    "/projects lists all projects",
+    "/switch changes context",
+    "/status shows switched project"
+  ],
+  "priority": "high",
+  "complexity": "moderate",
+  "role": "coder"
+}
+
+## Target Files
+- scripts/ralph_bot.py
+- src/ralph/resources/scripts/ralph_bot.py
+
+## Scope Anomaly Warning
+The following files were modified but are NOT in target_files:
+.ralph/memory/recent.md
+progress.md
+tasks.json
+Please evaluate whether these changes are justified.
+
+
+## Role Instructions (AGENTS_LEAD.md)
+# TECH LEAD Agent Instructions
+
+## Critical Output Contract
+- Return exactly one final review block.
+- Do not output prose before or after the final review block.
+- Do not output example JSON.
+- Do not output multiple JSON objects.
+- If anything is incomplete or ambiguous, return `decision="fix"`.
+
+## Final Review Format
+Your entire response must be:
+
+BEGIN_RALPH_REVIEW_JSON
+{"decision":"approve|fix|alert","task_id":"<task-id-or-empty>","summary":"<brief summary>","quality_score":0,"issues":[],"fix_instructions":"","alert_reason":"","progress_note":""}
+END_RALPH_REVIEW_JSON
+
+## Decisions
+- **approve**: All acceptance_criteria met AND tests pass AND code is clean
+- **fix**: Something unmet. Fill fix_instructions with specific actionable steps
+- **alert**: ONLY for risk=high tasks with critical failures (security, data loss, >10 tests broken)
+
+## Input you receive
+1. Task definition with acceptance_criteria
+2. Git diff of changes
+3. Test output
+
+## Rules
+- Default to **approve** if tests pass and criteria are met
+- Default to **fix** (not alert) for normal failures
+- `alert` is rare — only when human decision is truly needed
+- `task_id` may be empty if unavailable, but never use placeholders like `TASK-ID`
+- `summary` must describe the actual review result, never a template placeholder
+- If the diff, tests, or criteria are unclear, fail closed with `decision="fix"`
+- `fix_instructions` must contain only coder-owned implementation gaps: code, tests, templates, docs, or routing gaps inside the task scope
+- `fix_instructions` must identify the single smallest remaining gap that would make the task approvable; do not bundle adjacent cleanup unless one blocker truly depends on another
+- Do NOT require updating `tasks.json`, `progress.md`, final commit messages, final status updates, audit artifacts, or any other runtime-owned bookkeeping
+- Do NOT require a “non-empty diff”, “real diff”, or `git diff` as a goal by itself; point to the exact missing feature gap instead
+- If the feature mostly exists, name the precise missing behavior, file, command, alias, route, or test gap
+- Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
+- Prefer one minimal actionable fix path over a list of loosely related improvements
+- If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+
+## Diff
+```diff
+diff --git a/scripts/ralph_bot.py b/scripts/ralph_bot.py
+index 17003dd..f231dd4 100755
+--- a/scripts/ralph_bot.py
++++ b/scripts/ralph_bot.py
+@@ -29,12 +29,14 @@ try:
+     from ralph_common import (
+         CRASH_ROLLBACK_COMMANDS,
+         DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
++        atomic_write_json,
+         get_article_generation_timeout_sec,
+         get_telegram_poll_backoff_initial_sec,
+         get_telegram_poll_backoff_max_sec,
+         get_telegram_poll_request_timeout_sec,
+         get_telegram_poll_timeout_sec,
+         get_telegram_timeout_sec,
++        locked_path,
+         load_tasks_data as shared_load_tasks_data,
+         mutate_tasks_data as shared_mutate_tasks_data,
+         resolve_project_dir,
+@@ -47,12 +49,14 @@ except ImportError:
+     from scripts.ralph_common import (
+         CRASH_ROLLBACK_COMMANDS,
+         DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
++        atomic_write_json,
+         get_article_generation_timeout_sec,
+         get_telegram_poll_backoff_initial_sec,
+         get_telegram_poll_backoff_max_sec,
+         get_telegram_poll_request_timeout_sec,
+         get_telegram_poll_timeout_sec,
+         get_telegram_timeout_sec,
++        locked_path,
+         load_tasks_data as shared_load_tasks_data,
+         mutate_tasks_data as shared_mutate_tasks_data,
+         resolve_project_dir,
+@@ -64,6 +68,11 @@ except ImportError:
+ 
+ RALPH_DIR = Path(__file__).resolve().parent.parent
+ PROJECT_DIR = Path.cwd()  # overridden in __main__
++REGISTRY_DIR = Path.home() / ".ralph"
++REGISTRY_FILE = REGISTRY_DIR / "projects.json"
++DEFAULT_PROJECT_NAME = "ralph-dev"
++DEFAULT_TEST_CMD = "make test"
++ACTIVE_PROJECT_NAME = DEFAULT_PROJECT_NAME
+ STATE_FILE = PROJECT_DIR / "ralph_state.json"
+ CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
+ TASKS_FILE = PROJECT_DIR / "tasks.json"
+@@ -118,6 +127,8 @@ HOT_RELOAD_EXPORTS = [
+     "safe_send",
+     "send_split_message",
+     "set_idle_state",
++    "cmd_projects",
++    "cmd_switch",
+     "cmd_status",
+     "cmd_start_task",
+     "cmd_start_phase",
+@@ -150,6 +161,11 @@ HOT_RELOAD_EXPORTS = [
+ def configure_module_runtime(module: ModuleType) -> None:
+     """Inject current runtime state into a freshly loaded hot-reload module."""
+     module.RALPH_DIR = RALPH_DIR
++    module.REGISTRY_DIR = REGISTRY_DIR
++    module.REGISTRY_FILE = REGISTRY_FILE
++    module.DEFAULT_PROJECT_NAME = DEFAULT_PROJECT_NAME
++    module.DEFAULT_TEST_CMD = DEFAULT_TEST_CMD
++    module.ACTIVE_PROJECT_NAME = ACTIVE_PROJECT_NAME
+     module.PROJECT_DIR = PROJECT_DIR
+     module.STATE_FILE = PROJECT_DIR / "ralph_state.json"
+     module.CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
+@@ -191,6 +207,197 @@ def apply_hot_reload(module: ModuleType) -> None:
+         globals()[name] = getattr(module, name)
+ 
+ 
++def default_project_entry() -> dict[str, str]:
++    """Return the built-in registry entry for the Ralph repo itself."""
++    return {
++        "path": str(RALPH_DIR),
++        "test_cmd": DEFAULT_TEST_CMD,
++    }
++
++
++def default_projects_registry() -> dict[str, object]:
++    """Return the default registry payload when none exists yet."""
++    return {
++        "version": 1,
++        "active_project": DEFAULT_PROJECT_NAME,
++        "projects": {
++            DEFAULT_PROJECT_NAME: default_project_entry(),
++        },
++    }
++
++
++def save_projects_registry(data: dict[str, object]) -> None:
++    """Persist ~/.ralph/projects.json with the shared Ralph file lock."""
++    with locked_path(REGISTRY_FILE):
++        atomic_write_json(REGISTRY_FILE, data)
++
++
++def load_projects_registry() -> dict[str, object]:
++    """Load the Ralph project registry, creating the default file when missing."""
++    if not REGISTRY_FILE.exists():
++        data = default_projects_registry()
++        save_projects_registry(data)
++        return data
++
++    try:
++        data = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
++    except json.JSONDecodeError as exc:
++        raise ValueError(f"Malformed registry JSON: {exc.msg}") from exc
++
++    if not isinstance(data, dict):
++        raise ValueError("Registry must contain a JSON object.")
++
++    projects = data.get("projects")
++    if not isinstance(projects, dict):
++        raise ValueError("Registry must contain a top-level 'projects' object.")
++
++    data.setdefault("version", 1)
++    data.setdefault("active_project", DEFAULT_PROJECT_NAME)
++    if DEFAULT_PROJECT_NAME not in projects:
++        projects[DEFAULT_PROJECT_NAME] = default_project_entry()
++    if data.get("active_project") not in projects:
++        data["active_project"] = DEFAULT_PROJECT_NAME
++
++    save_projects_registry(data)
++    return data
++
++
++def apply_project_runtime(project_dir: Path, *, project_name: str | None = None) -> None:
++    """Update all project-scoped globals after a context switch."""
++    global PROJECT_DIR, ACTIVE_PROJECT_NAME, STATE_FILE, CONTROL_FILE, TASKS_FILE
++    global PROGRESS_FILE, LOG_DIR, AUDIT_DIR, BLOG_DRAFTS_FILE, RALPH_MAIN_PID_FILE
++
++    PROJECT_DIR = project_dir.resolve()
++    if project_name:
++        ACTIVE_PROJECT_NAME = project_name
++    STATE_FILE = PROJECT_DIR / "ralph_state.json"
++    CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
++    TASKS_FILE = PROJECT_DIR / "tasks.json"
++    PROGRESS_FILE = PROJECT_DIR / "progress.md"
++    LOG_DIR = PROJECT_DIR / "logs"
++    AUDIT_DIR = PROJECT_DIR / ".ralph" / "audit"
++    BLOG_DRAFTS_FILE = PROJECT_DIR / "BLOG_DRAFTS.md"
++    RALPH_MAIN_PID_FILE = PROJECT_DIR / "ralph_main.pid"
++
++
++def sync_active_project_runtime() -> None:
++    """Refresh project-scoped globals from the registry active project."""
++    try:
++        registry = load_projects_registry()
++    except ValueError:
++        return
++
++    active_name = registry.get("active_project")
++    projects = registry.get("projects", {})
++    if not isinstance(active_name, str) or not isinstance(projects, dict):
++        return
++
++    payload = projects.get(active_name)
++    if not isinstance(payload, dict):
++        return
++
++    raw_path = payload.get("path")
++    if not isinstance(raw_path, str):
++        return
++
++    project_dir = Path(raw_path).expanduser().resolve()
++    if not (project_dir / "tasks.json").exists():
++        return
++
++    apply_project_runtime(project_dir, project_name=active_name)
++
++
++def get_project_display_name(project_dir: Path, registry: dict[str, object] | None = None) -> str:
++    """Return the registry name for a project path if available."""
++    project_dir_resolved = project_dir.resolve()
++    if registry is None:
++        try:
++            registry = load_projects_registry()
++        except ValueError:
++            return project_dir_resolved.name
++
++    projects = registry.get("projects", {})
++    if isinstance(projects, dict):
++        for name, payload in projects.items():
++            if not isinstance(name, str) or not isinstance(payload, dict):
++                continue
++            raw_path = payload.get("path")
++            if not isinstance(raw_path, str):
++                continue
++            try:
++                if Path(raw_path).expanduser().resolve() == project_dir_resolved:
++                    return name
++            except OSError:
++                continue
++
++    return project_dir_resolved.name
++
++
++def get_project_snapshot(project_name: str, project_path: Path) -> dict[str, object]:
++    """Collect lightweight status/progress data for one registered project."""
++    snapshot: dict[str, object] = {
++        "name": project_name,
++        "path": project_path,
++        "has_tasks": False,
++        "status": "missing",
++        "done_total": 0,
++        "all_total": 0,
++        "pct": 0,
++        "current_task": None,
++    }
++
++    tasks_path = project_path / "tasks.json"
++    state_path = project_path / "ralph_state.json"
++    snapshot["has_tasks"] = tasks_path.exists()
++    if tasks_path.exists():
++        try:
++            summary = get_task_summary(tasks_path)
++        except (json.JSONDecodeError, OSError):
++            snapshot["status"] = "tasks_error"
++        else:
++            snapshot.update(summary)
++            snapshot["status"] = "idle"
++
++    if state_path.exists():
++        try:
++            raw_state = json.loads(state_path.read_text(encoding="utf-8"))
++        except (json.JSONDecodeError, OSError):
++            snapshot["status"] = "state_error"
++        else:
++            state = normalize_state_for_display(raw_state)
++            snapshot["status"] = str(state.get("status", snapshot["status"]))
++            snapshot["current_task"] = state.get("current_task")
++
++    return snapshot
++
++
++def resolve_initial_project_context(cli_project_dir: str | None) -> tuple[Path, str]:
++    """Resolve startup context from explicit input first, then the active registry project."""
++    if cli_project_dir or os.environ.get("RALPH_PROJECT_DIR"):
++        project_dir = resolve_project_dir(cli_project_dir)
++        return project_dir, get_project_display_name(project_dir)
++
++    try:
++        registry = load_projects_registry()
++    except ValueError:
++        project_dir = resolve_project_dir(None)
++        return project_dir, project_dir.name
++
++    active_name = str(registry.get("active_project", DEFAULT_PROJECT_NAME))
++    projects = registry.get("projects", {})
++    if isinstance(projects, dict):
++        payload = projects.get(active_name)
++        if isinstance(payload, dict):
++            raw_path = payload.get("path")
++            if isinstance(raw_path, str):
++                candidate = Path(raw_path).expanduser().resolve()
++                if (candidate / "tasks.json").exists():
++                    return candidate, active_name
++
++    project_dir = resolve_project_dir(None)
++    return project_dir, get_project_display_name(project_dir, registry)
++
++
+ def read_state() -> dict:
+     """Read ralph state file."""
+     if STATE_FILE.exists():
+@@ -1044,6 +1251,7 @@ def set_idle_state(message: str = "Idle") -> None:
+ 
+ async def cmd_status() -> None:
+     """Send status overview."""
++    sync_active_project_runtime()
+     state = read_state()
+     summary = get_task_summary(TASKS_FILE)
+     status = state.get("status", "idle")
+@@ -1051,6 +1259,8 @@ async def cmd_status() -> None:
+     icon = icons.get(status, "❓")
+ 
+     lines = [f"{icon} Status: <b>{status}</b>"]
++    lines.append(f"📁 Project: <b>{html.escape(ACTIVE_PROJECT_NAME)}</b>")
++    lines.append(f"📍 Path: <code>{html.escape(str(PROJECT_DIR))}</code>")
+     if state.get("current_task"):
+         lines.append(f"📋 Task: {state['current_task']}")
+     if state.get("current_phase_step"):
+@@ -1066,6 +1276,104 @@ async def cmd_status() -> None:
+     await safe_send("\n".join(lines))
+ 
+ 
++async def cmd_projects() -> None:
++    """List registered projects with active marker and short status/progress."""
++    try:
++        registry = load_projects_registry()
++    except ValueError as exc:
++        await safe_send(f"❌ Cannot read projects registry: {html.escape(str(exc))}")
++        return
++
++    active_name = str(registry.get("active_project", ACTIVE_PROJECT_NAME))
++    projects = registry.get("projects", {})
++    if not isinstance(projects, dict) or not projects:
++        await safe_send("No registered projects found")
++        return
++
++    lines = ["📚 <b>Projects</b>"]
++    for project_name in sorted(projects):
++        payload = projects.get(project_name)
++        if not isinstance(payload, dict):
++            continue
++
++        raw_path = payload.get("path")
++        if not isinstance(raw_path, str):
++            continue
++
++        project_path = Path(raw_path).expanduser()
++        snapshot = get_project_snapshot(project_name, project_path)
++        marker = "👉" if project_name == active_name else "•"
++        status = html.escape(str(snapshot.get("status", "unknown")))
++        done_total = int(snapshot.get("done_total", 0))
++        all_total = int(snapshot.get("all_total", 0))
++        pct = int(snapshot.get("pct", 0))
++        path_text = html.escape(str(project_path.resolve()))
++        current_task = snapshot.get("current_task")
++
++        lines.append(
++            f"{marker} <b>{html.escape(project_name)}</b> [{status}] {done_total}/{all_total} ({pct}%)"
++        )
++        lines.append(f"   <code>{path_text}</code>")
++        if current_task:
++            lines.append(f"   task: {html.escape(str(current_task))}")
++
++    await send_split_message("\n".join(lines))
++
++
++async def cmd_switch(project_name: str) -> None:
++    """Switch active bot context to a different registered project."""
++    normalized_name = project_name.strip()
++    if not normalized_name:
++        await safe_send("Usage: /switch <project>")
++        return
++
++    state = read_state()
++    if state.get("status") in {"running", "waiting_human", "paused"} or get_live_ralph_pid():
++        await safe_send("⚠️ Cannot switch project while Ralph is active. Stop the current run first.")
++        return
++
++    try:
++        registry = load_projects_registry()
++    except ValueError as exc:
++        await safe_send(f"❌ Cannot read projects registry: {html.escape(str(exc))}")
++        return
++
++    projects = registry.get("projects", {})
++    if not isinstance(projects, dict):
++        await safe_send("❌ Projects registry is invalid")
++        return
++
++    payload = projects.get(normalized_name)
++    if not isinstance(payload, dict):
++        await safe_send(f"❌ Unknown project: {html.escape(normalized_name)}")
++        return
++
++    raw_path = payload.get("path")
++    if not isinstance(raw_path, str):
++        await safe_send(f"❌ Project {html.escape(normalized_name)} has no valid path")
++        return
++
++    project_dir = Path(raw_path).expanduser().resolve()
++    if not (project_dir / "tasks.json").exists():
++        await safe_send(f"❌ No tasks.json in {html.escape(str(project_dir))}")
++        return
++
++    registry["active_project"] = normalized_name
++    save_projects_registry(registry)
++    apply_project_runtime(project_dir, project_name=normalized_name)
++
++    summary = get_task_summary(TASKS_FILE)
++    await safe_send(
++        "\n".join(
++            [
++                f"🔀 Switched to <b>{html.escape(normalized_name)}</b>",
++                f"📍 <code>{html.escape(str(PROJECT_DIR))}</code>",
++                f"📊 {summary['done_total']}/{summary['all_total']} ({summary['pct']}%) complete",
++            ]
++        )
++    )
++
++
+ async def cmd_start_task(task_id: str) -> None:
+     """Start single task."""
+     global ralph_process
+@@ -1761,6 +2069,8 @@ async def cmd_help() -> None:
+     await safe_send(
+         "🤖 <b>Ralph Bot</b>\n\n"
+         "/status — current state\n"
++        "/projects — list registered projects\n"
++        "/switch <name> — switch active project context\n"
+         "/tasks [phase] — task list\n"
+         "/plan — phase summary and next pending tasks\n"
+         "/article [new] — get today's article or generate a new one\n"
+@@ -1829,6 +2139,12 @@ async def handle_update(update: dict) -> None:
+     if cmd == "/status":
+         handler_name = "cmd_status"
+         handler_coro = cmd_status()
++    elif cmd == "/projects":
++        handler_name = "cmd_projects"
++        handler_coro = cmd_projects()
++    elif cmd == "/switch":
++        handler_name = "cmd_switch"
++        handler_coro = cmd_switch(args)
+     elif cmd == "/tasks":
+         handler_name = "tasks_summary"
+         handler_coro = safe_send(get_tasks_summary(args or None))
+@@ -2131,7 +2447,7 @@ if __name__ == "__main__":
+     RALPH_DIR = Path(__file__).resolve().parent.parent
+ 
+     # PROJECT_DIR priority: --project-dir > RALPH_PROJECT_DIR env > cwd
+-    PROJECT_DIR = resolve_project_dir(args.project_dir)
++    PROJECT_DIR, ACTIVE_PROJECT_NAME = resolve_initial_project_context(args.project_dir)
+ 
+     if not (PROJECT_DIR / "tasks.json").exists():
+         print(f"❌ No tasks.json in {PROJECT_DIR}")
+@@ -2139,11 +2455,7 @@ if __name__ == "__main__":
+         sys.exit(1)
+ 
+     # Update all paths that depend on PROJECT_DIR
+-    STATE_FILE = PROJECT_DIR / "ralph_state.json"
+-    CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
+-    TASKS_FILE = PROJECT_DIR / "tasks.json"
+-    PROGRESS_FILE = PROJECT_DIR / "progress.md"
+-    LOG_DIR = PROJECT_DIR / "logs"
++    apply_project_runtime(PROJECT_DIR, project_name=ACTIVE_PROJECT_NAME)
+ 
+     load_dotenv(PROJECT_DIR / ".env")
+     TOKEN = os.environ.get("RALPH_TELEGRAM_TOKEN", "")
+@@ -2152,6 +2464,7 @@ if __name__ == "__main__":
+ 
+     print("🤖 Ralph Bot")
+     print(f"   RALPH_DIR:   {RALPH_DIR}")
++    print(f"   PROJECT:     {ACTIVE_PROJECT_NAME}")
+     print(f"   PROJECT_DIR: {PROJECT_DIR}")
+     print(f"   Tasks:       {TASKS_FILE}")
+     print("   caffeinate: enabled during auto mode")
+diff --git a/src/ralph/resources/scripts/ralph_bot.py b/src/ralph/resources/scripts/ralph_bot.py
+index 17003dd..f231dd4 100755
+--- a/src/ralph/resources/scripts/ralph_bot.py
++++ b/src/ralph/resources/scripts/ralph_bot.py
+@@ -29,12 +29,14 @@ try:
+     from ralph_common import (
+         CRASH_ROLLBACK_COMMANDS,
+         DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
++        atomic_write_json,
+         get_article_generation_timeout_sec,
+         get_telegram_poll_backoff_initial_sec,
+         get_telegram_poll_backoff_max_sec,
+         get_telegram_poll_request_timeout_sec,
+         get_telegram_poll_timeout_sec,
+         get_telegram_timeout_sec,
++        locked_path,
+         load_tasks_data as shared_load_tasks_data,
+         mutate_tasks_data as shared_mutate_tasks_data,
+         resolve_project_dir,
+@@ -47,12 +49,14 @@ except ImportError:
+     from scripts.ralph_common import (
+         CRASH_ROLLBACK_COMMANDS,
+         DESTRUCTIVE_ROLLBACK_POLICY_NOTICE,
++        atomic_write_json,
+         get_article_generation_timeout_sec,
+         get_telegram_poll_backoff_initial_sec,
+         get_telegram_poll_backoff_max_sec,
+         get_telegram_poll_request_timeout_sec,
+         get_telegram_poll_timeout_sec,
+         get_telegram_timeout_sec,
++        locked_path,
+         load_tasks_data as shared_load_tasks_data,
+         mutate_tasks_data as shared_mutate_tasks_data,
+         resolve_project_dir,
+@@ -64,6 +68,11 @@ except ImportError:
+ 
+ RALPH_DIR = Path(__file__).resolve().parent.parent
+ PROJECT_DIR = Path.cwd()  # overridden in __main__
++REGISTRY_DIR = Path.home() / ".ralph"
++REGISTRY_FILE = REGISTRY_DIR / "projects.json"
++DEFAULT_PROJECT_NAME = "ralph-dev"
++DEFAULT_TEST_CMD = "make test"
++ACTIVE_PROJECT_NAME = DEFAULT_PROJECT_NAME
+ STATE_FILE = PROJECT_DIR / "ralph_state.json"
+ CONTROL_FILE = PROJECT_DIR / "ralph_control.json"
+ TASKS_FILE = PROJECT_DIR / "tasks.json"
+@@ -118,6 +127,8 @@ HOT_RELOAD_EXPORTS = [
+     "safe_send",
+     "send_split_message",
+     "set_idle_state",
++    "cmd_projects",
++    "cmd_switch",
+     "cmd_status",
+     "cmd_start_task",
+     "cmd_start_phase",
+@@ -150,6 +161,11 @@ HOT_RELOAD_EXPORTS = [
+ def configure_module_runtime(module: ModuleType) -> None:
+     """Inject current runtime state into a freshly loaded hot-reload module."""
+     module.RALPH_DIR = RALPH_DIR
++    module.REGISTRY_DIR = REGISTRY_DIR
++    module.REGISTRY_FILE = REGISTRY_FILE
+diff error
+```
+
+Previous diff snapshot: 41993 bytes
+
+## Tests
+```
+            + "\n",
+            encoding="utf-8",
+        )
+        manual_results.write_text(
+            "\n".join(
+                [
+                    json.dumps({"task_id": "T01", "coder_duration_s": 2, "prompt_tokens": 100}),
+                    json.dumps({"task_id": "T02", "prompt_tokens": 200}),
+                    json.dumps({"task_id": "T03", "coder_duration_s": 1, "prompt_tokens": 300}),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    
+        result = run_helper(
+            project_dir,
+            f"write_benchmark_report '{project_dir / 'auto'}' '{manual_results}' '{report_file}' 'T01,T02,T03' '4' '2'\n",
+        )
+    
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: ./ralph_helpers.sh: line 47: POSITIONAL_ARGS[@]: unbound variable
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-13/test_write_benchmark_report_cl0/project/run_helper.sh'], returncode=1, stdout='', stderr='./ralph_helpers.sh: line 47: POSITIONAL_ARGS[@]: unbound variable\n').returncode
+
+tests/test_ralph_shell_helpers.py:330: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bot_commands.py::test_cmd_status_after_switch_uses_new_project_context
+FAILED tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task
+FAILED tests/test_ralph_shell_helpers.py::test_handoff_candidate_paths_include_packaged_and_test_evidence
+FAILED tests/test_ralph_shell_helpers.py::test_handoff_worktree_evidence_paths_only_returns_dirty_candidate_paths
+FAILED tests/test_ralph_shell_helpers.py::test_handoff_commit_parent_hash_uses_empty_tree_for_root_commit
+FAILED tests/test_ralph_shell_helpers.py::test_validate_lead_review_json_normalizes_placeholder_and_done_decisions
+FAILED tests/test_ralph_shell_helpers.py::test_parse_lead_review_json_fail_closes_on_unparseable_sources
+FAILED tests/test_ralph_shell_helpers.py::test_run_task_closure_verification_falls_back_when_verifier_crashes
+FAILED tests/test_ralph_shell_helpers.py::test_task_scoped_diff_between_refs_includes_ralph_shell_changes
+FAILED tests/test_ralph_shell_helpers.py::test_write_benchmark_report_clamps_other_time_and_accepts_missing_manual_duration
+============ 10 failed, 202 passed, 1 skipped in 1021.88s (0:17:01) ============
+make: *** [test] Error 1
+tests failed
+```
+
+## Review Checklist — evaluate each item:
+1. SCOPE: Did coder modify ONLY the target files listed in the task? List any out-of-scope files.
+2. TESTS: Do all tests pass? Were new tests added for new functionality?
+3. ACCEPTANCE: Are all acceptance_criteria from the task satisfied by this diff?
+4. REGRESSIONS: Could any change break existing functionality?
+5. QUALITY: Is the code clean, no debug prints, no hardcoded secrets, no TODO hacks?
+
+Your final JSON must include:
+- checklist: { scope_ok: bool, tests_ok: bool, acceptance_ok: bool, regressions_ok: bool, quality_ok: bool }
+
+Return exactly one final review block in this format:
+BEGIN_RALPH_REVIEW_JSON
+{...valid final review JSON...}
+END_RALPH_REVIEW_JSON
+
+Do not output example JSON.
+Do not output multiple JSON objects.
+If the task is not fully complete, return decision=fix.
+Do not ask the coder to update tasks.json, progress.md, final commits, final status, audit artifacts, or to produce a non-empty diff as a goal by itself.

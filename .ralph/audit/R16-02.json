@@ -1,0 +1,62 @@
+{
+  "task_id": "R16-02",
+  "title": "Configurable test command",
+  "status": "done",
+  "verification": {
+    "result": "pass",
+    "reason": "Tests verification passed.",
+    "task_class": "tests-only",
+    "evidence_files": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py",
+      "ralph/memory/recent.md"
+    ]
+  },
+  "changes": {
+    "all": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py",
+      ".ralph/memory/recent.md",
+      "progress.md",
+      "tasks.json",
+      ".ralph/audit/R16-01.json",
+      ".ralph/audit/lead_prompt_R16-01.txt",
+      ".ralph/audit/lead_prompt_R16-02.txt",
+      ".ralph/audit/lead_reasoning_R16-01.txt",
+      ".ralph/audit/lead_reasoning_R16-02.txt"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      "tests/test_integration.py",
+      "ralph/memory/recent.md"
+    ]
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"R16-02\",\"summary\":\"Настройка `test_cmd` из `.ralph/project.json` добавлена, fallback на `make test` сохранён, покрытие интеграционным тестом есть, прогон тестов зелёный.\",\"quality_score\":94,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"R16-02 закрывает поддержку per-project `test_cmd` для preflight и test gate без ломки обратной совместимости.\",\"checklist\":{\"scope_ok\":true,\"tests_ok\":true,\"acceptance_ok\":true,\"regressions_ok\":true,\"quality_ok\":true}}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {
+      "decision": "approve",
+      "task_id": "R16-02",
+      "summary": "Настройка `test_cmd` из `.ralph/project.json` добавлена, fallback на `make test` сохранён, покрытие интеграционным тестом есть, прогон тестов зелёный.",
+      "quality_score": 94,
+      "issues": [],
+      "fix_instructions": "",
+      "alert_reason": "",
+      "progress_note": "R16-02 закрывает поддержку per-project `test_cmd` для preflight и test gate без ломки обратной совместимости.",
+      "checklist": {
+        "scope_ok": true,
+        "tests_ok": true,
+        "acceptance_ok": true,
+        "regressions_ok": true,
+        "quality_ok": true
+      }
+    }
+  },
+  "attempts": 3,
+  "duration_sec": 2901,
+  "timestamp": "2026-04-08T08:04:30Z",
+  "runtime_success": true,
+  "verified_success": true
+}

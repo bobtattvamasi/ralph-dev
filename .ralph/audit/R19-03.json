@@ -1,0 +1,45 @@
+{
+  "task_id": "R19-03",
+  "title": "Enforce target_files limit of 3",
+  "status": "failed",
+  "verification": {
+    "result": "needs_human_review",
+    "reason": "R19-03 failed after 2 retries",
+    "task_class": "unknown",
+    "evidence_files": []
+  },
+  "changes": {
+    "all": [],
+    "non_bookkeeping": []
+  },
+  "review": {
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-03\",\"summary\":\"Ревью не пройдено: есть выход за scope задачи и регрессии по тестам.\",\"quality_score\":41,\"issues\":[\"SCOPE: изменены файлы вне target_files: ralph.sh, src/ralph/resources/ralph.sh, scripts/ralph_common.py, src/ralph/resources/scripts/ralph_common.py, tests/test_integration.py, tests/test_re_audit_tasks.py. Также отмечены runtime/bookkeeping изменения вне scope: .ralph/memory/recent.md, progress.md, tasks.json; для этой задачи они не обоснованы.\",\"TESTS: полный прогон не проходит: 14 failed, 201 passed, 1 skipped. Это блокирует approve.\",\"REGRESSIONS: diff затронул общий runtime-поток в ralph.sh и логику выбора задач в ralph_common.py, после чего упали интеграционные тесты вокруг task/auto/handoff/verification сценариев.\",\"ACCEPTANCE: предупреждение для задач с >3 target_files реализовано, и авто-режим логирует warning, но задача не может быть одобрена из-за регрессий и нарушения scope.\"],\"fix_instructions\":\"Свести реализацию к заявленному scope задачи: оставить поведение предупреждений для >3 target_files, но убрать регрессию в общем runtime. Минимальный путь: откатить изменения вне next_task.py-цепочки, затем реализовать warning через scripts/next_task.py и src/ralph/resources/scripts/next_task.py без изменения ralph.sh/ralph_common.py так, чтобы все интеграционные тесты снова проходили.\",\"alert_reason\":\"\",\"progress_note\":\"R19-03 требует доработки: scope расширен сверх target_files, а тестовый прогон показывает 14 регрессий.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
+    "parsed": {
+      "decision": "fix",
+      "task_id": "R19-03",
+      "summary": "Ревью не пройдено: есть выход за scope задачи и регрессии по тестам.",
+      "quality_score": 41,
+      "issues": [
+        "SCOPE: изменены файлы вне target_files: ralph.sh, src/ralph/resources/ralph.sh, scripts/ralph_common.py, src/ralph/resources/scripts/ralph_common.py, tests/test_integration.py, tests/test_re_audit_tasks.py. Также отмечены runtime/bookkeeping изменения вне scope: .ralph/memory/recent.md, progress.md, tasks.json; для этой задачи они не обоснованы.",
+        "TESTS: полный прогон не проходит: 14 failed, 201 passed, 1 skipped. Это блокирует approve.",
+        "REGRESSIONS: diff затронул общий runtime-поток в ralph.sh и логику выбора задач в ralph_common.py, после чего упали интеграционные тесты вокруг task/auto/handoff/verification сценариев.",
+        "ACCEPTANCE: предупреждение для задач с >3 target_files реализовано, и авто-режим логирует warning, но задача не может быть одобрена из-за регрессий и нарушения scope."
+      ],
+      "fix_instructions": "Свести реализацию к заявленному scope задачи: оставить поведение предупреждений для >3 target_files, но убрать регрессию в общем runtime. Минимальный путь: откатить изменения вне next_task.py-цепочки, затем реализовать warning через scripts/next_task.py и src/ralph/resources/scripts/next_task.py без изменения ralph.sh/ralph_common.py так, чтобы все интеграционные тесты снова проходили.",
+      "alert_reason": "",
+      "progress_note": "R19-03 требует доработки: scope расширен сверх target_files, а тестовый прогон показывает 14 регрессий.",
+      "checklist": {
+        "scope_ok": false,
+        "tests_ok": false,
+        "acceptance_ok": false,
+        "regressions_ok": false,
+        "quality_ok": false
+      }
+    }
+  },
+  "attempts": 3,
+  "duration_sec": 2109,
+  "timestamp": "2026-04-08T20:27:19Z",
+  "runtime_success": false,
+  "verified_success": false
+}

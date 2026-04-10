@@ -3626,7 +3626,7 @@
     {
       "id": "R19-01",
       "phase": "R19",
-      "status": "false_positive",
+      "status": "pending",
       "title": "Runtime file protection gate",
       "description": "Before coder codex exec, stash changes to tasks.json, progress.md, .ralph/memory/. After coder finishes, restore them via git checkout. This prevents coder from modifying runtime-owned files.",
       "target_files": [
@@ -3641,12 +3641,12 @@
       "complexity": "moderate",
       "role": "coder",
       "completed_at": null,
-      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
+      "revision_notes": "reset: false_positive review"
     },
     {
       "id": "R19-02",
       "phase": "R19",
-      "status": "verified_done",
+      "status": "pending",
       "title": "Bash syntax gate before test run",
       "description": "Add bash -n validation for all .sh files modified by coder BEFORE running make test. If syntax check fails, skip tests and return fix immediately. This catches heredoc/inline-python parse errors early.",
       "target_files": [
@@ -3660,13 +3660,13 @@
       "priority": "critical",
       "complexity": "simple",
       "role": "coder",
-      "completed_at": "2026-04-09T11:55:01.532886+00:00",
-      "revision_notes": "R19-02 failed after 2 retries"
+      "completed_at": null,
+      "revision_notes": "reset: bugs fixed in HEAD"
     },
     {
       "id": "R19-03",
       "phase": "R19",
-      "status": "false_positive",
+      "status": "pending",
       "title": "Enforce target_files limit of 3",
       "description": "[PARKING LOT] In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
       "target_files": [
@@ -3681,12 +3681,12 @@
       "complexity": "simple",
       "role": "coder",
       "completed_at": null,
-      "revision_notes": "R19-03 failed after 2 retries"
+      "revision_notes": "reset: false_positive review"
     },
     {
       "id": "R19-04",
       "phase": "R19",
-      "status": "false_positive",
+      "status": "pending",
       "title": "Ban inline Python heredoc >10 lines in bash",
       "description": "[PARKING LOT] Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
       "target_files": [
@@ -3701,12 +3701,12 @@
       "complexity": "simple",
       "role": "coder",
       "completed_at": null,
-      "revision_notes": "R19-04 failed after 2 retries"
+      "revision_notes": "reset: false_positive review"
     },
     {
       "id": "R19-05",
       "phase": "R19",
-      "status": "verified_done",
+      "status": "pending",
       "title": "Scope guard revert for out-of-scope files",
       "description": "When scope anomaly detects modifications outside target_files, automatically git checkout those files before lead review instead of just warning. Runtime files (tasks.json, progress.md, .ralph/) are always reverted. Other out-of-scope files are reverted unless lead approves.",
       "target_files": [
@@ -3720,13 +3720,13 @@
       "priority": "critical",
       "complexity": "moderate",
       "role": "coder",
-      "completed_at": "2026-04-10T10:50:58.581791+00:00",
-      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
+      "completed_at": null,
+      "revision_notes": "reset: bugs fixed in HEAD"
     },
     {
       "id": "R20-01",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Fix PGID-aware process termination in bot /stop",
       "description": "Unify kill logic: bot reads ralph_codex.pgid, kills process group first, then cleans PIDs. Remove duplicate kill paths between ralph_bot.py and ralph.sh. One owner of teardown.",
       "target_files": [
@@ -3738,12 +3738,13 @@
       ],
       "priority": "critical",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-10T11:08:46.640687+00:00"
     },
     {
       "id": "R20-02",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Auto-heal stale state on bot startup and /status",
       "description": "Centralize stale-state reconciliation. On bot startup, /status, /auto, /switch: check if PID in ralph_state.json is alive. If dead, reset state to idle and control to continue.",
       "target_files": [
@@ -3754,7 +3755,8 @@
       ],
       "priority": "critical",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-04-10T11:33:35.468139+00:00"
     },
     {
       "id": "R20-03",
