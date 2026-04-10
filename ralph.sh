@@ -3971,6 +3971,14 @@ print(task.get('role', 'coder'))
         fi
 
         PRE_HASH=$(git rev-parse HEAD)
+        # R19-05: snapshot runtime files before coder touches anything
+        RUNTIME_SNAPSHOT_DIR=$(mktemp -d)
+        for _rf in tasks.json progress.md .ralph/memory/recent.md; do
+            if [ -f "$PROJECT_DIR/$_rf" ]; then
+                mkdir -p "$RUNTIME_SNAPSHOT_DIR/$(dirname "$_rf")"
+                cp "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf"
+            fi
+        done
         REVIEW_BASE_HASH="${TASK_START_COMMIT:-$PRE_HASH}"
         REVIEW_TARGET_HASH="HEAD"
         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
@@ -4214,6 +4222,21 @@ print(task.get('role', 'coder'))
             rm -f "$RETRY_TEST_OUTPUT_FILE"
         fi
         ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+        # R19-05: restore runtime files coder should never modify
+        RUNTIME_REVERTED=""
+        if [ -d "${RUNTIME_SNAPSHOT_DIR:-}" ]; then
+            for _rf in tasks.json progress.md .ralph/memory/recent.md; do
+                if [ -f "$RUNTIME_SNAPSHOT_DIR/$_rf" ] && ! diff -q "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf" >/dev/null 2>&1; then
+                    cp "$RUNTIME_SNAPSHOT_DIR/$_rf" "$PROJECT_DIR/$_rf"
+                    RUNTIME_REVERTED="${RUNTIME_REVERTED}${RUNTIME_REVERTED:+ }$_rf"
+                fi
+            done
+            rm -rf "$RUNTIME_SNAPSHOT_DIR"
+        fi
+        if [ -n "$RUNTIME_REVERTED" ]; then
+            log "🔒 Auto-reverted runtime files: $RUNTIME_REVERTED"
+            ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+        fi
         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
 import os
