@@ -143,6 +143,24 @@ PY
 
 RUNTIME_PROTECTED_PATHS=(tasks.json progress.md .ralph/memory)
 RUNTIME_PROTECTION_STASH_REF=""
+AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
+
+is_runtime_protected_path() {
+    local path="${1:-}"
+    local protected_path=""
+
+    [ -n "$path" ] || return 1
+
+    for protected_path in "${RUNTIME_PROTECTED_PATHS[@]}"; do
+        case "$path" in
+            "$protected_path"|"$protected_path"/*)
+                return 0
+                ;;
+        esac
+    done
+
+    return 1
+}
 
 find_runtime_protection_stash_ref() {
     local stash_message="$1"
@@ -210,14 +228,20 @@ auto_revert_out_of_scope_files() {
     local reverted_paths=()
     local path=""
 
+    AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
+
     while IFS= read -r path; do
         [ -n "$path" ] || continue
+        if is_runtime_protected_path "$path"; then
+            continue
+        fi
         reverted_paths+=("$path")
     done <<< "$out_of_scope_raw"
 
     [ "${#reverted_paths[@]}" -gt 0 ] || return 0
 
     revert_paths_from_worktree "${reverted_paths[@]}"
+    AUTO_REVERTED_OUT_OF_SCOPE_PATHS=$(printf '%s\n' "${reverted_paths[@]}")
     log "↩️ Auto-reverted out-of-scope files before lead review: $(printf '%s\n' "${reverted_paths[@]}" | paste -sd ', ' -)"
 }
 
@@ -4327,13 +4351,20 @@ task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
 target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
 actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
 out_of_scope = [path for path in actual_changed if path not in target_files]
-print("\n".join(out_of_scope), end="")
+runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
+filtered = []
+for path in out_of_scope:
+    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
+        continue
+    filtered.append(path)
+print("\n".join(filtered), end="")
 PY
 )
         if [ -n "$SCOPE_ANOMALY" ]; then
-            SCOPE_ANOMALY_REVERTED="$SCOPE_ANOMALY"
+            SCOPE_ANOMALY_REVERTED=""
             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
             auto_revert_out_of_scope_files "$SCOPE_ANOMALY"
+            SCOPE_ANOMALY_REVERTED="$AUTO_REVERTED_OUT_OF_SCOPE_PATHS"
             ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
             SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
@@ -4343,10 +4374,16 @@ task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
 target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
 actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
 out_of_scope = [path for path in actual_changed if path not in target_files]
-print("\n".join(out_of_scope), end="")
+runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
+filtered = []
+for path in out_of_scope:
+    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
+        continue
+    filtered.append(path)
+print("\n".join(filtered), end="")
 PY
 )
-            if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
+            if [ -n "$SCOPE_ANOMALY_REVERTED" ] && [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
                 python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: auto-reverted out-of-scope files: $SCOPE_ANOMALY_REVERTED" >/dev/null 2>&1 || true
             fi
         fi
