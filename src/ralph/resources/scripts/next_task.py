@@ -63,10 +63,8 @@ def main():
         sys.exit(0)
     warnings = build_scope_warnings(task)
     if warnings:
-        task = dict(task)
-        task["scope_too_wide"] = True
-        task["selection_warnings"] = warnings
         for warning in warnings:
+            print(f"WARNING: {warning}", file=sys.stderr)
             log_selection_warning(project_dir, warning)
     print(json.dumps(task, indent=2, ensure_ascii=False))
 
