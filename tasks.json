@@ -3120,8 +3120,8 @@
       "id": "R14-04",
       "phase": "R14",
       "title": "Add phase outcome report after auto/phase runs",
-      "description": "After ./ralph.sh phase or auto completes, generate a structured phase outcome artifact in .ralph/reports/<PHASE>_<DATE>.json with: tasks attempted, tasks completed, tasks blocked, total tokens, total cost, duration, test results summary, any truth mismatches between tasks.json and audit artifacts.",
-      "status": "pending",
+      "description": "[PARKING LOT] After ./ralph.sh phase or auto completes, generate a structured phase outcome artifact in .ralph/reports/<PHASE>_<DATE>.json with: tasks attempted, tasks completed, tasks blocked, total tokens, total cost, duration, test results summary, any truth mismatches between tasks.json and audit artifacts.",
+      "status": "false_positive",
       "priority": "medium",
       "risk": "low",
       "dependencies": [
@@ -3555,9 +3555,9 @@
     {
       "id": "R18-01",
       "phase": "R18",
-      "status": "pending",
+      "status": "false_positive",
       "title": "/dashboard command — all projects summary",
-      "description": "Add a single Telegram dashboard message showing all projects with name, progress percent, trust score, and last activity.",
+      "description": "[PARKING LOT] Add a single Telegram dashboard message showing all projects with name, progress percent, trust score, and last activity.",
       "target_files": [
         "scripts/ralph_bot.py",
         "src/ralph/resources/scripts/ralph_bot.py"
@@ -3572,9 +3572,9 @@
     {
       "id": "R18-02",
       "phase": "R18",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Per-project trust scores",
-      "description": "Compute trust score separately per project using project-local .ralph/audit/. Expose current project trust in /trust and aggregate values in /dashboard.",
+      "description": "[PARKING LOT] Compute trust score separately per project using project-local .ralph/audit/. Expose current project trust in /trust and aggregate values in /dashboard.",
       "target_files": [
         "scripts/trust_score.py",
         "src/ralph/resources/scripts/trust_score.py"
@@ -3590,9 +3590,9 @@
     {
       "id": "R18-03",
       "phase": "R18",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Auto-switch on project completion",
-      "description": "When all tasks in the active project are complete, make auto mode suggest or auto-switch to the next project with pending tasks.",
+      "description": "[PARKING LOT] When all tasks in the active project are complete, make auto mode suggest or auto-switch to the next project with pending tasks.",
       "target_files": [
         "ralph.sh",
         "src/ralph/resources/ralph.sh"
@@ -3607,9 +3607,9 @@
     {
       "id": "R18-04",
       "phase": "R18",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Project archival",
-      "description": "Add /archive <name> support to mark a project as archived in projects.json and hide archived projects from /projects by default unless /projects --all is used.",
+      "description": "[PARKING LOT] Add /archive <name> support to mark a project as archived in projects.json and hide archived projects from /projects by default unless /projects --all is used.",
       "target_files": [
         "scripts/ralph_bot.py",
         "scripts/manage_projects.py"
@@ -3665,9 +3665,9 @@
     {
       "id": "R19-03",
       "phase": "R19",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Enforce target_files limit of 3",
-      "description": "In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
+      "description": "[PARKING LOT] In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
       "target_files": [
         "scripts/next_task.py",
         "src/ralph/resources/scripts/next_task.py"
@@ -3685,9 +3685,9 @@
     {
       "id": "R19-04",
       "phase": "R19",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Ban inline Python heredoc >10 lines in bash",
-      "description": "Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
+      "description": "[PARKING LOT] Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
       "target_files": [
         "ralph.sh",
         "src/ralph/resources/ralph.sh"
@@ -3721,6 +3721,167 @@
       "role": "coder",
       "completed_at": "2026-04-10T10:50:58.581791+00:00",
       "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
+    },
+    {
+      "id": "R20-01",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Fix PGID-aware process termination in bot /stop",
+      "description": "Unify kill logic: bot reads ralph_codex.pgid, kills process group first, then cleans PIDs. Remove duplicate kill paths between ralph_bot.py and ralph.sh. One owner of teardown.",
+      "target_files": [
+        "scripts/ralph_bot.py",
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Start ./ralph.sh auto, force /stop now, confirm: no ralph_codex.pid, no ralph_codex.pgid, no live Codex descendants via pgrep"
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R20-02",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Auto-heal stale state on bot startup and /status",
+      "description": "Centralize stale-state reconciliation. On bot startup, /status, /auto, /switch: check if PID in ralph_state.json is alive. If dead, reset state to idle and control to continue.",
+      "target_files": [
+        "scripts/ralph_bot.py"
+      ],
+      "acceptance_criteria": [
+        "Kill ralph.sh ungracefully. Run /status — must show idle. Run /auto — must start without manual file cleanup."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R20-03",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Harden Lead JSON parsing — single authoritative source",
+      "description": "Always prefer review file. Simplify extraction to: decision, quality_score, issues. Fallback on malformed JSON = skip (not fix). Test against archived lead outputs.",
+      "target_files": [
+        "ralph.sh",
+        "scripts/extract_json.py"
+      ],
+      "acceptance_criteria": [
+        "Replay 10 archived lead outputs from .ralph/audit/. Parser returns stable decision for each. Zero spurious fix fallbacks on well-formed reviews."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder"
+    },
+    {
+      "id": "R20-04",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Fast test gate for auto mode",
+      "description": "Add project config key test_cmd_fast. Auto mode uses fast gate. Full suite only on explicit verify. Fall back to test_cmd if test_cmd_fast not set.",
+      "target_files": [
+        "ralph.sh",
+        ".ralph/project.json"
+      ],
+      "acceptance_criteria": [
+        "Run ./ralph.sh auto on 10 simple/moderate tasks. Average per-task test phase < 2 minutes."
+      ],
+      "priority": "critical",
+      "complexity": "complex",
+      "role": "coder"
+    },
+    {
+      "id": "R20-05",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Safe auto-commit — scope to task files only",
+      "description": "Replace git add -A with scoped staging. Fail fast if untracked unrelated files detected. Use extract_json.py instead of inline grep.",
+      "target_files": [
+        "scripts/auto_commit.sh"
+      ],
+      "acceptance_criteria": [
+        "Create dirty worktree with unrelated files. Run auto-commit. Must refuse to commit unrelated changes."
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder",
+      "depends_on": [
+        "R20-01"
+      ]
+    },
+    {
+      "id": "R20-06",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Reduce bot command surface to reliable core",
+      "description": "Mark /status /tasks /auto /stop /pause /resume /log /tail /diff as primary. Move everything else to secondary/hidden. Update /help.",
+      "target_files": [
+        "scripts/ralph_bot.py"
+      ],
+      "acceptance_criteria": [
+        "/help shows only 9 core commands. All 9 respond correctly. Secondary commands still work if called directly."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder",
+      "depends_on": [
+        "R20-02"
+      ]
+    },
+    {
+      "id": "R20-07",
+      "phase": "R20",
+      "status": "pending",
+      "title": "One-line task failure summary in logs",
+      "description": "After each task, emit TASK_DONE or TASK_FAIL with task_id, reason, retry_count, lead_decision, quality_score, duration. Grep-friendly.",
+      "target_files": [
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "After 5 tasks, rg TASK_(DONE|FAIL) logs/ralph_*.log returns complete night summary."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder",
+      "depends_on": [
+        "R20-03"
+      ]
+    },
+    {
+      "id": "R20-08",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Bootstrap creates runnable project",
+      "description": "ralph-init.sh must produce: git init, minimal Makefile with test target, .ralph/project.json with test_cmd and test_cmd_fast, tasks.json from template, AGENTS.md from template.",
+      "target_files": [
+        "ralph-init.sh",
+        "src/ralph/resources/ralph-init.sh"
+      ],
+      "acceptance_criteria": [
+        "mkdir /tmp/test-proj && cd /tmp/test-proj && ralph init. Then ./ralph.sh status works. make test runs."
+      ],
+      "priority": "medium",
+      "complexity": "moderate",
+      "role": "coder",
+      "depends_on": [
+        "R20-04"
+      ]
+    },
+    {
+      "id": "R20-09",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Explicit gtimeout/timeout check on startup",
+      "description": "At ralph.sh startup, check for gtimeout or timeout. If neither found, exit with clear error. Do not proceed to task queue.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Rename gtimeout temporarily. Run ./ralph.sh auto. Must exit with actionable error in <1 second."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder"
     }
   ]
 }
