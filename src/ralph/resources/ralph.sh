@@ -320,6 +320,32 @@ run_project_test_command() {
     bash -lc "$PROJECT_TEST_CMD"
 }
 
+validate_modified_shell_scripts() {
+    local base_hash="$1"
+    local target_hash="$2"
+    local file_path=""
+    local syntax_errors=""
+    local output=""
+
+    while IFS= read -r file_path; do
+        [ -n "$file_path" ] || continue
+        [ -f "$file_path" ] || continue
+
+        output=$(bash -n "$file_path" 2>&1) || {
+            if [ -n "$output" ]; then
+                syntax_errors="${syntax_errors}${syntax_errors:+$'\n'}$output"
+            else
+                syntax_errors="${syntax_errors}${syntax_errors:+$'\n'}BASH SYNTAX ERROR in: $file_path"
+            fi
+        }
+    done < <(git diff --name-only "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null || true)
+
+    if [ -n "$syntax_errors" ]; then
+        printf '%s\n' "$syntax_errors"
+        return 1
+    fi
+}
+
 is_single_task_mode() {
     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
 }
@@ -4244,21 +4270,16 @@ print(task.get('role', 'coder'))
             GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
         # R19-02: bash syntax gate before expensive test suite
-        SHELL_SYNTAX_FAIL=""
-        for _shf in $(git diff --name-only "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" 2>/dev/null | grep '\.sh$' || true); do
-            if [ -f "$_shf" ] && ! bash -n "$_shf" 2>/dev/null; then
-                SHELL_SYNTAX_FAIL="${SHELL_SYNTAX_FAIL}${SHELL_SYNTAX_FAIL:+ }$_shf"
-            fi
-        done
-        if [ -n "$SHELL_SYNTAX_FAIL" ]; then
-            log "🛑 Bash syntax errors in: $SHELL_SYNTAX_FAIL — skipping test suite"
-            TEST_OUTPUT="BASH SYNTAX ERROR in: $SHELL_SYNTAX_FAIL"
+        SHELL_SYNTAX_OUTPUT=""
+        if ! SHELL_SYNTAX_OUTPUT=$(validate_modified_shell_scripts "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}"); then
+            log "🛑 Bash syntax validation failed in modified .sh files; skipping test suite"
+            TEST_OUTPUT="$SHELL_SYNTAX_OUTPUT"
             TEST_DURATION=0
         else
-        TEST_START=$(date +%s)
-        TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
-        TEST_DURATION=$(( $(date +%s) - TEST_START ))
-        log "⏱️ Test gate took ${TEST_DURATION}s"
+            TEST_START=$(date +%s)
+            TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
+            TEST_DURATION=$(( $(date +%s) - TEST_START ))
+            log "⏱️ Test gate took ${TEST_DURATION}s"
         fi
         log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
         RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
