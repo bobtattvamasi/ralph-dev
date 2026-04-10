@@ -194,6 +194,33 @@ restore_runtime_files_after_coder() {
     fi
 }
 
+revert_paths_from_worktree() {
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+    [ "$#" -gt 0 ] || return 0
+
+    local paths=("$@")
+    git checkout -- "${paths[@]}" >/dev/null 2>&1 || true
+    git clean -fd -- "${paths[@]}" >/dev/null 2>&1 || true
+}
+
+auto_revert_out_of_scope_files() {
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+    local out_of_scope_raw="${1:-}"
+    local reverted_paths=()
+    local path=""
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        reverted_paths+=("$path")
+    done <<< "$out_of_scope_raw"
+
+    [ "${#reverted_paths[@]}" -gt 0 ] || return 0
+
+    revert_paths_from_worktree "${reverted_paths[@]}"
+    log "↩️ Auto-reverted out-of-scope files before lead review: $(printf '%s\n' "${reverted_paths[@]}" | paste -sd ', ' -)"
+}
+
 cleanup() {
     # Prevent recursive cleanup (explicit call + trap).
     if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
@@ -4304,9 +4331,23 @@ print("\n".join(out_of_scope), end="")
 PY
 )
         if [ -n "$SCOPE_ANOMALY" ]; then
+            SCOPE_ANOMALY_REVERTED="$SCOPE_ANOMALY"
             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
+            auto_revert_out_of_scope_files "$SCOPE_ANOMALY"
+            ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+            SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
+import json
+import os
+
+task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
+target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
+actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
+out_of_scope = [path for path in actual_changed if path not in target_files]
+print("\n".join(out_of_scope), end="")
+PY
+)
             if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
-                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: out-of-scope files: $SCOPE_ANOMALY" >/dev/null 2>&1 || true
+                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: auto-reverted out-of-scope files: $SCOPE_ANOMALY_REVERTED" >/dev/null 2>&1 || true
             fi
         fi
 
