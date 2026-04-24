@@ -36,6 +36,43 @@ def is_placeholder_review(value: dict) -> bool:
     return task_id == PLACEHOLDER_TASK_ID or summary == PLACEHOLDER_SUMMARY
 
 
+def normalize_issues(issues: object) -> list[str]:
+    if isinstance(issues, list):
+        return [str(item).strip() for item in issues if str(item).strip()]
+    if issues is None:
+        return []
+    text = str(issues).strip()
+    return [text] if text else []
+
+
+def canonicalize_review(value: dict) -> dict | None:
+    nested_review = value.get("review")
+    if isinstance(nested_review, dict):
+        raw_review = nested_review.get("raw")
+        if isinstance(raw_review, str) and raw_review.strip():
+            parsed_raw = extract_json_object(raw_review)
+            if parsed_raw is not None:
+                return parsed_raw
+        parsed_review = nested_review.get("parsed")
+        if isinstance(parsed_review, dict):
+            parsed_structured = canonicalize_review(parsed_review)
+            if parsed_structured is not None:
+                return parsed_structured
+
+    if not is_review_candidate(value) or is_placeholder_review(value):
+        return None
+
+    decision = str(value.get("decision", "")).strip()
+    if decision == "done":
+        decision = "approve"
+
+    return {
+        "decision": decision,
+        "quality_score": value.get("quality_score", "?"),
+        "issues": normalize_issues(value.get("issues")),
+    }
+
+
 def collect_json_objects(text: str) -> list[dict]:
     candidates: list[dict] = []
     seen: set[str] = set()
@@ -57,21 +94,38 @@ def collect_json_objects(text: str) -> list[dict]:
     return candidates
 
 
+def collect_marker_reviews(text: str) -> list[dict]:
+    candidates: list[dict] = []
+    start = 0
+    while True:
+        marker_start = text.find(REVIEW_MARKER_START, start)
+        if marker_start == -1:
+            break
+        payload_start = marker_start + len(REVIEW_MARKER_START)
+        marker_end = text.find(REVIEW_MARKER_END, payload_start)
+        if marker_end == -1:
+            break
+        parsed = try_load(text[payload_start:marker_end].strip())
+        if parsed is not None:
+            candidates.append(parsed)
+        start = marker_end + len(REVIEW_MARKER_END)
+    return candidates
+
+
 def extract_json_object(text: str) -> dict | None:
-    marker_blocks = re.findall(
-        rf"{REVIEW_MARKER_START}\s*(\{{.*?\}})\s*{REVIEW_MARKER_END}",
-        text,
-        flags=re.DOTALL,
-    )
-    # R20-03: filter marker blocks — drop placeholders/unparseable, take last real one
-    real_marker_reviews: list[dict] = []
-    for block in marker_blocks:
-        parsed = try_load(block.strip())
-        if parsed is not None and is_review_candidate(parsed) and not is_placeholder_review(parsed):
-            real_marker_reviews.append(parsed)
-    if len(real_marker_reviews) >= 1:
-        # Take last — Codex echoes template first, real review last
-        return real_marker_reviews[-1]
+    direct = try_load(text.strip())
+    if direct is not None:
+        direct_review = canonicalize_review(direct)
+        if direct_review is not None:
+            return direct_review
+
+    marker_reviews = [
+        canonicalize_review(candidate)
+        for candidate in collect_marker_reviews(text)
+    ]
+    marker_reviews = [candidate for candidate in marker_reviews if candidate is not None]
+    if marker_reviews:
+        return marker_reviews[-1]
 
     fenced_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
     candidates: list[dict] = []
@@ -84,15 +138,18 @@ def extract_json_object(text: str) -> dict | None:
     trusted: list[dict] = []
     seen: set[str] = set()
     for candidate in candidates:
-        if not is_review_candidate(candidate) or is_placeholder_review(candidate):
+        normalized = canonicalize_review(candidate)
+        if normalized is None:
             continue
-        key = json.dumps(candidate, sort_keys=True, ensure_ascii=False)
+        key = json.dumps(normalized, sort_keys=True, ensure_ascii=False)
         if key in seen:
             continue
         seen.add(key)
-        trusted.append(candidate)
+        trusted.append(normalized)
 
-    if len(trusted) != 1:
+    if not trusted:
+        return None
+    if len(trusted) > 1:
         return None
     return trusted[0]
 

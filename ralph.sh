@@ -3074,14 +3074,24 @@ try:
     d = json.loads(text)
 except Exception:
     d = {}
+task_id = str(d.get('task_id', '')).strip()
+summary = str(d.get('summary', '')).strip().lower()
+if task_id == 'TASK-ID' or summary == 'one line summary':
+    d = {
+        'decision': 'fix',
+        'quality_score': '?',
+        'issues': ['Tech Lead returned placeholder/template JSON.'],
+        'fix_instructions': 'Tech Lead output contained placeholder/template JSON and could not be trusted safely.',
+    }
 decision = d.get('decision', '')
 if decision == 'done':
     d['decision'] = 'approve'
 elif decision not in ('approve', 'fix', 'alert'):
     d = {
-        'decision': 'alert',
+        'decision': 'fix',
         'quality_score': '?',
         'issues': ['Tech Lead output could not be parsed safely.'],
+        'fix_instructions': 'Tech Lead output could not be parsed safely.',
     }
 issues = d.get('issues')
 if isinstance(issues, list):
@@ -3099,6 +3109,7 @@ parse_lead_review_json() {
     local lead_output_json=""
     REVIEW_JSON='{}'
     REVIEW_JSON_SOURCE="none"
+    local fail_closed_json='{"decision":"fix","quality_score":"?","issues":["Tech Lead output could not be parsed safely."],"fix_instructions":"Tech Lead output could not be parsed safely."}'
 
     if [ -s "$REVIEW_FILE" ]; then
         review_file_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || true)
@@ -3107,7 +3118,8 @@ parse_lead_review_json() {
             REVIEW_JSON_SOURCE="review_file"
             return
         fi
-        REVIEW_JSON_SOURCE="review_file_malformed"
+        REVIEW_JSON="$fail_closed_json"
+        REVIEW_JSON_SOURCE="unparsed_fail_closed"
         return
     fi
 
@@ -3118,7 +3130,8 @@ parse_lead_review_json() {
             REVIEW_JSON_SOURCE="lead_output"
             return
         fi
-        REVIEW_JSON_SOURCE="lead_output_malformed"
+        REVIEW_JSON="$fail_closed_json"
+        REVIEW_JSON_SOURCE="unparsed_fail_closed"
         return
     fi
 
@@ -4753,7 +4766,7 @@ Do not ask the coder to update tasks.json, progress.md, final commits, final sta
             log "🔍 DEBUG: Parsed review source: ${REVIEW_JSON_SOURCE:-unknown}"
 
             case "${REVIEW_JSON_SOURCE:-unknown}" in
-                review_file_malformed|lead_output_malformed|unparsed_skipped)
+                review_file_malformed|lead_output_malformed|unparsed_fail_closed|unparsed_skipped)
                     REASON="Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback."
                     log "⚠️ $REASON"
                     skip_current_task "$REASON"

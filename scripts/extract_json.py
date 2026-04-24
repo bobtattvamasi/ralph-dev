@@ -50,10 +50,14 @@ def canonicalize_review(value: dict) -> dict | None:
     if isinstance(nested_review, dict):
         raw_review = nested_review.get("raw")
         if isinstance(raw_review, str) and raw_review.strip():
-            return extract_json_object(raw_review)
+            parsed_raw = extract_json_object(raw_review)
+            if parsed_raw is not None:
+                return parsed_raw
         parsed_review = nested_review.get("parsed")
         if isinstance(parsed_review, dict):
-            return canonicalize_review(parsed_review)
+            parsed_structured = canonicalize_review(parsed_review)
+            if parsed_structured is not None:
+                return parsed_structured
 
     if not is_review_candidate(value) or is_placeholder_review(value):
         return None
@@ -109,6 +113,12 @@ def collect_marker_reviews(text: str) -> list[dict]:
 
 
 def extract_json_object(text: str) -> dict | None:
+    direct = try_load(text.strip())
+    if direct is not None:
+        direct_review = canonicalize_review(direct)
+        if direct_review is not None:
+            return direct_review
+
     marker_reviews = [
         canonicalize_review(candidate)
         for candidate in collect_marker_reviews(text)
