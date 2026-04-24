@@ -141,9 +141,10 @@ for path in Path("/tmp").glob("ralph_coder_*.txt"):
 PY
 }
 
-RUNTIME_PROTECTED_PATHS=(tasks.json progress.md .ralph/memory)
-RUNTIME_PROTECTION_STASH_REF=""
+RUNTIME_PROTECTED_PATHS=(tasks.json progress.md ralph_state.json ralph_control.json .ralph/memory)
+RUNTIME_PROTECTION_BACKUP_DIR=""
 AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
+REVERTED_SCOPE_GUARD_PATHS=""
 
 is_runtime_protected_path() {
     local path="${1:-}"
@@ -162,63 +163,130 @@ is_runtime_protected_path() {
     return 1
 }
 
-find_runtime_protection_stash_ref() {
-    local stash_message="$1"
-
-    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '
-        $2 == msg { print $1; exit }
-        index($2, ": " msg) == length($2) - length(msg) - 1 { print $1; exit }
-    '
-}
-
 protect_runtime_files_before_coder() {
-    RUNTIME_PROTECTION_STASH_REF=""
-    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+    local path=""
+    local source_path=""
+    local backup_path=""
 
-    local stash_message=""
-    local runtime_status=""
-    runtime_status=$(git status --short -- "${RUNTIME_PROTECTED_PATHS[@]}" 2>/dev/null || true)
-    if [ -n "$runtime_status" ]; then
-        stash_message="ralph-runtime-protect-$$-$(date +%s)-$RANDOM"
-        if git stash push --include-untracked -m "$stash_message" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1; then
-            RUNTIME_PROTECTION_STASH_REF=$(find_runtime_protection_stash_ref "$stash_message")
-            if [ -n "$RUNTIME_PROTECTION_STASH_REF" ]; then
-                log "🔒 Stashed runtime-owned files before coder exec"
-            else
-                log "⚠️ Runtime protection stash was created but could not be resolved"
-            fi
-        else
-            log "⚠️ Failed to stash runtime-owned files before coder exec"
+    RUNTIME_PROTECTION_BACKUP_DIR="/tmp/ralph_runtime_guard_${$}_$RANDOM"
+    rm -rf "$RUNTIME_PROTECTION_BACKUP_DIR"
+    mkdir -p "$RUNTIME_PROTECTION_BACKUP_DIR"
+
+    for path in "${RUNTIME_PROTECTED_PATHS[@]}"; do
+        source_path="$PROJECT_DIR/$path"
+        backup_path="$RUNTIME_PROTECTION_BACKUP_DIR/$path"
+        mkdir -p "$(dirname "$backup_path")"
+        if [ -d "$source_path" ]; then
+            cp -R "$source_path" "$backup_path"
+        elif [ -f "$source_path" ]; then
+            cp "$source_path" "$backup_path"
         fi
-    fi
+    done
 
-    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
-    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
+    log "[SCOPE-GUARD] Snapshotted runtime-owned files before coder exec: ${RUNTIME_PROTECTED_PATHS[*]}"
 }
 
 restore_runtime_files_after_coder() {
-    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+    local path=""
+    local source_path=""
+    local backup_path=""
 
-    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
-    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
+    [ -n "${RUNTIME_PROTECTION_BACKUP_DIR:-}" ] || return 0
+    [ -d "$RUNTIME_PROTECTION_BACKUP_DIR" ] || {
+        log "[SCOPE-GUARD] Runtime backup dir missing: $RUNTIME_PROTECTION_BACKUP_DIR"
+        RUNTIME_PROTECTION_BACKUP_DIR=""
+        return 0
+    }
 
-    if [ -n "${RUNTIME_PROTECTION_STASH_REF:-}" ]; then
-        if git stash pop --index "$RUNTIME_PROTECTION_STASH_REF" >/dev/null 2>&1; then
-            log "🔒 Restored runtime-owned files after coder exec"
-        else
-            log "⚠️ Failed to restore stashed runtime-owned files from $RUNTIME_PROTECTION_STASH_REF"
+    for path in "${RUNTIME_PROTECTED_PATHS[@]}"; do
+        source_path="$PROJECT_DIR/$path"
+        backup_path="$RUNTIME_PROTECTION_BACKUP_DIR/$path"
+        if [ -e "$backup_path" ]; then
+            if [ -e "$source_path" ] && ! diff -qr "$source_path" "$backup_path" >/dev/null 2>&1; then
+                log "[SCOPE-GUARD] Restoring modified runtime-owned path: $path"
+            elif [ ! -e "$source_path" ]; then
+                log "[SCOPE-GUARD] Restoring missing runtime-owned path: $path"
+            fi
+            rm -rf "$source_path"
+            mkdir -p "$(dirname "$source_path")"
+            if [ -d "$backup_path" ]; then
+                cp -R "$backup_path" "$source_path"
+            else
+                cp "$backup_path" "$source_path"
+            fi
+        elif [ -e "$source_path" ]; then
+            log "[SCOPE-GUARD] Removing unexpected runtime-owned path: $path"
+            rm -rf "$source_path"
         fi
-        RUNTIME_PROTECTION_STASH_REF=""
-    fi
+    done
+
+    rm -rf "$RUNTIME_PROTECTION_BACKUP_DIR"
+    log "[SCOPE-GUARD] Restored runtime-owned files after coder exec"
+    RUNTIME_PROTECTION_BACKUP_DIR=""
 }
 
 revert_paths_from_worktree() {
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
     [ "$#" -gt 0 ] || return 0
 
+    local base_ref="${REVIEW_BASE_HASH:-HEAD}"
     local paths=("$@")
-    git checkout -- "${paths[@]}" >/dev/null 2>&1 || true
-    git clean -fd -- "${paths[@]}" >/dev/null 2>&1 || true
+    local path=""
+    local tracked_paths=()
+    local reverted_paths=()
+    local tracked_count=0
+    local reverted_count=0
+
+    REVERTED_SCOPE_GUARD_PATHS=""
+
+    for path in "${paths[@]}"; do
+        [ -n "$path" ] || continue
+        if git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+            tracked_paths+=("$path")
+            tracked_count=$((tracked_count + 1))
+            reverted_paths+=("$path")
+            reverted_count=$((reverted_count + 1))
+        elif python3 - "$PROJECT_DIR" "$path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+project_dir = Path(sys.argv[1])
+candidate = sys.argv[2]
+manifest_path = project_dir / "assets_manifest.json"
+if not manifest_path.exists():
+    raise SystemExit(1)
+try:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+for asset in manifest.get("assets", []) or []:
+    for key in ("target_path", "source_path"):
+        value = str(asset.get(key, "")).strip()
+        if value == candidate:
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+        then
+            log "[SCOPE-GUARD] Preserving required asset path from assets_manifest.json: $path"
+        else
+            rm -rf -- "$path"
+            reverted_paths+=("$path")
+            reverted_count=$((reverted_count + 1))
+        fi
+    done
+
+    if [ "$tracked_count" -gt 0 ]; then
+        for path in "${tracked_paths[@]}"; do
+            if git cat-file -e "${base_ref}:${path}" 2>/dev/null; then
+                git checkout "$base_ref" -- "$path" >/dev/null 2>&1 || true
+            else
+                git rm -f -- "$path" >/dev/null 2>&1 || rm -rf -- "$path"
+            fi
+        done
+    fi
+    [ "$reverted_count" -gt 0 ] || return 0
+    REVERTED_SCOPE_GUARD_PATHS=$(printf '%s\n' "${reverted_paths[@]}")
 }
 
 worktree_changed_files() {
@@ -251,8 +319,10 @@ auto_revert_out_of_scope_files() {
     [ "${#reverted_paths[@]}" -gt 0 ] || return 0
 
     revert_paths_from_worktree "${reverted_paths[@]}"
-    AUTO_REVERTED_OUT_OF_SCOPE_PATHS=$(printf '%s\n' "${reverted_paths[@]}")
-    log "↩️ Auto-reverted out-of-scope files before lead review: $(printf '%s\n' "${reverted_paths[@]}" | paste -sd ', ' -)"
+    AUTO_REVERTED_OUT_OF_SCOPE_PATHS="${REVERTED_SCOPE_GUARD_PATHS:-}"
+    if [ -n "$AUTO_REVERTED_OUT_OF_SCOPE_PATHS" ]; then
+        log "[SCOPE-GUARD] ↩️ Auto-reverted out-of-scope files before lead review: $(printf '%s\n' "$AUTO_REVERTED_OUT_OF_SCOPE_PATHS" | paste -sd ', ' -)"
+    fi
 }
 
 cleanup() {
@@ -908,6 +978,7 @@ handoff_stage_paths() {
 handoff_is_runtime_owned_path() {
     case "${1:-}" in
         tasks.json|progress.md|audit_report.md|ralph_state.json|ralph_control.json|ralph_alerts.log|ralph_main.pid|ralph_codex.pid|ralph_codex.pgid|.ralph/memory/recent.md|.ralph/memory/decisions.md|.ralph/memory/patterns.md) return 0 ;;
+        *.lock) return 0 ;;
         logs/*|.pytest_cache/*|__pycache__/*|.ralph/audit/*|ralph/audit/*) return 0 ;;
     esac
     return 1
@@ -3004,18 +3075,21 @@ try:
 except Exception:
     d = {}
 decision = d.get('decision', '')
-task_id = str(d.get('task_id', '')).strip()
-summary = str(d.get('summary', '')).strip().lower()
-if task_id == 'TASK-ID' or summary == 'one line summary':
-    d['decision'] = 'fix'
-    d['fix_instructions'] = d.get('fix_instructions') or 'Tech Lead returned placeholder/template JSON instead of a final review. Return one authoritative final JSON review only.'
-    d.pop('alert_reason', None)
-elif decision == 'done':
+if decision == 'done':
     d['decision'] = 'approve'
 elif decision not in ('approve', 'fix', 'alert'):
-    d['decision'] = 'fix'
-    d['fix_instructions'] = d.get('fix_instructions') or 'Tech Lead returned invalid JSON. Retry: implement the task correctly and ensure tests pass.'
-    d.pop('alert_reason', None)
+    d = {
+        'decision': 'alert',
+        'quality_score': '?',
+        'issues': ['Tech Lead output could not be parsed safely.'],
+    }
+issues = d.get('issues')
+if isinstance(issues, list):
+    d['issues'] = [str(item).strip() for item in issues if str(item).strip()]
+elif issues in (None, ''):
+    d['issues'] = []
+else:
+    d['issues'] = [str(issues).strip()]
 print(json.dumps(d, ensure_ascii=False))
 ")
 }
@@ -3023,8 +3097,6 @@ print(json.dumps(d, ensure_ascii=False))
 parse_lead_review_json() {
     local review_file_json=""
     local lead_output_json=""
-    local review_file_decision=""
-    local lead_output_decision=""
     REVIEW_JSON='{}'
     REVIEW_JSON_SOURCE="none"
 
@@ -3034,40 +3106,18 @@ parse_lead_review_json() {
     if [ -n "$review_file_json" ] && [ "$review_file_json" != "{}" ]; then
         REVIEW_JSON="$review_file_json"
         REVIEW_JSON_SOURCE="review_file"
+        return
     fi
 
     if [ -n "$lead_output_json" ] && [ "$lead_output_json" != "{}" ]; then
-        if [ "$REVIEW_JSON_SOURCE" = "review_file" ]; then
-            review_file_decision=$(echo "$review_file_json" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(str(d.get('decision', '')).strip())
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
-            lead_output_decision=$(echo "$lead_output_json" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(str(d.get('decision', '')).strip())
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
-            if [ -n "$review_file_decision" ] && [ -n "$lead_output_decision" ] && [ "$review_file_decision" != "$lead_output_decision" ]; then
-                REVIEW_JSON='{"decision":"fix","fix_instructions":"Tech Lead output was ambiguous: authoritative review file and stdout disagreed. Return one final JSON review only.","progress_note":"Trust layer fail-closed on review mismatch"}'
-                REVIEW_JSON_SOURCE="mismatch_fail_closed"
-                return
-            fi
-        elif [ "$REVIEW_JSON" = "{}" ]; then
-            REVIEW_JSON="$lead_output_json"
-            REVIEW_JSON_SOURCE="lead_output"
-        fi
+        REVIEW_JSON="$lead_output_json"
+        REVIEW_JSON_SOURCE="lead_output"
+        return
     fi
 
     if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
-        REVIEW_JSON='{"decision":"fix","fix_instructions":"Tech Lead output could not be parsed safely. Return one final JSON review only.","progress_note":"Trust layer fail-closed: unparseable review"}'
-        REVIEW_JSON_SOURCE="unparsed_fail_closed"
+        REVIEW_JSON='{"decision":"alert","quality_score":"?","issues":["Tech Lead output could not be parsed safely."]}'
+        REVIEW_JSON_SOURCE="unparsed_skipped"
     fi
 }
 
@@ -3134,6 +3184,9 @@ stage_changed_paths() {
     while IFS= read -r path; do
         [ -n "$path" ] || continue
         if handoff_is_runtime_owned_path "$path"; then
+            continue
+        fi
+        if [ ! -e "$path" ] && ! git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
             continue
         fi
         if [ -e "$path" ] && [ ! -r "$path" ]; then
@@ -4451,19 +4504,56 @@ print(task.get('role', 'coder'))
         if [ -n "$LONG_PYTHON_HEREDOC_ANOMALY" ]; then
             log "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts: $(printf '%s' "$LONG_PYTHON_HEREDOC_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
         fi
-        ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
+        ACTUAL_CHANGED_FILES=$(collect_preclosure_changed_files_json | python3 -c '
+import json
+import sys
+data = json.load(sys.stdin)
+print("\n".join(data), end="")
+' 2>/dev/null || true)
         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
 import os
+from pathlib import Path
 
 task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
 target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
 actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
 out_of_scope = [path for path in actual_changed if path not in target_files]
-runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
+bookkeeping_exact = {
+    "tasks.json",
+    "progress.md",
+    "ralph_state.json",
+    "ralph_control.json",
+    "ralph_alerts.log",
+    "ralph_main.pid",
+    "ralph_codex.pid",
+    "ralph_codex.pgid",
+    ".ralph/memory/recent.md",
+    ".ralph/memory/decisions.md",
+    ".ralph/memory/patterns.md",
+}
+bookkeeping_prefixes = ("logs/", ".pytest_cache/", "__pycache__/", ".ralph/audit/", "ralph/audit/")
+asset_paths = {"assets_manifest.json"}
+manifest_path = Path("assets_manifest.json")
+if manifest_path.exists():
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        manifest = {}
+    for asset in manifest.get("assets", []) or []:
+        for key in ("source_path", "target_path"):
+            value = str(asset.get(key, "")).strip()
+            if value:
+                asset_paths.add(value)
 filtered = []
 for path in out_of_scope:
-    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
+    if path.endswith(".lock"):
+        continue
+    if path in bookkeeping_exact:
+        continue
+    if any(path.startswith(prefix) for prefix in bookkeeping_prefixes):
+        continue
+    if path in asset_paths:
         continue
     filtered.append(path)
 print("\n".join(filtered), end="")
@@ -4474,19 +4564,56 @@ PY
             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
             auto_revert_out_of_scope_files "$SCOPE_ANOMALY"
             SCOPE_ANOMALY_REVERTED="$AUTO_REVERTED_OUT_OF_SCOPE_PATHS"
-            ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
+            ACTUAL_CHANGED_FILES=$(collect_preclosure_changed_files_json | python3 -c '
+import json
+import sys
+data = json.load(sys.stdin)
+print("\n".join(data), end="")
+' 2>/dev/null || true)
             SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
 import json
 import os
+from pathlib import Path
 
 task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
 target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
 actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
 out_of_scope = [path for path in actual_changed if path not in target_files]
-runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
+bookkeeping_exact = {
+    "tasks.json",
+    "progress.md",
+    "ralph_state.json",
+    "ralph_control.json",
+    "ralph_alerts.log",
+    "ralph_main.pid",
+    "ralph_codex.pid",
+    "ralph_codex.pgid",
+    ".ralph/memory/recent.md",
+    ".ralph/memory/decisions.md",
+    ".ralph/memory/patterns.md",
+}
+bookkeeping_prefixes = ("logs/", ".pytest_cache/", "__pycache__/", ".ralph/audit/", "ralph/audit/")
+asset_paths = {"assets_manifest.json"}
+manifest_path = Path("assets_manifest.json")
+if manifest_path.exists():
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        manifest = {}
+    for asset in manifest.get("assets", []) or []:
+        for key in ("source_path", "target_path"):
+            value = str(asset.get(key, "")).strip()
+            if value:
+                asset_paths.add(value)
 filtered = []
 for path in out_of_scope:
-    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
+    if path.endswith(".lock"):
+        continue
+    if path in bookkeeping_exact:
+        continue
+    if any(path.startswith(prefix) for prefix in bookkeeping_prefixes):
+        continue
+    if path in asset_paths:
         continue
     filtered.append(path)
 print("\n".join(filtered), end="")
@@ -4791,7 +4918,17 @@ import sys, json
 text = sys.stdin.read().strip() or '{}'
 try:
     d = json.loads(text)
-    print(d.get('fix_instructions', 'Fix failing tests and unmet criteria'))
+    issues = d.get('issues')
+    if isinstance(issues, list):
+        items = [str(item).strip() for item in issues if str(item).strip()]
+    elif issues is None:
+        items = []
+    else:
+        items = [str(issues).strip()]
+    if items:
+        print(items[0])
+    else:
+        print('Fix failing tests and unmet criteria')
 except Exception:
     print('Fix failing tests and unmet criteria')
 " 2>/dev/null || echo "Fix the issues")
@@ -4851,7 +4988,17 @@ import sys, json
 text = sys.stdin.read().strip() or '{}'
 try:
     d = json.loads(text)
-    print(d.get('alert_reason', 'Unknown issue'))
+    issues = d.get('issues')
+    if isinstance(issues, list):
+        items = [str(item).strip() for item in issues if str(item).strip()]
+    elif issues is None:
+        items = []
+    else:
+        items = [str(issues).strip()]
+    if items:
+        print(items[0])
+    else:
+        print('Unknown issue')
 except Exception:
     print('Unknown issue')
 " 2>/dev/null || echo "Unknown")
