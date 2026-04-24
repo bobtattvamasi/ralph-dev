@@ -1662,11 +1662,11 @@ set_control_action() {
 }
 
 skip_current_task() {
-    local reason="Skipped by user via Telegram"
-    log "⏭ Skip signal received for $TASK_ID"
+    local reason="${1:-Skipped by user via Telegram}"
+    log "⏭ Skip signal received for $TASK_ID: $reason"
     python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" skipped "$reason" >/dev/null 2>&1 || true
     write_state "running" "$TASK_ID" "skipped" "$reason"
-    notify "⏭ $TASK_ID skipped by user"
+    notify "⏭ $TASK_ID skipped: $reason"
     clear_control_action
 }
 
@@ -3100,25 +3100,29 @@ parse_lead_review_json() {
     REVIEW_JSON='{}'
     REVIEW_JSON_SOURCE="none"
 
-    review_file_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || true)
-    lead_output_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$LEAD_OUTPUT" 2>/dev/null || true)
-
-    if [ -n "$review_file_json" ] && [ "$review_file_json" != "{}" ]; then
-        REVIEW_JSON="$review_file_json"
-        REVIEW_JSON_SOURCE="review_file"
+    if [ -s "$REVIEW_FILE" ]; then
+        review_file_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || true)
+        if [ -n "$review_file_json" ] && [ "$review_file_json" != "{}" ]; then
+            REVIEW_JSON="$review_file_json"
+            REVIEW_JSON_SOURCE="review_file"
+            return
+        fi
+        REVIEW_JSON_SOURCE="review_file_malformed"
         return
     fi
 
-    if [ -n "$lead_output_json" ] && [ "$lead_output_json" != "{}" ]; then
-        REVIEW_JSON="$lead_output_json"
-        REVIEW_JSON_SOURCE="lead_output"
+    if [ -s "$LEAD_OUTPUT" ]; then
+        lead_output_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$LEAD_OUTPUT" 2>/dev/null || true)
+        if [ -n "$lead_output_json" ] && [ "$lead_output_json" != "{}" ]; then
+            REVIEW_JSON="$lead_output_json"
+            REVIEW_JSON_SOURCE="lead_output"
+            return
+        fi
+        REVIEW_JSON_SOURCE="lead_output_malformed"
         return
     fi
 
-    if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
-        REVIEW_JSON='{"decision":"alert","quality_score":"?","issues":["Tech Lead output could not be parsed safely."]}'
-        REVIEW_JSON_SOURCE="unparsed_skipped"
-    fi
+    REVIEW_JSON_SOURCE="unparsed_skipped"
 }
 
 collect_preclosure_changed_files_json() {
@@ -4747,6 +4751,18 @@ Do not ask the coder to update tasks.json, progress.md, final commits, final sta
             log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
             log "🔍 DEBUG: Parsed review JSON: $(echo "$REVIEW_JSON" | head -c 200)"
             log "🔍 DEBUG: Parsed review source: ${REVIEW_JSON_SOURCE:-unknown}"
+
+            case "${REVIEW_JSON_SOURCE:-unknown}" in
+                review_file_malformed|lead_output_malformed|unparsed_skipped)
+                    REASON="Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback."
+                    log "⚠️ $REASON"
+                    skip_current_task "$REASON"
+                    TASK_DONE=true
+                    TASK_SKIPPED=true
+                    rm -f "$REVIEW_FILE" "$CODER_OUTPUT" "$LEAD_OUTPUT"
+                    break
+                    ;;
+            esac
         fi
 
         CONTROL_STATUS=0

@@ -36,7 +36,25 @@ def is_placeholder_review(value: dict) -> bool:
     return task_id == PLACEHOLDER_TASK_ID or summary == PLACEHOLDER_SUMMARY
 
 
+def normalize_issues(issues: object) -> list[str]:
+    if isinstance(issues, list):
+        return [str(item).strip() for item in issues if str(item).strip()]
+    if issues is None:
+        return []
+    text = str(issues).strip()
+    return [text] if text else []
+
+
 def canonicalize_review(value: dict) -> dict | None:
+    nested_review = value.get("review")
+    if isinstance(nested_review, dict):
+        raw_review = nested_review.get("raw")
+        if isinstance(raw_review, str) and raw_review.strip():
+            return extract_json_object(raw_review)
+        parsed_review = nested_review.get("parsed")
+        if isinstance(parsed_review, dict):
+            return canonicalize_review(parsed_review)
+
     if not is_review_candidate(value) or is_placeholder_review(value):
         return None
 
@@ -44,19 +62,10 @@ def canonicalize_review(value: dict) -> dict | None:
     if decision == "done":
         decision = "approve"
 
-    issues = value.get("issues")
-    if isinstance(issues, list):
-        normalized_issues = [str(item).strip() for item in issues if str(item).strip()]
-    elif issues is None:
-        normalized_issues = []
-    else:
-        text = str(issues).strip()
-        normalized_issues = [text] if text else []
-
     return {
         "decision": decision,
         "quality_score": value.get("quality_score", "?"),
-        "issues": normalized_issues,
+        "issues": normalize_issues(value.get("issues")),
     }
 
 
@@ -130,7 +139,9 @@ def extract_json_object(text: str) -> dict | None:
 
     if not trusted:
         return None
-    return trusted[-1]
+    if len(trusted) > 1:
+        return None
+    return trusted[0]
 
 
 def main() -> None:
