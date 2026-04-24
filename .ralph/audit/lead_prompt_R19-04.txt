@@ -6,7 +6,7 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
   "phase": "R19",
   "status": "pending",
   "title": "Ban inline Python heredoc >10 lines in bash",
-  "description": "Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
+  "description": "[PARKING LOT] Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
   "target_files": [
     "ralph.sh",
     "src/ralph/resources/ralph.sh"
@@ -17,7 +17,9 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
   ],
   "priority": "high",
   "complexity": "simple",
-  "role": "coder"
+  "role": "coder",
+  "completed_at": null,
+  "revision_notes": "reset: false_positive review"
 }
 
 ## Target Files
@@ -26,6 +28,20 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
 
 ## Scope Anomaly Warning
 The following files were modified but are NOT in target_files:
+.ralph/audit/R19-01.json
+.ralph/audit/R19-02.json
+.ralph/audit/R19-03.json
+.ralph/audit/R19-05.json
+.ralph/audit/lead_prompt_R19-01.txt
+.ralph/audit/lead_prompt_R19-02.txt
+.ralph/audit/lead_prompt_R19-03.txt
+.ralph/audit/lead_prompt_R19-04.txt
+.ralph/audit/lead_prompt_R19-05.txt
+.ralph/audit/lead_reasoning_R19-01.txt
+.ralph/audit/lead_reasoning_R19-02.txt
+.ralph/audit/lead_reasoning_R19-03.txt
+.ralph/audit/lead_reasoning_R19-04.txt
+.ralph/audit/lead_reasoning_R19-05.txt
 .ralph/memory/recent.md
 progress.md
 tasks.json
@@ -78,550 +94,417 @@ END_RALPH_REVIEW_JSON
 ## Diff
 ```diff
 diff --git a/ralph.sh b/ralph.sh
-index e72b6c1..f013c5a 100755
+index 60971bf..1203e92 100755
 --- a/ralph.sh
 +++ b/ralph.sh
-@@ -3113,6 +3113,231 @@ validate_modified_shell_syntax() {
-     return "$failed"
+@@ -410,6 +410,101 @@ validate_modified_shell_scripts() {
+     fi
  }
  
-+detect_long_python_heredoc_scope_anomalies() {
++detect_long_python_heredocs_in_modified_shell_scripts() {
 +    local base_hash="$1"
 +    local target_hash="$2"
-+    local shell_paths=""
-+    local path=""
-+    local findings=""
-+    local current_records_file=""
-+    local base_records_file=""
-+    local added_ranges_file=""
-+    local base_snapshot_file=""
-+
-+    shell_paths=$(collect_modified_shell_paths "$base_hash" "$target_hash")
-+    [ -n "$shell_paths" ] || return 0
-+
-+    while IFS= read -r path; do
-+        [ -n "$path" ] || continue
-+        [ -f "$path" ] || continue
-+        current_records_file=$(mktemp)
-+        base_records_file=$(mktemp)
-+        added_ranges_file=$(mktemp)
-+        base_snapshot_file=$(mktemp)
-+
-+        awk '
-+function start_python_heredoc(line,   marker) {
-+    if (line !~ /<<-?[[:space:]]*["\047]?(PY|PYTHON)["\047]?([[:space:]]*#.*)?$/) {
-+        return 0
++    local violations=""
++    violations=$(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | awk '
++function extract_marker(line, token) {
++    if (match(line, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
++        token = substr(line, RSTART, RLENGTH)
++        gsub(/^.*<</, "", token)
++        gsub(/-/, "", token)
++        gsub(/[[:space:]]/, "", token)
++        gsub(/["'\'']/, "", token)
++        return token
 +    }
-+    allow_tabs = (line ~ /<<-/) ? 1 : 0
-+    marker = line
-+    sub(/^.*<<-?[[:space:]]*["\047]?/, "", marker)
-+    sub(/["\047]?([[:space:]]*#.*)?$/, "", marker)
-+    delimiter = marker
-+    return delimiter == "PY" || delimiter == "PYTHON"
++    return ""
 +}
-+function end_python_heredoc(line,   pattern) {
-+    if (!delimiter) {
-+        return 0
++function flush_block() {
++    if (block_active && block_complete && body_lines > 10) {
++        printf "%s%s:%d python heredoc (%s) is %d lines; extract to scripts/", output ? ORS : "", current_file, block_start_line, block_marker, body_lines
++        output = 1
 +    }
-+    pattern = allow_tabs ? "^\t*" delimiter "[[:space:]]*$" : "^" delimiter "[[:space:]]*$"
-+    return line ~ pattern
++    block_active = 0
++    block_complete = 0
++    block_marker = ""
++    block_start_line = 0
++    body_lines = 0
 +}
-+{
-+    if (!in_heredoc) {
-+        if (start_python_heredoc($0)) {
-+            in_heredoc = 1
-+            header_line = NR
-+            header_text = $0
-+            body_start_line = NR + 1
-+            body_lines = 0
-+            body_text = ""
-+        }
-+        next
-+    }
-+    if (end_python_heredoc($0)) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR - 1, body_lines, escaped_body
-+        in_heredoc = 0
-+        delimiter = ""
-+        allow_tabs = 0
-+        header_line = 0
-+        header_text = ""
-+        body_start_line = 0
-+        body_lines = 0
-+        body_text = ""
-+        next
-+    }
-+    body_lines++
-+    body_text = body_text $0 "\n"
++/^diff --git / {
++    flush_block()
++    current_file = ""
++    in_hunk = 0
++    next
 +}
-+END {
-+    if (in_heredoc) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR, body_lines, escaped_body
-+    }
++/^\+\+\+ b\// {
++    flush_block()
++    current_file = substr($0, 7)
++    next
 +}
-+' "$path" > "$current_records_file"
-+
-+        git diff --unified=0 --no-color "$base_hash" "$target_hash" -- "$path" | awk '
 +/^@@ / {
-+    added_range = $0
-+    sub(/^.*\+/, "", added_range)
-+    sub(/[[:space:]].*$/, "", added_range)
-+    split(added_range, parts, ",")
-+    start = parts[1] + 0
-+    count = (length(parts) > 1 ? parts[2] + 0 : 1)
-+    if (count <= 0) {
-+        next
++    flush_block()
++    in_hunk = 1
++    if (match($0, /\+([0-9]+)/, parts)) {
++        new_line = parts[1] + 0
++    } else {
++        new_line = 0
 +    }
-+    end = start + count - 1
-+    printf "%d\t%d\n", start, end
++    next
 +}
-+' > "$added_ranges_file"
-+
-+        if git cat-file -e "${base_hash}:${path}" 2>/dev/null; then
-+            git show "${base_hash}:${path}" > "$base_snapshot_file" 2>/dev/null || true
-+            awk '
-+function start_python_heredoc(line,   marker) {
-+    if (line !~ /<<-?[[:space:]]*["\047]?(PY|PYTHON)["\047]?([[:space:]]*#.*)?$/) {
-+        return 0
-+    }
-+    allow_tabs = (line ~ /<<-/) ? 1 : 0
-+    marker = line
-+    sub(/^.*<<-?[[:space:]]*["\047]?/, "", marker)
-+    sub(/["\047]?([[:space:]]*#.*)?$/, "", marker)
-+    delimiter = marker
-+    return delimiter == "PY" || delimiter == "PYTHON"
++!in_hunk || current_file == "" {
++    next
 +}
-+function end_python_heredoc(line,   pattern) {
-+    if (!delimiter) {
-+        return 0
-+    }
-+    pattern = allow_tabs ? "^\t*" delimiter "[[:space:]]*$" : "^" delimiter "[[:space:]]*$"
-+    return line ~ pattern
-+}
-+{
-+    if (!in_heredoc) {
-+        if (start_python_heredoc($0)) {
-+            in_heredoc = 1
-+            header_line = NR
-+            header_text = $0
-+            body_start_line = NR + 1
-+            body_lines = 0
-+            body_text = ""
++/^\+/ && $0 !~ /^\+\+\+/ {
++    line = substr($0, 2)
++    if (block_active) {
++        if (line == block_marker) {
++            block_complete = 1
++            flush_block()
++        } else {
++            body_lines++
 +        }
++        new_line++
 +        next
 +    }
-+    if (end_python_heredoc($0)) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR - 1, body_lines, escaped_body
-+        in_heredoc = 0
-+        delimiter = ""
-+        allow_tabs = 0
-+        header_line = 0
-+        header_text = ""
-+        body_start_line = 0
++
++    marker = extract_marker(line)
++    if (marker != "") {
++        block_active = 1
++        block_complete = 0
++        block_marker = marker
++        block_start_line = new_line
 +        body_lines = 0
-+        body_text = ""
-+        next
 +    }
-+    body_lines++
-+    body_text = body_text $0 "\n"
-+}
-+END {
-+    if (in_heredoc) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR, body_lines, escaped_body
-+    }
-+}
-+' "$base_snapshot_file" > "$base_records_file"
-+        fi
-+
-+        findings+=$(awk -v path="$path" -F '\t' '
-+function overlaps_changed_lines(start_line, end_line,   i) {
-+    for (i = 1; i <= changed_count; i++) {
-+        if (changed_start[i] <= end_line && changed_end[i] >= start_line) {
-+            return 1
-+        }
-+    }
-+    return 0
-+}
-+FILENAME == ARGV[1] {
-+    if (NF >= 6) {
-+        key = $1 SUBSEP ($5 + 0) SUBSEP $6
-+        base_exact_count[key]++
-+    }
++    new_line++
 +    next
 +}
-+FILENAME == ARGV[2] {
-+    if (NF >= 6) {
-+        current_count++
-+        current_header_text[current_count] = $1
-+        current_header_line[current_count] = $2 + 0
-+        current_body_start[current_count] = $3 + 0
-+        current_body_end[current_count] = $4 + 0
-+        current_body_lines[current_count] = $5 + 0
-+        current_body_text[current_count] = $6
-+    }
++/^-/ && $0 !~ /^---/ {
++    next
++}
++/^ / {
++    flush_block()
++    new_line++
 +    next
 +}
 +{
-+    if (NF >= 2) {
-+        changed_count++
-+        changed_start[changed_count] = $1 + 0
-+        changed_end[changed_count] = $2 + 0
-+    }
++    flush_block()
++    in_hunk = 0
 +}
 +END {
-+    for (i = 1; i <= current_count; i++) {
-+        if (current_body_lines[i] <= 10) {
-+            continue
-+        }
-+        if (!overlaps_changed_lines(current_header_line[i], current_body_end[i])) {
-+            continue
-+        }
-+        key = current_header_text[i] SUBSEP current_body_lines[i] SUBSEP current_body_text[i]
-+        if (base_exact_count[key] > 0) {
-+            continue
-+        }
-+        printf "%s:%d-%d python heredoc (%d lines) exceeds 10 lines; extract to scripts/.\n", path, current_body_start[i], current_body_end[i], current_body_lines[i]
-+    }
++    flush_block()
 +}
-+' "$base_records_file" "$current_records_file" "$added_ranges_file")
++')
 +
-+        rm -f "$current_records_file" "$base_records_file" "$added_ranges_file" "$base_snapshot_file"
-+    done <<< "$shell_paths"
-+
-+    printf '%s' "$findings"
++    printf '%s' "$violations"
 +}
 +
- stage_changed_paths() {
-     local changed_paths=""
-     local path=""
-@@ -4475,6 +4700,7 @@ $TEST_OUTPUT"
+ is_single_task_mode() {
+     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
+ }
+@@ -4352,6 +4447,10 @@ print(task.get('role', 'coder'))
+         else
              rm -f "$RETRY_TEST_OUTPUT_FILE"
          fi
-         ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
-+        HEREDOC_SCOPE_ANOMALY=$(detect_long_python_heredoc_scope_anomalies "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH")
++        LONG_PYTHON_HEREDOC_ANOMALY=$(detect_long_python_heredocs_in_modified_shell_scripts "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}")
++        if [ -n "$LONG_PYTHON_HEREDOC_ANOMALY" ]; then
++            log "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts: $(printf '%s' "$LONG_PYTHON_HEREDOC_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
++        fi
+         ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
          SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
  import json
- import os
-@@ -4486,6 +4712,12 @@ out_of_scope = [path for path in actual_changed if path not in target_files]
- print("\n".join(out_of_scope), end="")
- PY
- )
-+        if [ -n "$HEREDOC_SCOPE_ANOMALY" ]; then
-+            log "⚠️ Scope anomaly: modified shell scripts contain Python heredoc blocks longer than 10 lines: $(printf '%s' "$HEREDOC_SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
-+            if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
-+                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: Python heredoc blocks longer than 10 lines detected in shell scripts: $HEREDOC_SCOPE_ANOMALY" >/dev/null 2>&1 || true
-+            fi
-+        fi
-         if [ -n "$SCOPE_ANOMALY" ]; then
-             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
-             if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
-@@ -4547,6 +4779,14 @@ print("\n".join(f"- {item}" for item in items) if items else "- None specified")
+@@ -4445,6 +4544,14 @@ print("\n".join(f"- {item}" for item in items) if items else "- None specified")
  The following files were modified but are NOT in target_files:
  $SCOPE_ANOMALY
  Please evaluate whether these changes are justified.
 +"
 +            fi
-+            if [ -n "$HEREDOC_SCOPE_ANOMALY" ]; then
++            if [ -n "$LONG_PYTHON_HEREDOC_ANOMALY" ]; then
 +                LEAD_SCOPE_ANOMALY_WARNING="${LEAD_SCOPE_ANOMALY_WARNING}
 +## Scope Anomaly Warning
-+The following shell files contain Python heredocs longer than 10 lines:
-+$HEREDOC_SCOPE_ANOMALY
-+Require extraction to scripts/ instead of keeping embedded Python in bash.
++The following modified shell scripts contain Python heredocs longer than 10 lines:
++$LONG_PYTHON_HEREDOC_ANOMALY
++Require extraction into scripts/ before approval.
  "
              fi
              LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${LEAD_ROLE_FILE} first.
 diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
-index e72b6c1..f013c5a 100755
+index 60971bf..1203e92 100755
 --- a/src/ralph/resources/ralph.sh
 +++ b/src/ralph/resources/ralph.sh
-@@ -3113,6 +3113,231 @@ validate_modified_shell_syntax() {
-     return "$failed"
+@@ -410,6 +410,101 @@ validate_modified_shell_scripts() {
+     fi
  }
  
-+detect_long_python_heredoc_scope_anomalies() {
++detect_long_python_heredocs_in_modified_shell_scripts() {
 +    local base_hash="$1"
 +    local target_hash="$2"
-+    local shell_paths=""
-+    local path=""
-+    local findings=""
-+    local current_records_file=""
-+    local base_records_file=""
-+    local added_ranges_file=""
-+    local base_snapshot_file=""
-+
-+    shell_paths=$(collect_modified_shell_paths "$base_hash" "$target_hash")
-+    [ -n "$shell_paths" ] || return 0
-+
-+    while IFS= read -r path; do
-+        [ -n "$path" ] || continue
-+        [ -f "$path" ] || continue
-+        current_records_file=$(mktemp)
-+        base_records_file=$(mktemp)
-+        added_ranges_file=$(mktemp)
-+        base_snapshot_file=$(mktemp)
-+
-+        awk '
-+function start_python_heredoc(line,   marker) {
-+    if (line !~ /<<-?[[:space:]]*["\047]?(PY|PYTHON)["\047]?([[:space:]]*#.*)?$/) {
-+        return 0
++    local violations=""
++    violations=$(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | awk '
++function extract_marker(line, token) {
++    if (match(line, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
++        token = substr(line, RSTART, RLENGTH)
++        gsub(/^.*<</, "", token)
++        gsub(/-/, "", token)
++        gsub(/[[:space:]]/, "", token)
++        gsub(/["'\'']/, "", token)
++        return token
 +    }
-+    allow_tabs = (line ~ /<<-/) ? 1 : 0
-+    marker = line
-+    sub(/^.*<<-?[[:space:]]*["\047]?/, "", marker)
-+    sub(/["\047]?([[:space:]]*#.*)?$/, "", marker)
-+    delimiter = marker
-+    return delimiter == "PY" || delimiter == "PYTHON"
++    return ""
 +}
-+function end_python_heredoc(line,   pattern) {
-+    if (!delimiter) {
-+        return 0
++function flush_block() {
++    if (block_active && block_complete && body_lines > 10) {
++        printf "%s%s:%d python heredoc (%s) is %d lines; extract to scripts/", output ? ORS : "", current_file, block_start_line, block_marker, body_lines
++        output = 1
 +    }
-+    pattern = allow_tabs ? "^\t*" delimiter "[[:space:]]*$" : "^" delimiter "[[:space:]]*$"
-+    return line ~ pattern
++    block_active = 0
++    block_complete = 0
++    block_marker = ""
++    block_start_line = 0
++    body_lines = 0
 +}
-+{
-+    if (!in_heredoc) {
-+        if (start_python_heredoc($0)) {
-+            in_heredoc = 1
-+            header_line = NR
-+            header_text = $0
-+            body_start_line = NR + 1
-+            body_lines = 0
-+            body_text = ""
-+        }
-+        next
-+    }
-+    if (end_python_heredoc($0)) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR - 1, body_lines, escaped_body
-+        in_heredoc = 0
-+        delimiter = ""
-+        allow_tabs = 0
-+        header_line = 0
-+        header_text = ""
-+        body_start_line = 0
-+        body_lines = 0
-+        body_text = ""
-+        next
-+    }
-+    body_lines++
-+    body_text = body_text $0 "\n"
++/^diff --git / {
++    flush_block()
++    current_file = ""
++    in_hunk = 0
++    next
 +}
-+END {
-+    if (in_heredoc) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR, body_lines, escaped_body
-+    }
++/^\+\+\+ b\// {
++    flush_block()
++    current_file = substr($0, 7)
++    next
 +}
-+' "$path" > "$current_records_file"
-+
-+        git diff --unified=0 --no-color "$base_hash" "$target_hash" -- "$path" | awk '
 +/^@@ / {
-+    added_range = $0
-+    sub(/^.*\+/, "", added_range)
-+    sub(/[[:space:]].*$/, "", added_range)
-+    split(added_range, parts, ",")
-+    start = parts[1] + 0
-+    count = (length(parts) > 1 ? parts[2] + 0 : 1)
-+    if (count <= 0) {
-+        next
++    flush_block()
++    in_hunk = 1
++    if (match($0, /\+([0-9]+)/, parts)) {
++        new_line = parts[1] + 0
++    } else {
++        new_line = 0
 +    }
-+    end = start + count - 1
-+    printf "%d\t%d\n", start, end
++    next
 +}
-+' > "$added_ranges_file"
-+
-+        if git cat-file -e "${base_hash}:${path}" 2>/dev/null; then
-+            git show "${base_hash}:${path}" > "$base_snapshot_file" 2>/dev/null || true
-+            awk '
-+function start_python_heredoc(line,   marker) {
-+    if (line !~ /<<-?[[:space:]]*["\047]?(PY|PYTHON)["\047]?([[:space:]]*#.*)?$/) {
-+        return 0
-+    }
-+    allow_tabs = (line ~ /<<-/) ? 1 : 0
-+    marker = line
-+    sub(/^.*<<-?[[:space:]]*["\047]?/, "", marker)
-+    sub(/["\047]?([[:space:]]*#.*)?$/, "", marker)
-+    delimiter = marker
-+    return delimiter == "PY" || delimiter == "PYTHON"
++!in_hunk || current_file == "" {
++    next
 +}
-+function end_python_heredoc(line,   pattern) {
-+    if (!delimiter) {
-+        return 0
-+    }
-+    pattern = allow_tabs ? "^\t*" delimiter "[[:space:]]*$" : "^" delimiter "[[:space:]]*$"
-+    return line ~ pattern
-+}
-+{
-+    if (!in_heredoc) {
-+        if (start_python_heredoc($0)) {
-+            in_heredoc = 1
-+            header_line = NR
-+            header_text = $0
-+            body_start_line = NR + 1
-+            body_lines = 0
-+            body_text = ""
++/^\+/ && $0 !~ /^\+\+\+/ {
++    line = substr($0, 2)
++    if (block_active) {
++        if (line == block_marker) {
++            block_complete = 1
++            flush_block()
++        } else {
++            body_lines++
 +        }
++        new_line++
 +        next
 +    }
-+    if (end_python_heredoc($0)) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR - 1, body_lines, escaped_body
-+        in_heredoc = 0
-+        delimiter = ""
-+        allow_tabs = 0
-+        header_line = 0
-+        header_text = ""
-+        body_start_line = 0
++
++    marker = extract_marker(line)
++    if (marker != "") {
++        block_active = 1
++        block_complete = 0
++        block_marker = marker
++        block_start_line = new_line
 +        body_lines = 0
-+        body_text = ""
-+        next
 +    }
-+    body_lines++
-+    body_text = body_text $0 "\n"
-+}
-+END {
-+    if (in_heredoc) {
-+        escaped_body = body_text
-+        gsub(/\\/,"\\\\", escaped_body)
-+        gsub(/\t/,"\\t", escaped_body)
-+        gsub(/\r/,"\\r", escaped_body)
-+        gsub(/\n/,"\\n", escaped_body)
-+        printf "%s\t%d\t%d\t%d\t%d\t%s\n", header_text, header_line, body_start_line, NR, body_lines, escaped_body
-+    }
-+}
-+' "$base_snapshot_file" > "$base_records_file"
-+        fi
-+
-+        findings+=$(awk -v path="$path" -F '\t' '
-+function overlaps_changed_lines(start_line, end_line,   i) {
-+    for (i = 1; i <= changed_count; i++) {
-+        if (changed_start[i] <= end_line && changed_end[i] >= start_line) {
-+            return 1
-+        }
-+    }
-+    return 0
-+}
-+FILENAME == ARGV[1] {
-+    if (NF >= 6) {
-+        key = $1 SUBSEP ($5 + 0) SUBSEP $6
-+        base_exact_count[key]++
-+    }
++    new_line++
 +    next
 +}
-+FILENAME == ARGV[2] {
-+    if (NF >= 6) {
-+        current_count++
-+        current_header_text[current_count] = $1
-+        current_header_line[current_count] = $2 + 0
-+        current_body_start[current_count] = $3 + 0
-+        current_body_end[current_count] = $4 + 0
-+        current_body_lines[current_count] = $5 + 0
-+        current_body_text[current_count] = $6
-+    }
++/^-/ && $0 !~ /^---/ {
++    next
++}
++/^ / {
++    flush_block()
++    new_line++
 +    next
 +}
 +{
-+    if (NF >= 2) {
-+        changed_count++
-+        changed_start[changed_count] = $1 + 0
-+        changed_end[changed_count] = $2 + 0
-+    }
++    flush_block()
++    in_hunk = 0
 +}
 +END {
-+    for (i = 1; i <= current_count; i++) {
-+        if (current_body_lines[i] <= 10) {
-+            continue
-+        }
-+        if (!overlaps_changed_lines(current_header_line[i], current_body_end[i])) {
-+            continue
-+        }
-+        key = current_header_text[i] SUBSEP current_body_lines[i] SUBSEP current_body_text[i]
-+        if (base_exact_count[key] > 0) {
-+            continue
-+        }
-+        printf "%s:%d-%d python heredoc (%d lines) exceeds 10 lines; extract to scripts/.\n", path, current_body_start[i], current_body_end[i], current_body_lines[i]
-+    }
++    flush_block()
 +}
-+' "$base_records_file" "$current_records_file" "$added_ranges_file")
++')
 +
-+        rm -f "$current_records_file" "$base_records_file" "$added_ranges_file" "$base_snapshot_file"
++    printf '%s' "$violations"
++}
++
+ is_single_task_mode() {
+     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
+ }
+@@ -4352,6 +4447,10 @@ print(task.get('role', 'coder'))
+         else
+             rm -f "$RETRY_TEST_OUTPUT_FILE"
+         fi
++        LONG_PYTHON_HEREDOC_ANOMALY=$(detect_long_python_heredocs_in_modified_shell_scripts "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}")
++        if [ -n "$LONG_PYTHON_HEREDOC_ANOMALY" ]; then
++            log "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts: $(printf '%s' "$LONG_PYTHON_HEREDOC_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
++        fi
+         ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
+         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
+ import json
+@@ -4445,6 +4544,14 @@ print("\n".join(f"- {item}" for item in items) if items else "- None specified")
+ The following files were modified but are NOT in target_files:
+ $SCOPE_ANOMALY
+ Please evaluate whether these changes are justified.
++"
++            fi
++            if [ -n "$LONG_PYTHON_HEREDOC_ANOMALY" ]; then
++                LEAD_SCOPE_ANOMALY_WARNING="${LEAD_SCOPE_ANOMALY_WARNING}
++## Scope Anomaly Warning
++The following modified shell scripts contain Python heredocs longer than 10 lines:
++$LONG_PYTHON_HEREDOC_ANOMALY
++Require extraction into scripts/ before approval.
+ "
+             fi
+             LEAD_PROMPT="Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and ${LEAD_ROLE_FILE} first.
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+index 066d37e..d90bc01 100644
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -461,6 +461,14 @@ def load_audit(project_dir: Path, task_id: str = "T01") -> dict:
+     return json.loads((project_dir / ".ralph" / "audit" / f"{task_id}.json").read_text(encoding="utf-8"))
+ 
+ 
++def long_python_heredoc_script(extra_lines: str = "") -> str:
++    body = "\n".join(f"print({idx})" for idx in range(1, 13))
++    script = "#!/usr/bin/env bash\npython3 - <<'PY'\n" + body + "\nPY\n"
++    if extra_lines:
++        script += extra_lines
++    return script
++
++
+ def process_is_alive(pid: int) -> bool:
+     try:
+         os.kill(pid, 0)
+@@ -1967,6 +1975,83 @@ def test_ralph_phase_mode_auto_reverts_non_runtime_out_of_scope_files_without_re
+     assert state["message"] == "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02"
+ 
+ 
++def test_ralph_flags_long_python_heredoc_only_when_added_in_post_coder_diff(tmp_path: Path) -> None:
++    project_dir, env = create_test_project(tmp_path)
++    tasks = load_tasks(project_dir)
++    tasks["tasks"][0]["title"] = "Shell heredoc task"
++    tasks["tasks"][0]["description"] = "Update scripts/embedded.sh with a Python heredoc."
++    tasks["tasks"][0]["acceptance_criteria"] = ["scripts/embedded.sh is updated"]
++    tasks["tasks"][0]["target_files"] = ["scripts/embedded.sh"]
++    write_tasks(project_dir, tasks)
++
++    lead_prompt_file = tmp_path / "lead_prompt.txt"
++    env["MOCK_CODEX_CAPTURE_LEAD_PROMPT_FILE"] = str(lead_prompt_file)
++    env["MOCK_CODEX_WRITE_FILE"] = "scripts/embedded.sh"
++    env["MOCK_CODEX_WRITE_CONTENT"] = long_python_heredoc_script()
++    env["MOCK_CODEX_WRITE_MODE"] = "overwrite"
++
++    result = subprocess.run(
++        [str(RALPH_SH), "task", "T01"],
++        cwd=project_dir,
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=45,
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    assert "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts:" in result.stdout
++    assert "scripts/embedded.sh:2 python heredoc (PY) is 12 lines; extract to scripts/" in result.stdout
++    lead_prompt = lead_prompt_file.read_text(encoding="utf-8")
++    assert "The following modified shell scripts contain Python heredocs longer than 10 lines:" in lead_prompt
++    assert "scripts/embedded.sh:2 python heredoc (PY) is 12 lines; extract to scripts/" in lead_prompt
++    assert "Require extraction into scripts/ before approval." in lead_prompt
++
++
++def test_ralph_does_not_flag_preexisting_long_python_heredoc_when_diff_touches_other_lines(tmp_path: Path) -> None:
++    project_dir, env = create_test_project(tmp_path)
++    tasks = load_tasks(project_dir)
++    tasks["tasks"][0]["title"] = "Shell tail edit task"
++    tasks["tasks"][0]["description"] = "Append a non-heredoc line to scripts/embedded.sh."
++    tasks["tasks"][0]["acceptance_criteria"] = ["scripts/embedded.sh is updated"]
++    tasks["tasks"][0]["target_files"] = ["scripts/embedded.sh"]
++    write_tasks(project_dir, tasks)
++
++    scripts_dir = project_dir / "scripts"
++    scripts_dir.mkdir(exist_ok=True)
++    embedded = scripts_dir / "embedded.sh"
++    embedded.write_text(long_python_heredoc_script("echo 'before tail change'\n"), encoding="utf-8")
++    subprocess.run(["git", "add", "scripts/embedded.sh"], cwd=project_dir, check=True, capture_output=True, text=True)
++    subprocess.run(
++        ["git", "commit", "-m", "test: seed long python heredoc"],
++        cwd=project_dir,
++        check=True,
++        capture_output=True,
++        text=True,
++    )
++
++    lead_prompt_file = tmp_path / "lead_prompt.txt"
++    env["MOCK_CODEX_CAPTURE_LEAD_PROMPT_FILE"] = str(lead_prompt_file)
++    env["MOCK_CODEX_WRITE_FILE"] = "scripts/embedded.sh"
++    env["MOCK_CODEX_WRITE_CONTENT"] = "echo 'after tail change'\n"
++    env["MOCK_CODEX_WRITE_MODE"] = "append"
++
++    result = subprocess.run(
++        [str(RALPH_SH), "task", "T01"],
++        cwd=project_dir,
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=45,
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    assert "⚠️ Scope anomaly: detected Python heredoc longer than 10 lines in modified shell scripts:" not in result.stdout
++    lead_prompt = lead_prompt_file.read_text(encoding="utf-8")
++    assert "The following modified shell scripts contain Python heredocs longer than 10 lines:" not in lead_prompt
++    assert "Require extraction into scripts/ before approval." not in lead_prompt
++
++
+ def test_ralph_auto_mode_does_not_report_complete_when_only_blocked_statuses_remain(tmp_path: Path) -> None:
+     project_dir, env = create_test_project(tmp_path)
+     tasks = load_tasks(project_dir)
 ```
 
-Previous diff snapshot: 22980 bytes
+Previous diff snapshot: 12588 bytes
 
 ## Tests
 ```
-E         [ralph] 04:20:31 🛑 Verification blocked closure without retry: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         [ralph] 04:20:31 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T21:20:31Z
-E         [ralph] 04:20:31 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue
-E         [ralph] 04:20:31 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 04:20:31 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 04:20:31 ════════════════════════════════════════════════════
-E         [ralph] 04:20:32 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)
-E         [ralph] 04:20:32 ════════════════════════════════════════════════════
-E         [ralph] 04:20:32 📊 Final:
-E         === Final State ===
-E         Status: blocked
-E         Step: failed
-E         Message: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         
-E         === Task Progress ===
-E           Total: 0/1 tasks done
-E           Phase R1: 0/1
-E         
-E         
-E       assert 1 == 0
-E        +  where 1 = CompletedProcess(args=['/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph.sh', 'task', 'T01'], returncode=1, stdout='[ralph] 04:20:22 🔍 Pre-task check: fast Python validation\n[ralph] 04:20:22 ✅ Pre-task check passed\n🎯 Requested task T01 is runnable and will be executed directly\n[ralph] 04:20:22 🧠 Model: default (complexity: moderate)\n[ralph] 04:20:22 📋 Complexity: moderate\n[ralph] 04:20:22 ⚠️ Risk: medium\n[ralph] 04:20:22 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 04:20:23 📋 Task: T01 — Integration test task\n[ralph] 04:20:23 📋 TASK_START task_id=T01 title="Integration test task" timestamp=2026-04-08T21:20:23Z\n[ralph] 04:20:23 ⏱  Timeout: coder=5s lead=5s\n[ralph] 04:20:23 ═══════════════════════════════════════════\n[ralph] 04:20:23 🤖 CODER — Attempt 1/3\n[ralph] 04:20:23 Task: T01 — Integration test task\n[ralph] 04:20:23 ═══════════════════════════════════════════\n[ralph] 04:20:23 🤖 [CODER] Attempt 1...\n[ralph] 04:20:23 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 04:20:23 🔍 Web search pol...mplementation evidence found.\n[ralph] 04:20:31 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T21:20:31Z\n[ralph] 04:20:31 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue\n[ralph] 04:20:31 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 04:20:31 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 04:20:31 ════════════════════════════════════════════════════\n[ralph] 04:20:32 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)\n[ralph] 04:20:32 ════════════════════════════════════════════════════\n[ralph] 04:20:32 📊 Final:\n=== Final State ===\nStatus: blocked\nStep: failed\nMessage: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.\n\n=== Task Progress ===\n  Total: 0/1 tasks done\n  Phase R1: 0/1\n\n', stderr='').returncode
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1256: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1242: in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-tests/test_integration.py:2477: AssertionError
+self = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-24/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt')
+name = '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-24/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt'
+flags = 16777216, mode = 438
+
+    def _opener(self, name, flags, mode=0o666):
+        # A stub for the opener argument to built-in open()
+>       return self._accessor.open(self, flags, mode)
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-24/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt'
+
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1110: FileNotFoundError
 =========================== short test summary info ============================
 FAILED tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown
-FAILED tests/test_integration.py::test_ralph_rejects_oversized_prompt - Asser...
+FAILED tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run
+FAILED tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_moderate_exact_task_run
+FAILED tests/test_integration.py::test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry
+FAILED tests/test_integration.py::test_ralph_injects_human_comment_into_coder_prompt_and_consumes_it
+FAILED tests/test_integration.py::test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_task_mode_fast_pre_task_check_completes_within_30_seconds
 FAILED tests/test_integration.py::test_ralph_auto_mode_runs_preflight_make_test_before_task_execution
 FAILED tests/test_integration.py::test_ralph_task_mode_can_force_preflight_make_test_explicitly
 FAILED tests/test_integration.py::test_ralph_preflight_uses_project_configured_test_command
+FAILED tests/test_integration.py::test_ralph_phase_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_docs
 FAILED tests/test_integration.py::test_ralph_auto_mode_narrow_task_does_not_read_project_docs_eagerly
-FAILED tests/test_integration.py::test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_run
-FAILED tests/test_integration.py::test_ralph_handoff_ignores_runtime_owned_dirty_artifacts_without_opening_candidate_path
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_without_worktree_or_repo_backed_candidate_state
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_when_valid_task_evidence_is_contaminated_by_unrelated_tracked_changes
-FAILED tests/test_integration.py::test_ralph_fails_closed_on_lead_stdout_review_mismatch
-FAILED tests/test_integration.py::test_ralph_blocks_contradictory_bookkeeping_only_fix_instructions
-FAILED tests/test_integration.py::test_ralph_blocks_diff_only_fix_without_retry_loop
-FAILED tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure
-============ 14 failed, 203 passed, 1 skipped in 802.22s (0:13:22) =============
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_narrow_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_broad_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_task_success_final_tail_does_not_run_nested_status_pytest
+FAILED tests/test_integration.py::test_ralph_auto_mode_logs_scope_warning_for_tasks_with_more_than_three_target_files
+FAILED tests/test_integration.py::test_ralph_phase_mode_auto_reverts_non_runtime_out_of_scope_files_without_resetting_runtime_state
+FAILED tests/test_integration.py::test_ralph_flags_long_python_heredoc_only_when_added_in_post_coder_diff
+FAILED tests/test_integration.py::test_ralph_marks_task_skipped_on_skip_control
+FAILED tests/test_integration.py::test_ralph_waits_for_assets_and_resumes_when_files_arrive
+============ 21 failed, 194 passed, 1 skipped in 977.39s (0:16:17) =============
 make: *** [test] Error 1
 tests failed
 ```

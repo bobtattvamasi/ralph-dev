@@ -1,32 +1,49 @@
 {
   "task_id": "R19-04",
   "title": "Ban inline Python heredoc >10 lines in bash",
-  "status": "failed",
+  "status": "blocked",
   "verification": {
-    "result": "needs_human_review",
-    "reason": "R19-04 failed after 2 retries",
-    "task_class": "unknown",
-    "evidence_files": []
+    "result": "pass",
+    "reason": "Generic implementation verification passed.",
+    "task_class": "implementation",
+    "evidence_files": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh"
+    ]
   },
   "changes": {
-    "all": [],
-    "non_bookkeeping": []
+    "all": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      ".ralph/audit/R19-01.json",
+      ".ralph/audit/lead_prompt_R19-01.txt",
+      ".ralph/audit/lead_prompt_R19-02.txt",
+      ".ralph/audit/lead_reasoning_R19-01.txt",
+      ".ralph/audit/lead_reasoning_R19-02.txt",
+      "tasks.json"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh"
+    ]
   },
   "review": {
-    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-04\",\"summary\":\"Проверка длинных Python heredoc добавлена в оба целевых shell-файла, но изменение в текущем виде регрессит интеграционные сценарии и задача не может быть принята.\",\"quality_score\":42,\"issues\":[\"Не пройдены тесты: `make test` завершился с 14 падениями в `tests/test_integration.py`, поэтому `tests_ok=false` и `regressions_ok=false`.\",\"Вне scope изменены `.ralph/memory/recent.md`, `progress.md`, `tasks.json`; для этой задачи такие изменения не обоснованы.\",\"Для новой проверки не видно отдельных тестов, которые подтверждают детект heredoc >10 строк и репортинг как scope anomaly.\"],\"fix_instructions\":\"Устранить регрессию в post-coder/verification flow, из-за которой падают интеграционные тесты `tests/test_integration.py` (сейчас сценарии завершаются сообщением `Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.`), и добавить/обновить тест, который явно покрывает детект Python heredoc >10 строк в `.sh` как scope anomaly.\",\"alert_reason\":\"\",\"progress_note\":\"Проверка acceptance частично реализована в `ralph.sh` и `src/ralph/resources/ralph.sh`, но результат нельзя одобрить до восстановления зелёного интеграционного прогона.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-04\",\"summary\":\"Критерии частично реализованы, но задача не может быть принята: есть выход за scope и регрессии по интеграционным тестам.\",\"quality_score\":52,\"issues\":[\"SCOPE: изменён файл `tests/test_integration.py`, который не входит в `target_files`. Перечисленные `.ralph/*`, `progress.md`, `tasks.json` выглядят как runtime/bookkeeping и не являются обязательным coder-fix по этой задаче.\",\"TESTS: полный прогон не проходит: 21 failed, 194 passed, 1 skipped.\",\"ACCEPTANCE: проверка длинных Python heredoc и передача scope anomaly lead добавлены, но из-за падающих тестов критерии нельзя считать принятыми.\",\"REGRESSIONS: дифф вызвал регрессии в unrelated integration flows, включая prompt/preflight/task-mode сценарии и новый heredoc тест.\",\"QUALITY: явных секретов или debug-print нет, но изменение не изолировано и ломает существующее поведение.\"],\"fix_instructions\":\"Свести изменение к scope задачи: убрать coder-side изменение из `tests/test_integration.py` и поправить интеграционную wiring в `ralph.sh` и `src/ralph/resources/ralph.sh` так, чтобы проверка длинных `<<PY`/`<<PYTHON` heredoc срабатывала только как post-coder diff scan для изменённых `.sh` файлов и не меняла поведение/lead prompt/output для остальных сценариев; после этого полный `make test` должен проходить.\",\"alert_reason\":\"\",\"progress_note\":\"Проверка показала, что runtime/bookkeeping файлы из предупреждения не стоит требовать чинить в рамках этой задачи, но текущее решение всё ещё неготово к approve.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
     "parsed": {
       "decision": "fix",
       "task_id": "R19-04",
-      "summary": "Проверка длинных Python heredoc добавлена в оба целевых shell-файла, но изменение в текущем виде регрессит интеграционные сценарии и задача не может быть принята.",
-      "quality_score": 42,
+      "summary": "Критерии частично реализованы, но задача не может быть принята: есть выход за scope и регрессии по интеграционным тестам.",
+      "quality_score": 52,
       "issues": [
-        "Не пройдены тесты: `make test` завершился с 14 падениями в `tests/test_integration.py`, поэтому `tests_ok=false` и `regressions_ok=false`.",
-        "Вне scope изменены `.ralph/memory/recent.md`, `progress.md`, `tasks.json`; для этой задачи такие изменения не обоснованы.",
-        "Для новой проверки не видно отдельных тестов, которые подтверждают детект heredoc >10 строк и репортинг как scope anomaly."
+        "SCOPE: изменён файл `tests/test_integration.py`, который не входит в `target_files`. Перечисленные `.ralph/*`, `progress.md`, `tasks.json` выглядят как runtime/bookkeeping и не являются обязательным coder-fix по этой задаче.",
+        "TESTS: полный прогон не проходит: 21 failed, 194 passed, 1 skipped.",
+        "ACCEPTANCE: проверка длинных Python heredoc и передача scope anomaly lead добавлены, но из-за падающих тестов критерии нельзя считать принятыми.",
+        "REGRESSIONS: дифф вызвал регрессии в unrelated integration flows, включая prompt/preflight/task-mode сценарии и новый heredoc тест.",
+        "QUALITY: явных секретов или debug-print нет, но изменение не изолировано и ломает существующее поведение."
       ],
-      "fix_instructions": "Устранить регрессию в post-coder/verification flow, из-за которой падают интеграционные тесты `tests/test_integration.py` (сейчас сценарии завершаются сообщением `Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.`), и добавить/обновить тест, который явно покрывает детект Python heredoc >10 строк в `.sh` как scope anomaly.",
+      "fix_instructions": "Свести изменение к scope задачи: убрать coder-side изменение из `tests/test_integration.py` и поправить интеграционную wiring в `ralph.sh` и `src/ralph/resources/ralph.sh` так, чтобы проверка длинных `<<PY`/`<<PYTHON` heredoc срабатывала только как post-coder diff scan для изменённых `.sh` файлов и не меняла поведение/lead prompt/output для остальных сценариев; после этого полный `make test` должен проходить.",
       "alert_reason": "",
-      "progress_note": "Проверка acceptance частично реализована в `ralph.sh` и `src/ralph/resources/ralph.sh`, но результат нельзя одобрить до восстановления зелёного интеграционного прогона.",
+      "progress_note": "Проверка показала, что runtime/bookkeeping файлы из предупреждения не стоит требовать чинить в рамках этой задачи, но текущее решение всё ещё неготово к approve.",
       "checklist": {
         "scope_ok": false,
         "tests_ok": false,
@@ -37,8 +54,8 @@
     }
   },
   "attempts": 3,
-  "duration_sec": 3419,
-  "timestamp": "2026-04-08T21:24:20Z",
-  "runtime_success": false,
+  "duration_sec": 3680,
+  "timestamp": "2026-04-10T20:33:25Z",
+  "runtime_success": true,
   "verified_success": false
 }

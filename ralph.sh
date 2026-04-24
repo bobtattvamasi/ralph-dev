@@ -3107,35 +3107,61 @@ print(json.dumps(d, ensure_ascii=False))
 parse_lead_review_json() {
     local review_file_json=""
     local lead_output_json=""
+    local review_file_decision=""
+    local lead_output_decision=""
     REVIEW_JSON='{}'
     REVIEW_JSON_SOURCE="none"
     local fail_closed_json='{"decision":"fix","quality_score":"?","issues":["Tech Lead output could not be parsed safely."],"fix_instructions":"Tech Lead output could not be parsed safely."}'
+    local mismatch_fail_closed_json='{"decision":"alert","quality_score":"?","issues":["Tech Lead output was ambiguous: authoritative review file and stdout disagreed."],"alert_reason":"Tech Lead output was ambiguous: authoritative review file and stdout disagreed.","fix_instructions":"Tech Lead output was ambiguous: authoritative review file and stdout disagreed. Return one final JSON review only.","progress_note":"Trust layer fail-closed on review mismatch"}'
 
     if [ -s "$REVIEW_FILE" ]; then
         review_file_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || true)
-        if [ -n "$review_file_json" ] && [ "$review_file_json" != "{}" ]; then
-            REVIEW_JSON="$review_file_json"
-            REVIEW_JSON_SOURCE="review_file"
-            return
-        fi
-        REVIEW_JSON="$fail_closed_json"
-        REVIEW_JSON_SOURCE="unparsed_fail_closed"
-        return
     fi
 
     if [ -s "$LEAD_OUTPUT" ]; then
         lead_output_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$LEAD_OUTPUT" 2>/dev/null || true)
-        if [ -n "$lead_output_json" ] && [ "$lead_output_json" != "{}" ]; then
+    fi
+
+    if [ -n "$review_file_json" ] && [ "$review_file_json" != "{}" ]; then
+        REVIEW_JSON="$review_file_json"
+        REVIEW_JSON_SOURCE="review_file"
+    fi
+
+    if [ -n "$lead_output_json" ] && [ "$lead_output_json" != "{}" ]; then
+        if [ "$REVIEW_JSON_SOURCE" = "review_file" ]; then
+            review_file_decision=$(echo "$review_file_json" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(str(d.get('decision', '')).strip())
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+            lead_output_decision=$(echo "$lead_output_json" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(str(d.get('decision', '')).strip())
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+            if [ -n "$review_file_decision" ] && [ -n "$lead_output_decision" ] && [ "$review_file_decision" != "$lead_output_decision" ]; then
+                REVIEW_JSON="$mismatch_fail_closed_json"
+                REVIEW_JSON_SOURCE="mismatch_fail_closed"
+                return
+            fi
+        elif [ "$REVIEW_JSON" = "{}" ]; then
             REVIEW_JSON="$lead_output_json"
             REVIEW_JSON_SOURCE="lead_output"
             return
         fi
+    fi
+
+    if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
         REVIEW_JSON="$fail_closed_json"
         REVIEW_JSON_SOURCE="unparsed_fail_closed"
         return
     fi
-
-    REVIEW_JSON_SOURCE="unparsed_skipped"
 }
 
 collect_preclosure_changed_files_json() {
@@ -4947,17 +4973,7 @@ import sys, json
 text = sys.stdin.read().strip() or '{}'
 try:
     d = json.loads(text)
-    issues = d.get('issues')
-    if isinstance(issues, list):
-        items = [str(item).strip() for item in issues if str(item).strip()]
-    elif issues is None:
-        items = []
-    else:
-        items = [str(issues).strip()]
-    if items:
-        print(items[0])
-    else:
-        print('Fix failing tests and unmet criteria')
+    print(d.get('fix_instructions', 'Fix failing tests and unmet criteria'))
 except Exception:
     print('Fix failing tests and unmet criteria')
 " 2>/dev/null || echo "Fix the issues")

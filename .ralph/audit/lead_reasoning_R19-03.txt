@@ -8,7 +8,7 @@ approval: never
 sandbox: danger-full-access
 reasoning effort: none
 reasoning summaries: none
-session id: 019d6ec6-bdd4-7bf0-a9b4-199000fd0da0
+session id: 019d78e1-0047-74d2-8e13-f6d43807ebd0
 --------
 user
 Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
@@ -19,7 +19,7 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
   "phase": "R19",
   "status": "pending",
   "title": "Enforce target_files limit of 3",
-  "description": "In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
+  "description": "[PARKING LOT] In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
   "target_files": [
     "scripts/next_task.py",
     "src/ralph/resources/scripts/next_task.py"
@@ -30,7 +30,9 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
   ],
   "priority": "high",
   "complexity": "simple",
-  "role": "coder"
+  "role": "coder",
+  "completed_at": null,
+  "revision_notes": "reset: false_positive review"
 }
 
 ## Target Files
@@ -39,6 +41,17 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
 
 ## Scope Anomaly Warning
 The following files were modified but are NOT in target_files:
+.ralph/audit/R19-01.json
+.ralph/audit/R19-02.json
+.ralph/audit/R19-05.json
+.ralph/audit/lead_prompt_R19-01.txt
+.ralph/audit/lead_prompt_R19-02.txt
+.ralph/audit/lead_prompt_R19-03.txt
+.ralph/audit/lead_prompt_R19-05.txt
+.ralph/audit/lead_reasoning_R19-01.txt
+.ralph/audit/lead_reasoning_R19-02.txt
+.ralph/audit/lead_reasoning_R19-03.txt
+.ralph/audit/lead_reasoning_R19-05.txt
 .ralph/memory/recent.md
 progress.md
 tasks.json
@@ -90,292 +103,164 @@ END_RALPH_REVIEW_JSON
 
 ## Diff
 ```diff
-diff --git a/ralph.sh b/ralph.sh
-index cd5e870..e72b6c1 100755
---- a/ralph.sh
-+++ b/ralph.sh
-@@ -1131,7 +1131,7 @@ PY
- }
- 
- log_deadlock_reason() {
--    local explain_json reason ids details status_ids status_details prefix
-+    local explain_json reason ids details status_ids status_details warnings prefix
-     if [ "$MODE" = "phase" ]; then
-         explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" --explain 2>/dev/null || echo '{}')
-         prefix="Phase $TARGET"
-@@ -1147,6 +1147,8 @@ log_deadlock_reason() {
-     details=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('; '.join(f\"{item['id']} needs {', '.join(item.get('unmet_dependencies', []))}\" for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
-     status_ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(f\"{item['id']}({item.get('status','')})\" for item in data.get('blocked_by_status', [])))" 2>/dev/null || true)
-     status_details=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('; '.join(f\"{item['id']} status={item.get('status','')}\" for item in data.get('blocked_by_status', [])))" 2>/dev/null || true)
-+    warnings=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('\n'.join(data.get('warnings', [])))" 2>/dev/null || true)
-+    [ -n "$warnings" ] && while IFS= read -r warning; do [ -n "$warning" ] && log "⚠️ $prefix $warning"; done <<< "$warnings"
-     [ -n "$ids" ] && log "⚠️ $prefix deadlocked: pending tasks remain blocked by dependencies: $ids"
-     [ -n "$details" ] && log "⚠️ $prefix blocked details: $details"
-     [ -n "$status_ids" ] && log "⚠️ $prefix blocked by status: $status_ids"
-@@ -4101,6 +4103,7 @@ while true; do
- 
-     TASK_ID=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-     TASK_TITLE=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
-+    TASK_WARNINGS=$(printf '%s' "$TASK_JSON" | python3 -c "import json,sys; data=json.load(sys.stdin); print('\n'.join(data.get('warnings', [])))" 2>/dev/null || true)
-     # Extract coder timeout from task (complexity-aware defaults)
-     TASK_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
- import sys, json
-@@ -4167,6 +4170,7 @@ print(task.get('role', 'coder'))
-     TASK_START=$(date +%s)
- 
-     log "📋 Task: $TASK_ID — $TASK_TITLE"
-+    [ -n "$TASK_WARNINGS" ] && while IFS= read -r warning; do [ -n "$warning" ] && log "⚠️ Task warning: $warning"; done <<< "$TASK_WARNINGS"
-     log "📋 TASK_START task_id=$TASK_ID title=\"$TASK_TITLE\" timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-     log "⏱  Timeout: coder=${TASK_TIMEOUT}s lead=${TASK_LEAD_TIMEOUT}s"
-     TASK_START_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
 diff --git a/scripts/next_task.py b/scripts/next_task.py
-index e3ef981..d18f848 100755
+index e3ef981..9bb1bb0 100755
 --- a/scripts/next_task.py
 +++ b/scripts/next_task.py
-@@ -31,6 +31,8 @@ def main():
+@@ -1,8 +1,10 @@
+ #!/usr/bin/env python3
+ """Pick next pending task from tasks.json."""
+ import argparse
++from datetime import datetime
+ import json
+ import sys
++from pathlib import Path
+ try:
+     from ralph_common import explain_non_runnable, load_tasks_data, pick_next_task, resolve_project_dir
+ except ImportError:
+@@ -10,6 +12,34 @@ except ImportError:
+ 
+ 
+ pick_next = pick_next_task
++TARGET_FILES_LIMIT = 3
++
++
++def log_selection_warning(project_dir: Path, warning: str) -> None:
++    log_dir = project_dir / "logs"
++    if not log_dir.exists():
++        return
++    stamp = datetime.now()
++    log_file = log_dir / f"ralph_{stamp:%Y-%m-%d}.log"
++    message = f"[ralph] {stamp:%H:%M:%S} ⚠️ Task selection warning: {warning}\n"
++    try:
++        with log_file.open("a", encoding="utf-8") as handle:
++            handle.write(message)
++    except OSError:
++        return
++
++
++def build_scope_warnings(task):
++    target_files = [str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()]
++    if len(target_files) <= TARGET_FILES_LIMIT:
++        return []
++    return [
++        (
++            "scope-too-wide: task declares "
++            f"{len(target_files)} target_files (limit: {TARGET_FILES_LIMIT}). "
++            "Consider splitting into narrower tasks."
++        )
++    ]
+ 
+ 
+ def main():
+@@ -31,6 +61,11 @@ def main():
      if task is None:
          print("null")
          sys.exit(0)
-+    for warning in task.get("warnings") or []:
-+        print(f"WARNING: {warning}", file=sys.stderr)
++    warnings = build_scope_warnings(task)
++    if warnings:
++        for warning in warnings:
++            print(f"WARNING: {warning}", file=sys.stderr)
++            log_selection_warning(project_dir, warning)
      print(json.dumps(task, indent=2, ensure_ascii=False))
  
  
-diff --git a/scripts/ralph_common.py b/scripts/ralph_common.py
-index c5ffada..6bfd3a7 100644
---- a/scripts/ralph_common.py
-+++ b/scripts/ralph_common.py
-@@ -19,6 +19,7 @@ from typing import Any, Callable
- DEFAULT_CONTROL_ACTION = "continue"
- COMPLETED_STATUSES = {"done", "verified_done"}
- PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-+TARGET_FILES_LIMIT = 3
- BOOKKEEPING_EXACT = {
-     "tasks.json",
-     "progress.md",
-@@ -390,6 +391,29 @@ def runnable_reason(task: dict[str, Any], tasks: list[dict[str, Any]]) -> tuple[
-     return True, "pending and dependencies satisfied"
- 
- 
-+def build_scope_warning(task: dict[str, Any]) -> str | None:
-+    target_files = task.get("target_files") or []
-+    if len(target_files) <= TARGET_FILES_LIMIT:
-+        return None
-+    task_id = task.get("id") or "UNKNOWN"
-+    return (
-+        f"scope-too-wide: task {task_id} declares {len(target_files)} target_files; "
-+        f"limit is {TARGET_FILES_LIMIT}. Split the task before auto execution."
-+    )
-+
-+
-+def attach_task_warnings(task: dict[str, Any]) -> dict[str, Any]:
-+    warning = build_scope_warning(task)
-+    warnings = [str(item) for item in (task.get("warnings") or []) if str(item).strip()]
-+    if warning and warning not in warnings:
-+        warnings.append(warning)
-+    if not warnings:
-+        return task
-+    enriched = dict(task)
-+    enriched["warnings"] = warnings
-+    return enriched
-+
-+
- def pick_next_task(
-     tasks: list[dict[str, Any]],
-     *,
-@@ -404,13 +428,14 @@ def pick_next_task(
-         and all(dep in done_ids for dep in task.get("dependencies", []))
-     ]
-     if task_id:
--        return next((task for task in candidates if task.get("id") == task_id), None)
-+        task = next((task for task in candidates if task.get("id") == task_id), None)
-+        return attach_task_warnings(task) if task is not None else None
-     if phase is not None:
-         candidates = [task for task in candidates if str(task.get("phase")) == str(phase)]
-     if not candidates:
-         return None
-     candidates.sort(key=lambda task: PRIORITY_ORDER.get(str(task.get("priority", "low")), 9))
--    return candidates[0]
-+    return attach_task_warnings(candidates[0])
- 
- 
- def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = None) -> dict[str, Any]:
-@@ -444,11 +469,17 @@ def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = Non
-         reason = "blocked_dependencies"
-     elif blocked_by_status:
-         reason = "blocked_statuses"
-+    warnings = [
-+        warning
-+        for task in pending
-+        for warning in attach_task_warnings(task).get("warnings", [])
-+    ]
-     return {
-         "has_pending": bool(pending),
-         "has_unresolved": bool(unresolved),
-         "blocked_pending": blocked_pending,
-         "blocked_by_status": blocked_by_status,
-+        "warnings": list(dict.fromkeys(warnings)),
-         "reason": reason,
-     }
- 
-diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
-index cd5e870..e72b6c1 100755
---- a/src/ralph/resources/ralph.sh
-+++ b/src/ralph/resources/ralph.sh
-@@ -1131,7 +1131,7 @@ PY
- }
- 
- log_deadlock_reason() {
--    local explain_json reason ids details status_ids status_details prefix
-+    local explain_json reason ids details status_ids status_details warnings prefix
-     if [ "$MODE" = "phase" ]; then
-         explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" --explain 2>/dev/null || echo '{}')
-         prefix="Phase $TARGET"
-@@ -1147,6 +1147,8 @@ log_deadlock_reason() {
-     details=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('; '.join(f\"{item['id']} needs {', '.join(item.get('unmet_dependencies', []))}\" for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
-     status_ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(f\"{item['id']}({item.get('status','')})\" for item in data.get('blocked_by_status', [])))" 2>/dev/null || true)
-     status_details=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('; '.join(f\"{item['id']} status={item.get('status','')}\" for item in data.get('blocked_by_status', [])))" 2>/dev/null || true)
-+    warnings=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('\n'.join(data.get('warnings', [])))" 2>/dev/null || true)
-+    [ -n "$warnings" ] && while IFS= read -r warning; do [ -n "$warning" ] && log "⚠️ $prefix $warning"; done <<< "$warnings"
-     [ -n "$ids" ] && log "⚠️ $prefix deadlocked: pending tasks remain blocked by dependencies: $ids"
-     [ -n "$details" ] && log "⚠️ $prefix blocked details: $details"
-     [ -n "$status_ids" ] && log "⚠️ $prefix blocked by status: $status_ids"
-@@ -4101,6 +4103,7 @@ while true; do
- 
-     TASK_ID=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-     TASK_TITLE=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
-+    TASK_WARNINGS=$(printf '%s' "$TASK_JSON" | python3 -c "import json,sys; data=json.load(sys.stdin); print('\n'.join(data.get('warnings', [])))" 2>/dev/null || true)
-     # Extract coder timeout from task (complexity-aware defaults)
-     TASK_TIMEOUT=$(echo "$TASK_JSON" | python3 -c "
- import sys, json
-@@ -4167,6 +4170,7 @@ print(task.get('role', 'coder'))
-     TASK_START=$(date +%s)
- 
-     log "📋 Task: $TASK_ID — $TASK_TITLE"
-+    [ -n "$TASK_WARNINGS" ] && while IFS= read -r warning; do [ -n "$warning" ] && log "⚠️ Task warning: $warning"; done <<< "$TASK_WARNINGS"
-     log "📋 TASK_START task_id=$TASK_ID title=\"$TASK_TITLE\" timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-     log "⏱  Timeout: coder=${TASK_TIMEOUT}s lead=${TASK_LEAD_TIMEOUT}s"
-     TASK_START_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
 diff --git a/src/ralph/resources/scripts/next_task.py b/src/ralph/resources/scripts/next_task.py
-index e3ef981..d18f848 100755
+index e3ef981..9bb1bb0 100755
 --- a/src/ralph/resources/scripts/next_task.py
 +++ b/src/ralph/resources/scripts/next_task.py
-@@ -31,6 +31,8 @@ def main():
+@@ -1,8 +1,10 @@
+ #!/usr/bin/env python3
+ """Pick next pending task from tasks.json."""
+ import argparse
++from datetime import datetime
+ import json
+ import sys
++from pathlib import Path
+ try:
+     from ralph_common import explain_non_runnable, load_tasks_data, pick_next_task, resolve_project_dir
+ except ImportError:
+@@ -10,6 +12,34 @@ except ImportError:
+ 
+ 
+ pick_next = pick_next_task
++TARGET_FILES_LIMIT = 3
++
++
++def log_selection_warning(project_dir: Path, warning: str) -> None:
++    log_dir = project_dir / "logs"
++    if not log_dir.exists():
++        return
++    stamp = datetime.now()
++    log_file = log_dir / f"ralph_{stamp:%Y-%m-%d}.log"
++    message = f"[ralph] {stamp:%H:%M:%S} ⚠️ Task selection warning: {warning}\n"
++    try:
++        with log_file.open("a", encoding="utf-8") as handle:
++            handle.write(message)
++    except OSError:
++        return
++
++
++def build_scope_warnings(task):
++    target_files = [str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()]
++    if len(target_files) <= TARGET_FILES_LIMIT:
++        return []
++    return [
++        (
++            "scope-too-wide: task declares "
++            f"{len(target_files)} target_files (limit: {TARGET_FILES_LIMIT}). "
++            "Consider splitting into narrower tasks."
++        )
++    ]
+ 
+ 
+ def main():
+@@ -31,6 +61,11 @@ def main():
      if task is None:
          print("null")
          sys.exit(0)
-+    for warning in task.get("warnings") or []:
-+        print(f"WARNING: {warning}", file=sys.stderr)
++    warnings = build_scope_warnings(task)
++    if warnings:
++        for warning in warnings:
++            print(f"WARNING: {warning}", file=sys.stderr)
++            log_selection_warning(project_dir, warning)
      print(json.dumps(task, indent=2, ensure_ascii=False))
  
  
-diff --git a/src/ralph/resources/scripts/ralph_common.py b/src/ralph/resources/scripts/ralph_common.py
-index c5ffada..6bfd3a7 100644
---- a/src/ralph/resources/scripts/ralph_common.py
-+++ b/src/ralph/resources/scripts/ralph_common.py
-@@ -19,6 +19,7 @@ from typing import Any, Callable
- DEFAULT_CONTROL_ACTION = "continue"
- COMPLETED_STATUSES = {"done", "verified_done"}
- PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-+TARGET_FILES_LIMIT = 3
- BOOKKEEPING_EXACT = {
-     "tasks.json",
-     "progress.md",
-@@ -390,6 +391,29 @@ def runnable_reason(task: dict[str, Any], tasks: list[dict[str, Any]]) -> tuple[
-     return True, "pending and dependencies satisfied"
- 
- 
-+def build_scope_warning(task: dict[str, Any]) -> str | None:
-+    target_files = task.get("target_files") or []
-+    if len(target_files) <= TARGET_FILES_LIMIT:
-+        return None
-+    task_id = task.get("id") or "UNKNOWN"
-+    return (
-+        f"scope-too-wide: task {task_id} declares {len(target_files)} target_files; "
-+        f"limit is {TARGET_FILES_LIMIT}. Split the task before auto execution."
-+    )
-+
-+
-+def attach_task_warnings(task: dict[str, Any]) -> dict[str, Any]:
-+    warning = build_scope_warning(task)
-+    warnings = [str(item) for item in (task.get("warnings") or []) if str(item).strip()]
-+    if warning and warning not in warnings:
-+        warnings.append(warning)
-+    if not warnings:
-+        return task
-+    enriched = dict(task)
-+    enriched["warnings"] = warnings
-+    return enriched
-+
-+
- def pick_next_task(
-     tasks: list[dict[str, Any]],
-     *,
-@@ -404,13 +428,14 @@ def pick_next_task(
-         and all(dep in done_ids for dep in task.get("dependencies", []))
-     ]
-     if task_id:
--        return next((task for task in candidates if task.get("id") == task_id), None)
-+        task = next((task for task in candidates if task.get("id") == task_id), None)
-+        return attach_task_warnings(task) if task is not None else None
-     if phase is not None:
-         candidates = [task for task in candidates if str(task.get("phase")) == str(phase)]
-     if not candidates:
-         return None
-     candidates.sort(key=lambda task: PRIORITY_ORDER.get(str(task.get("priority", "low")), 9))
--    return candidates[0]
-+    return attach_task_warnings(candidates[0])
- 
- 
- def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = None) -> dict[str, Any]:
-@@ -444,11 +469,17 @@ def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = Non
-         reason = "blocked_dependencies"
-     elif blocked_by_status:
-         reason = "blocked_statuses"
-+    warnings = [
-+        warning
-+        for task in pending
-+        for warning in attach_task_warnings(task).get("warnings", [])
-+    ]
-     return {
-         "has_pending": bool(pending),
-         "has_unresolved": bool(unresolved),
-         "blocked_pending": blocked_pending,
-         "blocked_by_status": blocked_by_status,
-+        "warnings": list(dict.fromkeys(warnings)),
-         "reason": reason,
-     }
- 
 diff --git a/tests/test_integration.py b/tests/test_integration.py
-index 8aeb8ed..ecf038a 100644
+index 6adcffb..066d37e 100644
 --- a/tests/test_integration.py
 +++ b/tests/test_integration.py
-@@ -1941,6 +1941,47 @@ def test_ralph_auto_mode_does_not_report_complete_when_only_blocked_statuses_rem
-     assert state["message"] == "Auto blocked: unresolved tasks remain non-runnable by status: T01(blocked)"
+@@ -1744,6 +1744,51 @@ def test_ralph_auto_mode_still_runs_next_runnable_pending_task(tmp_path: Path) -
+     assert load_task_status(project_dir, "T01") == "pending"
  
  
-+def test_ralph_auto_mode_logs_scope_too_wide_warning_for_selected_task(tmp_path: Path) -> None:
++def test_ralph_auto_mode_logs_scope_warning_for_tasks_with_more_than_three_target_files(tmp_path: Path) -> None:
 +    project_dir, env = create_test_project(tmp_path)
 +    tasks = load_tasks(project_dir)
-+    tasks["tasks"] = [
-+        {
-+            "id": "T01",
-+            "phase": "R1",
-+            "title": "Wide task in auto",
-+            "description": "Should surface scope-too-wide before execution.",
-+            "status": "pending",
-+            "priority": "high",
-+            "target_files": [
-+                "src/generated_by_codex.ts",
-+                "scripts/one.py",
-+                "scripts/two.py",
-+                "scripts/three.py",
-+            ],
-+            "dependencies": [],
-+            "timeout": 5,
-+        }
++    tasks["tasks"][0]["target_files"] = [
++        "src/generated_by_codex.ts",
++        "scripts/one.py",
++        "scripts/two.py",
++        "scripts/three.py",
 +    ]
 +    write_tasks(project_dir, tasks)
++
++    next_task_result = subprocess.run(
++        [sys.executable, str(REPO_ROOT / "scripts" / "next_task.py")],
++        cwd=project_dir,
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=10,
++    )
++
++    assert next_task_result.returncode == 0, next_task_result.stdout + next_task_result.stderr
++    next_task_payload = json.loads(next_task_result.stdout)
++    assert next_task_payload["scope_too_wide"] is True
++    assert next_task_payload["selection_warnings"] == [
++        "scope-too-wide: task declares 4 target_files (limit: 3). Consider splitting into narrower tasks."
++    ]
 +
 +    result = subprocess.run(
 +        [str(RALPH_SH), "auto"],
@@ -383,94 +268,66 @@ index 8aeb8ed..ecf038a 100644
 +        env=env,
 +        capture_output=True,
 +        text=True,
-+        timeout=20,
++        timeout=45,
 +    )
 +
 +    assert result.returncode == 0, result.stdout + result.stderr
-+    expected_warning = (
-+        "Task warning: scope-too-wide: task T01 declares 4 target_files; "
-+        "limit is 3. Split the task before auto execution."
-+    )
-+    assert expected_warning in result.stdout
-+    assert expected_warning in read_latest_ralph_log(project_dir)
++    assert load_task_status(project_dir) == "verified_done"
++    log_text = read_latest_ralph_log(project_dir)
++    assert (
++        "⚠️ Task selection warning: scope-too-wide: task declares 4 target_files (limit: 3). "
++        "Consider splitting into narrower tasks."
++    ) in log_text
 +
 +
- def test_ralph_phase_mode_does_not_report_complete_when_only_blocked_statuses_remain(tmp_path: Path) -> None:
+ def test_ralph_phase_mode_explains_deadlocked_pending_tasks(tmp_path: Path) -> None:
      project_dir, env = create_test_project(tmp_path)
      tasks = load_tasks(project_dir)
-diff --git a/tests/test_re_audit_tasks.py b/tests/test_re_audit_tasks.py
-index 36db191..9a5bb15 100644
---- a/tests/test_re_audit_tasks.py
-+++ b/tests/test_re_audit_tasks.py
-@@ -438,3 +438,23 @@ def test_next_task_still_only_picks_pending() -> None:
-     picked = pick_next(tasks)
-     assert picked is not None
-     assert picked["id"] == "E"
-+
-+
-+def test_next_task_adds_scope_warning_when_target_files_exceed_limit() -> None:
-+    tasks = [
-+        {
-+            "id": "WIDE-1",
-+            "status": "pending",
-+            "priority": "high",
-+            "phase": "R1",
-+            "target_files": ["a.py", "b.py", "c.py", "d.py"],
-+        }
-+    ]
-+
-+    picked = pick_next(tasks)
-+
-+    assert picked is not None
-+    assert picked["id"] == "WIDE-1"
-+    assert picked["warnings"] == [
-+        "scope-too-wide: task WIDE-1 declares 4 target_files; limit is 3. Split the task before auto execution."
-+    ]
 ```
 
-Previous diff snapshot: 15614 bytes
+Previous diff snapshot: 5875 bytes
 
 ## Tests
 ```
-E         [ralph] 03:23:32 🛑 Verification blocked closure without retry: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         [ralph] 03:23:32 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T20:23:32Z
-E         [ralph] 03:23:33 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue
-E         [ralph] 03:23:33 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 03:23:33 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 03:23:33 ════════════════════════════════════════════════════
-E         [ralph] 03:23:33 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)
-E         [ralph] 03:23:33 ════════════════════════════════════════════════════
-E         [ralph] 03:23:33 📊 Final:
-E         === Final State ===
-E         Status: blocked
-E         Step: failed
-E         Message: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         
-E         === Task Progress ===
-E           Total: 0/1 tasks done
-E           Phase R1: 0/1
-E         
-E         
-E       assert 1 == 0
-E        +  where 1 = CompletedProcess(args=['/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph.sh', 'task', 'T01'], returncode=1, stdout='[ralph] 03:23:23 🔍 Pre-task check: fast Python validation\n[ralph] 03:23:24 ✅ Pre-task check passed\n🎯 Requested task T01 is runnable and will be executed directly\n[ralph] 03:23:24 🧠 Model: default (complexity: moderate)\n[ralph] 03:23:24 📋 Complexity: moderate\n[ralph] 03:23:24 ⚠️ Risk: medium\n[ralph] 03:23:24 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 03:23:24 📋 Task: T01 — Integration test task\n[ralph] 03:23:24 📋 TASK_START task_id=T01 title="Integration test task" timestamp=2026-04-08T20:23:24Z\n[ralph] 03:23:24 ⏱  Timeout: coder=5s lead=5s\n[ralph] 03:23:25 ═══════════════════════════════════════════\n[ralph] 03:23:25 🤖 CODER — Attempt 1/3\n[ralph] 03:23:25 Task: T01 — Integration test task\n[ralph] 03:23:25 ═══════════════════════════════════════════\n[ralph] 03:23:25 🤖 [CODER] Attempt 1...\n[ralph] 03:23:25 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 03:23:25 🔍 Web search pol...mplementation evidence found.\n[ralph] 03:23:32 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T20:23:32Z\n[ralph] 03:23:33 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue\n[ralph] 03:23:33 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 03:23:33 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 03:23:33 ════════════════════════════════════════════════════\n[ralph] 03:23:33 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)\n[ralph] 03:23:33 ════════════════════════════════════════════════════\n[ralph] 03:23:33 📊 Final:\n=== Final State ===\nStatus: blocked\nStep: failed\nMessage: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.\n\n=== Task Progress ===\n  Total: 0/1 tasks done\n  Phase R1: 0/1\n\n', stderr='').returncode
+tests/test_integration.py:2895: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1256: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1242: in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-tests/test_integration.py:2352: AssertionError
+self = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-21/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt')
+name = '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-21/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt'
+flags = 16777216, mode = 438
+
+    def _opener(self, name, flags, mode=0o666):
+        # A stub for the opener argument to built-in open()
+>       return self._accessor.open(self, flags, mode)
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-21/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt'
+
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1110: FileNotFoundError
 =========================== short test summary info ============================
 FAILED tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown
-FAILED tests/test_integration.py::test_ralph_rejects_oversized_prompt - Asser...
+FAILED tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run
+FAILED tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_moderate_exact_task_run
+FAILED tests/test_integration.py::test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry
+FAILED tests/test_integration.py::test_ralph_injects_human_comment_into_coder_prompt_and_consumes_it
+FAILED tests/test_integration.py::test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_task_mode_fast_pre_task_check_completes_within_30_seconds
 FAILED tests/test_integration.py::test_ralph_auto_mode_runs_preflight_make_test_before_task_execution
 FAILED tests/test_integration.py::test_ralph_task_mode_can_force_preflight_make_test_explicitly
 FAILED tests/test_integration.py::test_ralph_preflight_uses_project_configured_test_command
+FAILED tests/test_integration.py::test_ralph_phase_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_docs
 FAILED tests/test_integration.py::test_ralph_auto_mode_narrow_task_does_not_read_project_docs_eagerly
-FAILED tests/test_integration.py::test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_run
-FAILED tests/test_integration.py::test_ralph_handoff_ignores_runtime_owned_dirty_artifacts_without_opening_candidate_path
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_without_worktree_or_repo_backed_candidate_state
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_when_valid_task_evidence_is_contaminated_by_unrelated_tracked_changes
-FAILED tests/test_integration.py::test_ralph_fails_closed_on_lead_stdout_review_mismatch
-FAILED tests/test_integration.py::test_ralph_blocks_contradictory_bookkeeping_only_fix_instructions
-FAILED tests/test_integration.py::test_ralph_blocks_diff_only_fix_without_retry_loop
-FAILED tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure
-============ 14 failed, 201 passed, 1 skipped in 771.75s (0:12:51) =============
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_narrow_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_broad_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_auto_mode_logs_scope_warning_for_tasks_with_more_than_three_target_files
+FAILED tests/test_integration.py::test_ralph_phase_mode_auto_reverts_non_runtime_out_of_scope_files_without_resetting_runtime_state
+FAILED tests/test_integration.py::test_ralph_marks_task_skipped_on_skip_control
+FAILED tests/test_integration.py::test_ralph_waits_for_assets_and_resumes_when_files_arrive
+============ 19 failed, 194 passed, 1 skipped in 888.77s (0:14:48) =============
 make: *** [test] Error 1
 tests failed
 ```
@@ -498,10 +355,10 @@ deprecated: `[features].web_search_request` is deprecated because web search is 
 Set `web_search` to `"live"`, `"cached"`, or `"disabled"` at the top level (or under a profile) in config.toml if you want to override it.
 codex
 BEGIN_RALPH_REVIEW_JSON
-{"decision":"fix","task_id":"R19-03","summary":"Ревью не пройдено: есть выход за scope задачи и регрессии по тестам.","quality_score":41,"issues":["SCOPE: изменены файлы вне target_files: ralph.sh, src/ralph/resources/ralph.sh, scripts/ralph_common.py, src/ralph/resources/scripts/ralph_common.py, tests/test_integration.py, tests/test_re_audit_tasks.py. Также отмечены runtime/bookkeeping изменения вне scope: .ralph/memory/recent.md, progress.md, tasks.json; для этой задачи они не обоснованы.","TESTS: полный прогон не проходит: 14 failed, 201 passed, 1 skipped. Это блокирует approve.","REGRESSIONS: diff затронул общий runtime-поток в ralph.sh и логику выбора задач в ralph_common.py, после чего упали интеграционные тесты вокруг task/auto/handoff/verification сценариев.","ACCEPTANCE: предупреждение для задач с >3 target_files реализовано, и авто-режим логирует warning, но задача не может быть одобрена из-за регрессий и нарушения scope."],"fix_instructions":"Свести реализацию к заявленному scope задачи: оставить поведение предупреждений для >3 target_files, но убрать регрессию в общем runtime. Минимальный путь: откатить изменения вне next_task.py-цепочки, затем реализовать warning через scripts/next_task.py и src/ralph/resources/scripts/next_task.py без изменения ralph.sh/ralph_common.py так, чтобы все интеграционные тесты снова проходили.","alert_reason":"","progress_note":"R19-03 требует доработки: scope расширен сверх target_files, а тестовый прогон показывает 14 регрессий.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
+{"decision":"fix","task_id":"R19-03","summary":"Критерии задачи не выполнены: тесты падают, а `next_task.py` не возвращает ожидаемые поля предупреждения в JSON.","quality_score":38,"issues":["SCOPE: изменён файл `tests/test_integration.py`, который не входит в `target_files`. Также в scope anomaly перечислены runtime/bookkeeping-файлы (`.ralph/audit/*`, `.ralph/memory/recent.md`, `progress.md`, `tasks.json`) вне task scope.","TESTS: полный прогон не проходит: 19 failed, 194 passed, 1 skipped.","ACCEPTANCE: по diff `scripts/next_task.py` и `src/ralph/resources/scripts/next_task.py` только печатают warning в stderr и пишут лог, но не добавляют в JSON поля `scope_too_wide` и `selection_warnings`, которые проверяет новый тест.","REGRESSIONS: текущее изменение меняет побочные эффекты выбора задачи через прямую запись в `logs/ralph_YYYY-MM-DD.log`; это завязано на существование каталога `logs` и не покрывает отсутствующий каталог, что делает поведение нестабильным.","QUALITY: код в целом простой, без секретов и debug-print, но реализация расходится с ожидаемым контрактом теста."],"fix_instructions":"В `scripts/next_task.py` и `src/ralph/resources/scripts/next_task.py` добавь предупреждения о широком scope прямо в JSON-ответ выбранной задачи: при `len(target_files) > 3` выставляй `scope_too_wide: true` и `selection_warnings: [<warning>]`, сохранив логирование warning для auto mode. После этого добейся прохождения добавленного интеграционного теста без зависимости только от stderr.","alert_reason":"","progress_note":"Нужно исправить контракт `next_task.py`; approval невозможен до зелёных тестов и совпадения с acceptance criteria.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
 END_RALPH_REVIEW_JSON
 tokens used
-29,068
+24,570
 BEGIN_RALPH_REVIEW_JSON
-{"decision":"fix","task_id":"R19-03","summary":"Ревью не пройдено: есть выход за scope задачи и регрессии по тестам.","quality_score":41,"issues":["SCOPE: изменены файлы вне target_files: ralph.sh, src/ralph/resources/ralph.sh, scripts/ralph_common.py, src/ralph/resources/scripts/ralph_common.py, tests/test_integration.py, tests/test_re_audit_tasks.py. Также отмечены runtime/bookkeeping изменения вне scope: .ralph/memory/recent.md, progress.md, tasks.json; для этой задачи они не обоснованы.","TESTS: полный прогон не проходит: 14 failed, 201 passed, 1 skipped. Это блокирует approve.","REGRESSIONS: diff затронул общий runtime-поток в ralph.sh и логику выбора задач в ralph_common.py, после чего упали интеграционные тесты вокруг task/auto/handoff/verification сценариев.","ACCEPTANCE: предупреждение для задач с >3 target_files реализовано, и авто-режим логирует warning, но задача не может быть одобрена из-за регрессий и нарушения scope."],"fix_instructions":"Свести реализацию к заявленному scope задачи: оставить поведение предупреждений для >3 target_files, но убрать регрессию в общем runtime. Минимальный путь: откатить изменения вне next_task.py-цепочки, затем реализовать warning через scripts/next_task.py и src/ralph/resources/scripts/next_task.py без изменения ralph.sh/ralph_common.py так, чтобы все интеграционные тесты снова проходили.","alert_reason":"","progress_note":"R19-03 требует доработки: scope расширен сверх target_files, а тестовый прогон показывает 14 регрессий.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
+{"decision":"fix","task_id":"R19-03","summary":"Критерии задачи не выполнены: тесты падают, а `next_task.py` не возвращает ожидаемые поля предупреждения в JSON.","quality_score":38,"issues":["SCOPE: изменён файл `tests/test_integration.py`, который не входит в `target_files`. Также в scope anomaly перечислены runtime/bookkeeping-файлы (`.ralph/audit/*`, `.ralph/memory/recent.md`, `progress.md`, `tasks.json`) вне task scope.","TESTS: полный прогон не проходит: 19 failed, 194 passed, 1 skipped.","ACCEPTANCE: по diff `scripts/next_task.py` и `src/ralph/resources/scripts/next_task.py` только печатают warning в stderr и пишут лог, но не добавляют в JSON поля `scope_too_wide` и `selection_warnings`, которые проверяет новый тест.","REGRESSIONS: текущее изменение меняет побочные эффекты выбора задачи через прямую запись в `logs/ralph_YYYY-MM-DD.log`; это завязано на существование каталога `logs` и не покрывает отсутствующий каталог, что делает поведение нестабильным.","QUALITY: код в целом простой, без секретов и debug-print, но реализация расходится с ожидаемым контрактом теста."],"fix_instructions":"В `scripts/next_task.py` и `src/ralph/resources/scripts/next_task.py` добавь предупреждения о широком scope прямо в JSON-ответ выбранной задачи: при `len(target_files) > 3` выставляй `scope_too_wide: true` и `selection_warnings: [<warning>]`, сохранив логирование warning для auto mode. После этого добейся прохождения добавленного интеграционного теста без зависимости только от stderr.","alert_reason":"","progress_note":"Нужно исправить контракт `next_task.py`; approval невозможен до зелёных тестов и совпадения с acceptance criteria.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
 END_RALPH_REVIEW_JSON

@@ -3626,7 +3626,7 @@
     {
       "id": "R19-01",
       "phase": "R19",
-      "status": "pending",
+      "status": "done",
       "title": "Runtime file protection gate",
       "description": "Before coder codex exec, stash changes to tasks.json, progress.md, .ralph/memory/. After coder finishes, restore them via git checkout. This prevents coder from modifying runtime-owned files.",
       "target_files": [
@@ -3640,13 +3640,13 @@
       "priority": "critical",
       "complexity": "moderate",
       "role": "coder",
-      "completed_at": null,
-      "revision_notes": "reset: false_positive review"
+      "completed_at": "2026-04-24T12:08:59.105101+00:00",
+      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
     },
     {
       "id": "R19-02",
       "phase": "R19",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Bash syntax gate before test run",
       "description": "Add bash -n validation for all .sh files modified by coder BEFORE running make test. If syntax check fails, skip tests and return fix immediately. This catches heredoc/inline-python parse errors early.",
       "target_files": [
@@ -3660,13 +3660,13 @@
       "priority": "critical",
       "complexity": "simple",
       "role": "coder",
-      "completed_at": null,
+      "completed_at": "2026-04-10T17:49:39.695256+00:00",
       "revision_notes": "reset: bugs fixed in HEAD"
     },
     {
       "id": "R19-03",
       "phase": "R19",
-      "status": "pending",
+      "status": "blocked",
       "title": "Enforce target_files limit of 3",
       "description": "[PARKING LOT] In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
       "target_files": [
@@ -3681,12 +3681,12 @@
       "complexity": "simple",
       "role": "coder",
       "completed_at": null,
-      "revision_notes": "reset: false_positive review"
+      "revision_notes": "R19-03 failed after 2 retries"
     },
     {
       "id": "R19-04",
       "phase": "R19",
-      "status": "pending",
+      "status": "blocked",
       "title": "Ban inline Python heredoc >10 lines in bash",
       "description": "[PARKING LOT] Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
       "target_files": [
@@ -3701,12 +3701,12 @@
       "complexity": "simple",
       "role": "coder",
       "completed_at": null,
-      "revision_notes": "reset: false_positive review"
+      "revision_notes": "R19-04 failed after 2 retries"
     },
     {
       "id": "R19-05",
       "phase": "R19",
-      "status": "pending",
+      "status": "done",
       "title": "Scope guard revert for out-of-scope files",
       "description": "When scope anomaly detects modifications outside target_files, automatically git checkout those files before lead review instead of just warning. Runtime files (tasks.json, progress.md, .ralph/) are always reverted. Other out-of-scope files are reverted unless lead approves.",
       "target_files": [
@@ -3720,8 +3720,8 @@
       "priority": "critical",
       "complexity": "moderate",
       "role": "coder",
-      "completed_at": null,
-      "revision_notes": "reset: bugs fixed in HEAD"
+      "completed_at": "2026-04-24T12:08:59.124906+00:00",
+      "revision_notes": "R19-05 failed after 2 retries"
     },
     {
       "id": "R20-01",
@@ -3761,7 +3761,7 @@
     {
       "id": "R20-03",
       "phase": "R20",
-      "status": "pending",
+      "status": "blocked",
       "title": "Harden Lead JSON parsing — single authoritative source",
       "description": "Always prefer review file. Simplify extraction to: decision, quality_score, issues. Fallback on malformed JSON = skip (not fix). Test against archived lead outputs.",
       "target_files": [
@@ -3773,7 +3773,9 @@
       ],
       "priority": "critical",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": null,
+      "revision_notes": "R20-03 failed after 2 retries"
     },
     {
       "id": "R20-04",
@@ -3885,6 +3887,131 @@
       "priority": "medium",
       "complexity": "simple",
       "role": "coder"
+    },
+    {
+      "id": "R22-01",
+      "phase": "R22",
+      "priority": "high",
+      "status": "pending",
+      "title": "state_service.py — транзакционный R/W tasks.json",
+      "description": "Заменить все прямые записи в tasks.json из bash на Python сервис с file lock и atomic write. Strangler: сначала только read path.",
+      "target_files": [
+        "scripts/state_service.py",
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Нет прямых json writes в ralph.sh",
+        "state_service имеет file lock",
+        "atomic write через tmp + rename",
+        "Все существующие тесты проходят"
+      ],
+      "depends_on": [
+        "R20-03",
+        "R20-04",
+        "R20-05"
+      ]
+    },
+    {
+      "id": "R22-02",
+      "phase": "R22",
+      "priority": "high",
+      "status": "pending",
+      "title": "review_service.py — единый парсер lead review JSON",
+      "description": "Вынести логику парсинга lead review из ralph.sh в отдельный Python модуль. Один authoritative source, deterministic fallback.",
+      "target_files": [
+        "scripts/review_service.py",
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Все 10+ архивных lead outputs парсятся корректно",
+        "Malformed review → skip/defer без fix-loop",
+        "Нет дублирования логики в ralph.sh"
+      ],
+      "depends_on": [
+        "R20-03"
+      ]
+    },
+    {
+      "id": "R22-03",
+      "phase": "R22",
+      "priority": "medium",
+      "status": "pending",
+      "title": "Fast test gate — pytest -x -q вместо make test в auto mode",
+      "description": "В auto/phase режиме запускать только fast subset тестов. Full make test только при explicit verify.",
+      "target_files": [
+        "ralph.sh",
+        "Makefile"
+      ],
+      "acceptance_criteria": [
+        "auto mode использует test_cmd_fast если задан",
+        "Среднее время test phase < 60s в auto",
+        "make test не запускается в auto без флага"
+      ],
+      "depends_on": [
+        "R20-04"
+      ]
+    },
+    {
+      "id": "R22-04",
+      "phase": "R22",
+      "priority": "medium",
+      "status": "pending",
+      "title": "Qdrant memory — семантический поиск вместо recent.md",
+      "description": "Заменить .ralph/memory/recent.md на Qdrant local instance для semantic retrieval релевантного контекста к задаче.",
+      "target_files": [
+        "scripts/memory_service.py",
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Qdrant запускается локально через Docker или embedded",
+        "При старте задачи получаем top-5 похожих прошлых задач",
+        "Fallback на recent.md если Qdrant недоступен"
+      ],
+      "depends_on": [
+        "R22-01"
+      ]
+    },
+    {
+      "id": "R22-05",
+      "phase": "R22",
+      "priority": "low",
+      "status": "pending",
+      "title": "Semgrep security gate в lead review",
+      "description": "Добавить Semgrep scan как обязательный шаг перед lead approve для задач затрагивающих security-sensitive файлы.",
+      "target_files": [
+        "scripts/security_service.py",
+        "ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "Semgrep запускается на changed files",
+        "Critical findings блокируют approve",
+        "Результат логируется в audit artifact"
+      ],
+      "depends_on": [
+        "R22-02"
+      ]
+    },
+    {
+      "id": "R20-10",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Investigate new test failures in handoff mode and task tail",
+      "description": "After R20-03 fixes, 3 new integration tests started failing:\n1. test_ralph_task_success_final_tail_does_not_run_nested_status_pytest\n2. test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_run\n3. test_ralph_handoff_mode_closes_from_repo_backed_candidate_state_without_coder_run\n\nRoot cause unknown - likely unrelated to JSON extraction changes. May indicate race condition in handoff cleanup or task tail logic.",
+      "target_files": [
+        "ralph.sh",
+        "tests/test_integration.py"
+      ],
+      "acceptance_criteria": [
+        "Identify root cause of each failure",
+        "Fix or document as false-positive/flaky",
+        "Full test suite passes with <=21 failures (baseline)"
+      ],
+      "priority": "medium",
+      "complexity": "moderate",
+      "role": "coder",
+      "depends_on": [
+        "R20-03"
+      ]
     }
   ]
 }

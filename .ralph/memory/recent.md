@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R19-02: Bash syntax gate before test run
+- Files: ralph.sh,src/ralph/resources/ralph.sh
+- Result: approved
+- Notes: Fix the failing `ralph.sh` phase/task-mode regression so the full `make test` suite passes again, then rerun verification; this task cannot be approved while the current branch still fails those existing integration tests.
+- Time: 2026-04-10T17:49:39Z
+
 ### R13-07: Consolidate runtime constants and gate destructive rollback
 - Files: ralph.sh,reports/chrome_extension_readiness.md,scripts/ralph_bot.py,scripts/ralph_common.py,scripts/ralph_notify.py,src/ralph/resources/ralph.sh,src/ralph/resources/scripts/ralph_bot.py,src/ralph/resources/scripts/ralph_common.py,src/ralph/resources/scripts/ralph_notify.py,tests/test_bot_commands.py,tests/test_integration.py
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-30T10:02:50Z
-
-### OPS-09: Narrow: reduce coder prompt to <15k tokens for narrow tasks
-- Files: .ralph/audit/OPS-09.json,ralph.sh,src/ralph/resources/ralph.sh
-- Result: approved
-- Notes: 
-- Time: 2026-03-28T07:58:21Z

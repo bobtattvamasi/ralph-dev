@@ -8,7 +8,7 @@ approval: never
 sandbox: danger-full-access
 reasoning effort: none
 reasoning summaries: none
-session id: 019d6e67-d2fe-7f23-ac05-463ad43ffd81
+session id: 019d7849-756d-72c0-ba06-f2f71e83e402
 --------
 user
 Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
@@ -30,18 +30,14 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
   ],
   "priority": "critical",
   "complexity": "moderate",
-  "role": "coder"
+  "role": "coder",
+  "completed_at": null,
+  "revision_notes": "reset: false_positive review"
 }
 
 ## Target Files
 - ralph.sh
 - src/ralph/resources/ralph.sh
-
-## Scope Anomaly Warning
-The following files were modified but are NOT in target_files:
-.ralph/memory/recent.md
-progress.md
-Please evaluate whether these changes are justified.
 
 
 ## Role Instructions (AGENTS_LEAD.md)
@@ -90,550 +86,425 @@ END_RALPH_REVIEW_JSON
 ## Diff
 ```diff
 diff --git a/ralph.sh b/ralph.sh
-index 3dcdb6a..6c0237c 100755
+index 433d0da..78f6d30 100755
 --- a/ralph.sh
 +++ b/ralph.sh
-@@ -141,6 +141,151 @@ for path in Path("/tmp").glob("ralph_coder_*.txt"):
+@@ -141,6 +141,56 @@ for path in Path("/tmp").glob("ralph_coder_*.txt"):
  PY
  }
  
-+RUNTIME_PROTECTED_PATHS=("tasks.json" "progress.md" ".ralph/memory")
++RUNTIME_PROTECTED_PATHS=(tasks.json progress.md .ralph/memory)
++RUNTIME_PROTECTION_STASH_REF=""
 +
-+snapshot_runtime_protected_paths() {
-+    local snapshot_file="${1:-}"
++find_runtime_protection_stash_ref() {
++    local stash_message="$1"
 +
-+    [ -n "$snapshot_file" ] || return 1
-+    python3 - "$snapshot_file" <<'PY'
-+from pathlib import Path
-+import os
-+import sys
-+
-+snapshot_path = Path(sys.argv[1])
-+protected_roots = [Path("tasks.json"), Path("progress.md"), Path(".ralph/memory")]
-+seen: set[str] = set()
-+
-+for root in protected_roots:
-+    if root.exists():
-+        seen.add(root.as_posix())
-+    if root.is_dir():
-+        for current_root, dirnames, filenames in os.walk(root):
-+            dirnames.sort()
-+            filenames.sort()
-+            current = Path(current_root)
-+            seen.add(current.as_posix())
-+            for name in filenames:
-+                seen.add((current / name).as_posix())
-+
-+snapshot_path.write_text("\n".join(sorted(seen)), encoding="utf-8")
-+PY
++    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '$2 == msg { print $1; exit }'
 +}
 +
-+remove_new_runtime_protected_paths() {
-+    local snapshot_file="${1:-}"
++protect_runtime_files_before_coder() {
++    RUNTIME_PROTECTION_STASH_REF=""
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 +
-+    [ -n "$snapshot_file" ] || return 1
-+    python3 - "$snapshot_file" <<'PY'
-+from pathlib import Path
-+import shutil
-+import sys
-+
-+snapshot_path = Path(sys.argv[1])
-+before = {
-+    line.strip()
-+    for line in snapshot_path.read_text(encoding="utf-8").splitlines()
-+    if line.strip()
-+}
-+protected_roots = [Path("tasks.json"), Path("progress.md"), Path(".ralph/memory")]
-+current: set[str] = set()
-+
-+for root in protected_roots:
-+    if root.exists():
-+        current.add(root.as_posix())
-+    if root.is_dir():
-+        for path in sorted(root.rglob("*")):
-+            current.add(path.as_posix())
-+
-+for rel in sorted(current - before, key=lambda item: (item.count("/"), item), reverse=True):
-+    path = Path(rel)
-+    try:
-+        if path.is_symlink() or path.is_file():
-+            path.unlink()
-+        elif path.is_dir():
-+            shutil.rmtree(path)
-+    except FileNotFoundError:
-+        pass
-+PY
-+}
-+
-+resolve_stash_ref_by_commit() {
-+    local stash_commit="${1:-}"
-+
-+    [ -n "$stash_commit" ] || return 1
-+    git stash list --format='%H %gd' | awk -v hash="$stash_commit" '$1 == hash { print $2; exit }'
-+}
-+
-+begin_runtime_file_protection() {
-+    local snapshot_file="${1:-}"
-+    local stash_commit_file="${2:-}"
-+    local before_stash=""
-+    local after_stash=""
-+
-+    [ -n "$snapshot_file" ] || return 1
-+    [ -n "$stash_commit_file" ] || return 1
-+
-+    : > "$stash_commit_file"
-+    snapshot_runtime_protected_paths "$snapshot_file" || return 1
-+
-+    before_stash=$(git rev-parse -q --verify refs/stash 2>/dev/null || true)
-+    git stash push --include-untracked -m "ralph-runtime-protected-$$-$(date +%s)" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || return 1
-+    after_stash=$(git rev-parse -q --verify refs/stash 2>/dev/null || true)
-+    if [ -n "$after_stash" ] && [ "$after_stash" != "$before_stash" ]; then
-+        printf '%s\n' "$after_stash" > "$stash_commit_file"
-+    fi
-+}
-+
-+end_runtime_file_protection() {
-+    local snapshot_file="${1:-}"
-+    local stash_commit_file="${2:-}"
-+    local stash_commit=""
-+    local stash_ref=""
-+
-+    [ -n "$snapshot_file" ] || return 1
-+    [ -n "$stash_commit_file" ] || return 1
-+
-+    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || return 1
-+    stash_commit=$(cat "$stash_commit_file" 2>/dev/null || true)
-+    if [ -n "$stash_commit" ]; then
-+        git checkout "$stash_commit" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || return 1
-+        stash_ref=$(resolve_stash_ref_by_commit "$stash_commit" || true)
-+        if [ -n "$stash_ref" ]; then
-+            git stash drop "$stash_ref" >/dev/null 2>&1 || true
++    local stash_message=""
++    local runtime_status=""
++    runtime_status=$(git status --short -- "${RUNTIME_PROTECTED_PATHS[@]}" 2>/dev/null || true)
++    if [ -n "$runtime_status" ]; then
++        stash_message="ralph-runtime-protect-$$-$(date +%s)-$RANDOM"
++        if git stash push --include-untracked -m "$stash_message" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1; then
++            RUNTIME_PROTECTION_STASH_REF=$(find_runtime_protection_stash_ref "$stash_message")
++            if [ -n "$RUNTIME_PROTECTION_STASH_REF" ]; then
++                log "🔒 Stashed runtime-owned files before coder exec"
++            else
++                log "⚠️ Runtime protection stash was created but could not be resolved"
++            fi
++        else
++            log "⚠️ Failed to stash runtime-owned files before coder exec"
 +        fi
 +    fi
-+    remove_new_runtime_protected_paths "$snapshot_file" || return 1
++
++    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
++    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
 +}
 +
-+run_coder_codex_protected() {
-+    local prompt="${1:-}"
-+    local output_file="${2:-}"
-+    local review_file="${3:-}"
-+    local timeout="${4:-180}"
-+    local model="${5:-}"
-+    local snapshot_file="/tmp/ralph_runtime_protected_paths_$$.txt"
-+    local stash_commit_file="/tmp/ralph_runtime_protected_stash_$$.txt"
-+    local codex_exit=0
-+    local restore_exit=0
++restore_runtime_files_after_coder() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 +
-+    begin_runtime_file_protection "$snapshot_file" "$stash_commit_file" || return 1
++    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
++    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
 +
-+    set +e
-+    run_codex "$prompt" "$output_file" "$review_file" "$timeout" "$model"
-+    codex_exit=$?
-+    set -e
-+
-+    end_runtime_file_protection "$snapshot_file" "$stash_commit_file" || restore_exit=$?
-+    rm -f "$snapshot_file" "$stash_commit_file"
-+
-+    if [ "$restore_exit" -ne 0 ]; then
-+        log "❌ Failed to restore runtime-protected files after coder run"
-+        return "$restore_exit"
++    if [ -n "${RUNTIME_PROTECTION_STASH_REF:-}" ]; then
++        if git stash pop --index "$RUNTIME_PROTECTION_STASH_REF" >/dev/null 2>&1; then
++            log "🔒 Restored runtime-owned files after coder exec"
++        else
++            log "⚠️ Failed to restore stashed runtime-owned files from $RUNTIME_PROTECTION_STASH_REF"
++        fi
++        RUNTIME_PROTECTION_STASH_REF=""
 +    fi
-+
-+    return "$codex_exit"
 +}
 +
  cleanup() {
      # Prevent recursive cleanup (explicit call + trap).
      if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
-@@ -1038,6 +1183,18 @@ set_task_success_exit_state() {
-     FINAL_STATE_MESSAGE="Task $TASK_ID complete"
-     FINAL_NOTIFY_MESSAGE="✅ Ralph finished requested task $TASK_ID. Run /status for details."
-     QUEUE_EXIT_LOG="✅ Requested task $TASK_ID complete!"
-+    FINAL_EXIT_CODE=0
-+}
-+
-+set_task_failure_exit_state() {
-+    local reason="${1:-Task failed}"
-+
-+    FINAL_STATE_STATUS="blocked"
-+    FINAL_STATE_STEP="failed"
-+    FINAL_STATE_MESSAGE="Task $TASK_ID failed: $reason"
-+    FINAL_NOTIFY_MESSAGE="⚠️ Ralph failed requested task $TASK_ID. Run /status for details."
-+    QUEUE_EXIT_LOG="⚠️ Requested task $TASK_ID failed: $reason"
-+    FINAL_EXIT_CODE=1
- }
- 
- persist_task_success_state() {
-@@ -3136,10 +3293,7 @@ run_coder_agent() {
-     coder_output="/tmp/ralph_coder_$$.txt"
-     pre_hash=$(git rev-parse HEAD)
- 
--    set +e
--    run_codex "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "${CODEX_MODEL:-}"
--    codex_exit=$?
--    set -e
-+    run_coder_codex_protected "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "${CODEX_MODEL:-}" || codex_exit=$?
- 
-     CODER_TOKENS=$(extract_tokens "$coder_output")
-     TASK_TOKENS=$(( ${TASK_TOKENS:-0} + ${CODER_TOKENS:-0} ))
-@@ -3445,14 +3599,11 @@ run_manual_benchmark_for_task() {
+@@ -3445,6 +3495,7 @@ run_manual_benchmark_for_task() {
  
      coder_output="/tmp/ralph_benchmark_manual_${task_id}_$$.txt"
      manual_start=$(python3 -c 'import time; print(f"{time.time():.6f}")')
--    set +e
++    protect_runtime_files_before_coder
+     set +e
      if [ -n "$model" ]; then
--        codex exec -s danger-full-access -m "$model" "$CODER_PROMPT" >"$coder_output" 2>&1
-+        run_coder_codex_protected "$CODER_PROMPT" "$coder_output" "" "${TASK_TIMEOUT:-180}" "$model" || codex_status=$?
-     else
--        codex exec -s danger-full-access "$CODER_PROMPT" >"$coder_output" 2>&1
-+        run_coder_codex_protected "$CODER_PROMPT" "$coder_output" "" "${TASK_TIMEOUT:-180}" "" || codex_status=$?
+         codex exec -s danger-full-access -m "$model" "$CODER_PROMPT" >"$coder_output" 2>&1
+@@ -3453,6 +3504,7 @@ run_manual_benchmark_for_task() {
      fi
--    codex_status=$?
--    set -e
+     codex_status=$?
+     set -e
++    restore_runtime_files_after_coder
      manual_end=$(python3 -c 'import time; print(f"{time.time():.6f}")')
      manual_duration=$(python3 - "$manual_start" "$manual_end" <<'PY'
  import sys
-@@ -4099,15 +4250,22 @@ print(task.get('role', 'coder'))
-                 break
-             fi
+@@ -3971,14 +4023,6 @@ print(task.get('role', 'coder'))
+         fi
  
--            set +e
+         PRE_HASH=$(git rev-parse HEAD)
+-        # R19-05: snapshot runtime files before coder touches anything
+-        RUNTIME_SNAPSHOT_DIR=$(mktemp -d)
+-        for _rf in tasks.json progress.md .ralph/memory/recent.md; do
+-            if [ -f "$PROJECT_DIR/$_rf" ]; then
+-                mkdir -p "$RUNTIME_SNAPSHOT_DIR/$(dirname "$_rf")"
+-                cp "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf"
+-            fi
+-        done
+         REVIEW_BASE_HASH="${TASK_START_COMMIT:-$PRE_HASH}"
+         REVIEW_TARGET_HASH="HEAD"
+         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
+@@ -4109,9 +4153,11 @@ print(task.get('role', 'coder'))
+ 
+             set +e
              # run_codex handles retries/backoff for codex execution
--            run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
--            CODEX_EXIT=$?
--            set -e
-+            run_coder_codex_protected "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL" || CODEX_EXIT=$?
++            protect_runtime_files_before_coder
+             run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
+             CODEX_EXIT=$?
+             set -e
++            restore_runtime_files_after_coder
              CONTROL_STATUS=0
              SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
              log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
- 
-+            if [ "$CODEX_EXIT" -ne 0 ]; then
-+                if [ "$CODEX_EXIT" -eq 124 ]; then
-+                    REASON="Coder timed out after retries"
-+                else
-+                    REASON="Coder failed after retries (exit $CODEX_EXIT)"
-+                fi
-+                log "🛑 Coder run failed with exit $CODEX_EXIT; skipping asset/test/lead stages"
-+                break
-+            fi
-+
-             # Commit any unstaged changes the coder left behind
-             if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
-                 stage_changed_paths
-@@ -4611,11 +4769,15 @@ except Exception:
-             RALPH_AUDIT_REASON="${REASON:-Task blocked}" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
-             AUDIT_WRITTEN=true
+@@ -4222,21 +4268,6 @@ print(task.get('role', 'coder'))
+             rm -f "$RETRY_TEST_OUTPUT_FILE"
          fi
--        is_single_task_mode && break
-+        if is_single_task_mode; then
-+            set_task_failure_exit_state "${REASON:-Task blocked}"
-+            break
-+        fi
-         continue
-     fi
- 
-     if [ "$TASK_ALERTED" = true ]; then
-+        is_single_task_mode && set_task_failure_exit_state "${REASON:-Task failed}"
-         break
-     fi
- 
-@@ -4634,10 +4796,14 @@ except Exception:
-         AUDIT_WRITTEN=true
-         if [ "${TASK_RISK:-medium}" = "high" ]; then
-             alert_human "$REASON"
-+            is_single_task_mode && set_task_failure_exit_state "$REASON"
-             break
-         else
-             defer_blocked_task "$REASON"
--            is_single_task_mode && break
-+            if is_single_task_mode; then
-+                set_task_failure_exit_state "$REASON"
-+                break
-+            fi
-             continue
-         fi
-     fi
+         ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+-        # R19-05: restore runtime files coder should never modify
+-        RUNTIME_REVERTED=""
+-        if [ -d "${RUNTIME_SNAPSHOT_DIR:-}" ]; then
+-            for _rf in tasks.json progress.md .ralph/memory/recent.md; do
+-                if [ -f "$RUNTIME_SNAPSHOT_DIR/$_rf" ] && ! diff -q "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf" >/dev/null 2>&1; then
+-                    cp "$RUNTIME_SNAPSHOT_DIR/$_rf" "$PROJECT_DIR/$_rf"
+-                    RUNTIME_REVERTED="${RUNTIME_REVERTED}${RUNTIME_REVERTED:+ }$_rf"
+-                fi
+-            done
+-            rm -rf "$RUNTIME_SNAPSHOT_DIR"
+-        fi
+-        if [ -n "$RUNTIME_REVERTED" ]; then
+-            log "🔒 Auto-reverted runtime files: $RUNTIME_REVERTED"
+-            ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+-        fi
+         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
+ import json
+ import os
 diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
-index 3dcdb6a..6c0237c 100755
+index 433d0da..78f6d30 100755
 --- a/src/ralph/resources/ralph.sh
 +++ b/src/ralph/resources/ralph.sh
-@@ -141,6 +141,151 @@ for path in Path("/tmp").glob("ralph_coder_*.txt"):
+@@ -141,6 +141,56 @@ for path in Path("/tmp").glob("ralph_coder_*.txt"):
  PY
  }
  
-+RUNTIME_PROTECTED_PATHS=("tasks.json" "progress.md" ".ralph/memory")
++RUNTIME_PROTECTED_PATHS=(tasks.json progress.md .ralph/memory)
++RUNTIME_PROTECTION_STASH_REF=""
 +
-+snapshot_runtime_protected_paths() {
-+    local snapshot_file="${1:-}"
++find_runtime_protection_stash_ref() {
++    local stash_message="$1"
 +
-+    [ -n "$snapshot_file" ] || return 1
-+    python3 - "$snapshot_file" <<'PY'
-+from pathlib import Path
-+import os
-+import sys
-+
-+snapshot_path = Path(sys.argv[1])
-+protected_roots = [Path("tasks.json"), Path("progress.md"), Path(".ralph/memory")]
-+seen: set[str] = set()
-+
-+for root in protected_roots:
-+    if root.exists():
-+        seen.add(root.as_posix())
-+    if root.is_dir():
-+        for current_root, dirnames, filenames in os.walk(root):
-+            dirnames.sort()
-+            filenames.sort()
-+            current = Path(current_root)
-+            seen.add(current.as_posix())
-+            for name in filenames:
-+                seen.add((current / name).as_posix())
-+
-+snapshot_path.write_text("\n".join(sorted(seen)), encoding="utf-8")
-+PY
++    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '$2 == msg { print $1; exit }'
 +}
 +
-+remove_new_runtime_protected_paths() {
-+    local snapshot_file="${1:-}"
++protect_runtime_files_before_coder() {
++    RUNTIME_PROTECTION_STASH_REF=""
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 +
-+    [ -n "$snapshot_file" ] || return 1
-+    python3 - "$snapshot_file" <<'PY'
-+from pathlib import Path
-+import shutil
-+import sys
-+
-+snapshot_path = Path(sys.argv[1])
-+before = {
-+    line.strip()
-+    for line in snapshot_path.read_text(encoding="utf-8").splitlines()
-+    if line.strip()
-+}
-+protected_roots = [Path("tasks.json"), Path("progress.md"), Path(".ralph/memory")]
-+current: set[str] = set()
-+
-+for root in protected_roots:
-+    if root.exists():
-+        current.add(root.as_posix())
-+    if root.is_dir():
-+        for path in sorted(root.rglob("*")):
-+            current.add(path.as_posix())
-+
-+for rel in sorted(current - before, key=lambda item: (item.count("/"), item), reverse=True):
-+    path = Path(rel)
-+    try:
-+        if path.is_symlink() or path.is_file():
-+            path.unlink()
-+        elif path.is_dir():
-+            shutil.rmtree(path)
-+    except FileNotFoundError:
-+        pass
-+PY
-+}
-+
-+resolve_stash_ref_by_commit() {
-+    local stash_commit="${1:-}"
-+
-+    [ -n "$stash_commit" ] || return 1
-+    git stash list --format='%H %gd' | awk -v hash="$stash_commit" '$1 == hash { print $2; exit }'
-+}
-+
-+begin_runtime_file_protection() {
-+    local snapshot_file="${1:-}"
-+    local stash_commit_file="${2:-}"
-+    local before_stash=""
-+    local after_stash=""
-+
-+    [ -n "$snapshot_file" ] || return 1
-+    [ -n "$stash_commit_file" ] || return 1
-+
-+    : > "$stash_commit_file"
-+    snapshot_runtime_protected_paths "$snapshot_file" || return 1
-+
-+    before_stash=$(git rev-parse -q --verify refs/stash 2>/dev/null || true)
-+    git stash push --include-untracked -m "ralph-runtime-protected-$$-$(date +%s)" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || return 1
-+    after_stash=$(git rev-parse -q --verify refs/stash 2>/dev/null || true)
-+    if [ -n "$after_stash" ] && [ "$after_stash" != "$before_stash" ]; then
-+        printf '%s\n' "$after_stash" > "$stash_commit_file"
-+    fi
-+}
-+
-+end_runtime_file_protection() {
-+    local snapshot_file="${1:-}"
-+    local stash_commit_file="${2:-}"
-+    local stash_commit=""
-+    local stash_ref=""
-+
-+    [ -n "$snapshot_file" ] || return 1
-+    [ -n "$stash_commit_file" ] || return 1
-+
-+    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || return 1
-+    stash_commit=$(cat "$stash_commit_file" 2>/dev/null || true)
-+    if [ -n "$stash_commit" ]; then
-+        git checkout "$stash_commit" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || return 1
-+        stash_ref=$(resolve_stash_ref_by_commit "$stash_commit" || true)
-+        if [ -n "$stash_ref" ]; then
-+            git stash drop "$stash_ref" >/dev/null 2>&1 || true
++    local stash_message=""
++    local runtime_status=""
++    runtime_status=$(git status --short -- "${RUNTIME_PROTECTED_PATHS[@]}" 2>/dev/null || true)
++    if [ -n "$runtime_status" ]; then
++        stash_message="ralph-runtime-protect-$$-$(date +%s)-$RANDOM"
++        if git stash push --include-untracked -m "$stash_message" -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1; then
++            RUNTIME_PROTECTION_STASH_REF=$(find_runtime_protection_stash_ref "$stash_message")
++            if [ -n "$RUNTIME_PROTECTION_STASH_REF" ]; then
++                log "🔒 Stashed runtime-owned files before coder exec"
++            else
++                log "⚠️ Runtime protection stash was created but could not be resolved"
++            fi
++        else
++            log "⚠️ Failed to stash runtime-owned files before coder exec"
 +        fi
 +    fi
-+    remove_new_runtime_protected_paths "$snapshot_file" || return 1
++
++    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
++    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
 +}
 +
-+run_coder_codex_protected() {
-+    local prompt="${1:-}"
-+    local output_file="${2:-}"
-+    local review_file="${3:-}"
-+    local timeout="${4:-180}"
-+    local model="${5:-}"
-+    local snapshot_file="/tmp/ralph_runtime_protected_paths_$$.txt"
-+    local stash_commit_file="/tmp/ralph_runtime_protected_stash_$$.txt"
-+    local codex_exit=0
-+    local restore_exit=0
++restore_runtime_files_after_coder() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 +
-+    begin_runtime_file_protection "$snapshot_file" "$stash_commit_file" || return 1
++    git checkout -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
++    git clean -fd -- "${RUNTIME_PROTECTED_PATHS[@]}" >/dev/null 2>&1 || true
 +
-+    set +e
-+    run_codex "$prompt" "$output_file" "$review_file" "$timeout" "$model"
-+    codex_exit=$?
-+    set -e
-+
-+    end_runtime_file_protection "$snapshot_file" "$stash_commit_file" || restore_exit=$?
-+    rm -f "$snapshot_file" "$stash_commit_file"
-+
-+    if [ "$restore_exit" -ne 0 ]; then
-+        log "❌ Failed to restore runtime-protected files after coder run"
-+        return "$restore_exit"
++    if [ -n "${RUNTIME_PROTECTION_STASH_REF:-}" ]; then
++        if git stash pop --index "$RUNTIME_PROTECTION_STASH_REF" >/dev/null 2>&1; then
++            log "🔒 Restored runtime-owned files after coder exec"
++        else
++            log "⚠️ Failed to restore stashed runtime-owned files from $RUNTIME_PROTECTION_STASH_REF"
++        fi
++        RUNTIME_PROTECTION_STASH_REF=""
 +    fi
-+
-+    return "$codex_exit"
 +}
 +
  cleanup() {
      # Prevent recursive cleanup (explicit call + trap).
      if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
-@@ -1038,6 +1183,18 @@ set_task_success_exit_state() {
-     FINAL_STATE_MESSAGE="Task $TASK_ID complete"
-     FINAL_NOTIFY_MESSAGE="✅ Ralph finished requested task $TASK_ID. Run /status for details."
-     QUEUE_EXIT_LOG="✅ Requested task $TASK_ID complete!"
-+    FINAL_EXIT_CODE=0
-+}
-+
-+set_task_failure_exit_state() {
-+    local reason="${1:-Task failed}"
-+
-+    FINAL_STATE_STATUS="blocked"
-+    FINAL_STATE_STEP="failed"
-+    FINAL_STATE_MESSAGE="Task $TASK_ID failed: $reason"
-+    FINAL_NOTIFY_MESSAGE="⚠️ Ralph failed requested task $TASK_ID. Run /status for details."
-+    QUEUE_EXIT_LOG="⚠️ Requested task $TASK_ID failed: $reason"
-+    FINAL_EXIT_CODE=1
- }
- 
- persist_task_success_state() {
-@@ -3136,10 +3293,7 @@ run_coder_agent() {
-     coder_output="/tmp/ralph_coder_$$.txt"
-     pre_hash=$(git rev-parse HEAD)
- 
--    set +e
--    run_codex "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "${CODEX_MODEL:-}"
--    codex_exit=$?
--    set -e
-+    run_coder_codex_protected "$coder_prompt" "$coder_output" "" "${TASK_TIMEOUT:-180}" "${CODEX_MODEL:-}" || codex_exit=$?
- 
-     CODER_TOKENS=$(extract_tokens "$coder_output")
-     TASK_TOKENS=$(( ${TASK_TOKENS:-0} + ${CODER_TOKENS:-0} ))
-@@ -3445,14 +3599,11 @@ run_manual_benchmark_for_task() {
+@@ -3445,6 +3495,7 @@ run_manual_benchmark_for_task() {
  
      coder_output="/tmp/ralph_benchmark_manual_${task_id}_$$.txt"
      manual_start=$(python3 -c 'import time; print(f"{time.time():.6f}")')
--    set +e
++    protect_runtime_files_before_coder
+     set +e
      if [ -n "$model" ]; then
--        codex exec -s danger-full-access -m "$model" "$CODER_PROMPT" >"$coder_output" 2>&1
-+        run_coder_codex_protected "$CODER_PROMPT" "$coder_output" "" "${TASK_TIMEOUT:-180}" "$model" || codex_status=$?
-     else
--        codex exec -s danger-full-access "$CODER_PROMPT" >"$coder_output" 2>&1
-+        run_coder_codex_protected "$CODER_PROMPT" "$coder_output" "" "${TASK_TIMEOUT:-180}" "" || codex_status=$?
+         codex exec -s danger-full-access -m "$model" "$CODER_PROMPT" >"$coder_output" 2>&1
+@@ -3453,6 +3504,7 @@ run_manual_benchmark_for_task() {
      fi
--    codex_status=$?
--    set -e
+     codex_status=$?
+     set -e
++    restore_runtime_files_after_coder
      manual_end=$(python3 -c 'import time; print(f"{time.time():.6f}")')
      manual_duration=$(python3 - "$manual_start" "$manual_end" <<'PY'
  import sys
-@@ -4099,15 +4250,22 @@ print(task.get('role', 'coder'))
-                 break
-             fi
+@@ -3971,14 +4023,6 @@ print(task.get('role', 'coder'))
+         fi
  
--            set +e
+         PRE_HASH=$(git rev-parse HEAD)
+-        # R19-05: snapshot runtime files before coder touches anything
+-        RUNTIME_SNAPSHOT_DIR=$(mktemp -d)
+-        for _rf in tasks.json progress.md .ralph/memory/recent.md; do
+-            if [ -f "$PROJECT_DIR/$_rf" ]; then
+-                mkdir -p "$RUNTIME_SNAPSHOT_DIR/$(dirname "$_rf")"
+-                cp "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf"
+-            fi
+-        done
+         REVIEW_BASE_HASH="${TASK_START_COMMIT:-$PRE_HASH}"
+         REVIEW_TARGET_HASH="HEAD"
+         CODER_OUTPUT="/tmp/ralph_coder_$$.txt"
+@@ -4109,9 +4153,11 @@ print(task.get('role', 'coder'))
+ 
+             set +e
              # run_codex handles retries/backoff for codex execution
--            run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
--            CODEX_EXIT=$?
--            set -e
-+            run_coder_codex_protected "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL" || CODEX_EXIT=$?
++            protect_runtime_files_before_coder
+             run_codex "$CODER_PROMPT" "$CODER_OUTPUT" "" "$TASK_TIMEOUT" "$CODEX_MODEL"
+             CODEX_EXIT=$?
+             set -e
++            restore_runtime_files_after_coder
              CONTROL_STATUS=0
              SESSION_TOKENS=$((SESSION_TOKENS + ${CODER_TOKENS:-0}))
              log "💰 [CODER] Tokens: $(format_tokens "$CODER_TOKENS") | Task total: $(format_tokens "$TASK_TOKENS") | Session total: $(format_tokens "$SESSION_TOKENS")"
- 
-+            if [ "$CODEX_EXIT" -ne 0 ]; then
-+                if [ "$CODEX_EXIT" -eq 124 ]; then
-+                    REASON="Coder timed out after retries"
-+                else
-+                    REASON="Coder failed after retries (exit $CODEX_EXIT)"
-+                fi
-+                log "🛑 Coder run failed with exit $CODEX_EXIT; skipping asset/test/lead stages"
-+                break
-+            fi
-+
-             # Commit any unstaged changes the coder left behind
-             if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
-                 stage_changed_paths
-@@ -4611,11 +4769,15 @@ except Exception:
-             RALPH_AUDIT_REASON="${REASON:-Task blocked}" write_task_audit_artifact "blocked" "false" "false" "$TASK_DURATION"
-             AUDIT_WRITTEN=true
+@@ -4222,21 +4268,6 @@ print(task.get('role', 'coder'))
+             rm -f "$RETRY_TEST_OUTPUT_FILE"
          fi
--        is_single_task_mode && break
+         ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+-        # R19-05: restore runtime files coder should never modify
+-        RUNTIME_REVERTED=""
+-        if [ -d "${RUNTIME_SNAPSHOT_DIR:-}" ]; then
+-            for _rf in tasks.json progress.md .ralph/memory/recent.md; do
+-                if [ -f "$RUNTIME_SNAPSHOT_DIR/$_rf" ] && ! diff -q "$PROJECT_DIR/$_rf" "$RUNTIME_SNAPSHOT_DIR/$_rf" >/dev/null 2>&1; then
+-                    cp "$RUNTIME_SNAPSHOT_DIR/$_rf" "$PROJECT_DIR/$_rf"
+-                    RUNTIME_REVERTED="${RUNTIME_REVERTED}${RUNTIME_REVERTED:+ }$_rf"
+-                fi
+-            done
+-            rm -rf "$RUNTIME_SNAPSHOT_DIR"
+-        fi
+-        if [ -n "$RUNTIME_REVERTED" ]; then
+-            log "🔒 Auto-reverted runtime files: $RUNTIME_REVERTED"
+-            ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
+-        fi
+         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
+ import json
+ import os
+diff --git a/system_promt.md b/system_promt.md
+index 4889a45..b7a4ae4 100644
+--- a/system_promt.md
++++ b/system_promt.md
+@@ -1,47 +1,78 @@
+-                            Context: Ralph Dev
+-Ralph — bash orchestrator (ralph.sh) запускает Codex CLI агентов в цикле, управляется через Telegram бот.
++Context: Ralph Dev
+ 
+-Core files
+-ralph.sh (2970L) — main loop, prompt builder, codex runner, timeout/retry/watchdog
+-scripts/ralph_bot.py (1661L) — Telegram bot, все команды
+-tasks.json — задачи (phases R0–R12+, statuses: pending/done/verified_done/blocked/false_positive/partial)
+-ralph_state.json, ralph_control.json — runtime state
+-logs/ralph_YYYY-MM-DD.log — execution log
+-logs/metrics.csv — token/cost metrics
+-Scripts (scripts/)
+-next_task.py, update_task.py, verify_task_closure.py, extract_json.py, audit_artifact.py, re_audit_tasks.py, explain_task.py, models.py, bot_smoke_check.py, reopen_tasks.py, run_eval.py, manage_assets.py, auto_update.py, ralph_notify.py, ralph_tail.sh, update_memory.py, update_progress.py, write_article.sh, auto_commit.sh
++## What is Ralph
++Ralph — bash orchestrator for rapid MVP prototyping. Runs Codex CLI agents in a loop, managed via Telegram bot. Internal tool, not a product. The developer's superpower for building vertical AI products fast.
+ 
+-Templates (templates/)
+-AGENTS_CODER.md, AGENTS_LEAD.md, AGENTS_JOURNALIST.md, AGENTS_DESIGNER.md, AGENTS.md.template, ARCHITECTURE.md.template, tasks.json.template, progress.md.template
++## What Ralph Does
++1. Takes a tasks.json with a project plan (phases, priorities, dependencies)
++2. Runs tasks automatically: ./ralph.sh auto
++3. For each task: builds prompt → runs Codex CLI (coder) → runs Codex CLI (lead review) → approve/fix/retry → git commit → next task
++4. Handles failures: timeout, watchdog, retry with backoff, skip and alert
++5. Developer controls and monitors via Telegram bot
++6. Produces working committed code with audit trail
+ 
+-Key commands
+-bash
++## Architecture
++Telegram → ralph_bot.py → ralph.sh → codex exec (coder) → codex exec (lead)
++                                           ↓ approve/fix/alert
++                                      git commit → next task
++
++## Core Files
++- ralph.sh — main loop, prompt builder, codex runner, timeout/retry/watchdog
++- scripts/ralph_bot.py — Telegram bot, all commands
++- tasks.json — task definitions (phases, statuses: pending/done/verified_done/blocked/false_positive/partial)
++- ralph_state.json — runtime state (can be stale after crashes)
++- ralph_control.json — operator control signals
++- logs/ralph_YYYY-MM-DD.log — execution log
++- logs/metrics.csv — token/cost metrics
++- .ralph/audit/ — per-task audit artifacts and lead reasoning
+ 
++## Key Scripts
++next_task.py, update_task.py, verify_task_closure.py, extract_json.py, audit_artifact.py, re_audit_tasks.py, explain_task.py, auto_commit.sh, ralph_notify.py, ralph_tail.sh, update_memory.py, update_progress.py
++
++## Templates
++AGENTS_CODER.md, AGENTS_LEAD.md, AGENTS.md.template, ARCHITECTURE.md.template, tasks.json.template, progress.md.template
++
++## Key Commands
+ ./ralph.sh task <ID>        # run single task
+ ./ralph.sh auto             # run all pending
+ ./ralph.sh phase <PHASE>    # run phase
+-make test                   # python3 -m pytest tests/ -v (140 tests, ~5min)
+-python3 scripts/update_task.py <ID> --status verified_done
+-python3 scripts/explain_task.py <ID>
++make test                   # full test suite
++python3 scripts/update_task.py <ID> <status>
+ python3 scripts/next_task.py
+-Architecture
+ 
+-Telegram → ralph_bot.py → ralph.sh → codex exec (coder) → codex exec (lead)
+-                                           ↓ approve/fix/alert
+-                                      git commit → next task
+-Codex execution (run_codex in ralph.sh)
+-codex exec -s danger-full-access [prompt]
+-Wrapped in gtimeout --foreground (macOS, coreutils)
+-Launched via python3 subprocess with start_new_session=True
+-PID tracked in ralph_codex.pid, PGID in ralph_codex.pgid
+-Watchdog monitors output file activity (RALPH_WATCHDOG_TIMEOUT)
+-Timeout defaults: simple=180s, moderate=420s, complex/critical=600s
+-MAX_CODEX_RETRIES=3, backoff delays in CODEX_RETRY_DELAYS array
+-Stack
+-Bash + Python 3.11 + Codex CLI + Telegram Bot API (urllib) + macOS (gtimeout, kill_tree)
+-
+-How I work with you
+-Paste error/log → you diagnose
+-You give sed/python fix or codex prompt
+-I run, paste result → iterate
+-Tasks planned → /auto overnight
+\ No newline at end of file
++## Codex Execution Model
++- codex exec -s danger-full-access [prompt]
++- Wrapped in gtimeout (macOS GNU coreutils)
++- PID/PGID tracked for process management
++- Watchdog monitors output file activity
++- Timeout scales by complexity (simple=180s, moderate=420s, complex/critical=600s)
++- MAX_CODEX_RETRIES=3 with backoff
++
++## Stack
++Bash + Python 3.11 + Codex CLI + Telegram Bot API (urllib) + macOS
++
++## Current Priority
++Finish stabilization so Ralph works reliably for overnight unattended runs. Then use it to rapidly prototype actual products. No new features — only fix what blocks reliability. Speed over perfection. "Good enough" = go to sleep, wake up with most tasks done.
++
++## Known Weak Spots
++- Process teardown (bot vs shell kill paths can diverge)
++- State recovery after crashes (ralph_state.json can lie)
++- Lead review JSON parsing (model format drift causes false failures)
++- Test suite is slow for per-task validation in auto mode
++- auto_commit.sh scopes too broadly (git add -A)
++- Bootstrap for new projects is incomplete
++
++## How We Work
++1. Codex executes a task → I paste log/diff/error
++2. You diagnose what worked, what broke, root cause
++3. You give: concrete fix, or better codex prompt, or decision (done/retry/blocked)
++4. I run, paste result → iterate
++5. Task solid → mark done → next
++
++## Rules
++- No new features until reliability is solid
++- No rewrites — targeted fixes only
++- Every fix needs a verification step
++- If it works 80%+ of cases — mark done, move on
++- Speed > perfection
++- Respond in the same language as my message
+\ No newline at end of file
 ```
 
-Previous diff snapshot: 22381 bytes
+Previous diff snapshot: 17408 bytes
 
 ## Tests
 ```
-E         [ralph] 01:39:46 👔 Decision: approve
-E         [ralph] 01:39:46 ───────────────────────────────────────────
-E         [ralph] 01:39:46 📋 RESULT: approve (quality: 8/10)
-E         [ralph] 01:39:46 ───────────────────────────────────────────
-E         [ralph] 01:39:47 🧪 Verification: fail_fix (implementation)
-E         [ralph] 01:39:47 🧪 Verification reason: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         [ralph] 01:39:47 🛑 Verification blocked closure without retry: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         [ralph] 01:39:47 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T18:39:47Z
-E         [ralph] 01:39:47 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue
-E         [ralph] 01:39:47 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 01:39:48 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 01:39:48 ════════════════════════════════════════════════════
-E         [ralph] 01:39:48 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)
-E         [ralph] 01:39:48 ════════════════════════════════════════════════════
-E         [ralph] 01:39:48 📊 Final:
-E         === Final State ===
-E         Status: blocked
-E         Step: failed
-E         Message: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         
-E         === Task Progress ===
-E           Total: 0/1 tasks done
-E           Phase R1: 0/1
-E         
-E         
-E       assert 1 == 0
-E        +  where 1 = CompletedProcess(args=['/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph.sh', 'task', 'T01'], returncode=1, stdout='[ralph] 01:39:38 🔍 Pre-task check: fast Python validation\n[ralph] 01:39:38 ✅ Pre-task check passed\n🎯 Requested task T01 is runnable and will be executed directly\n[ralph] 01:39:38 🧠 Model: default (complexity: moderate)\n[ralph] 01:39:38 📋 Complexity: moderate\n[ralph] 01:39:38 ⚠️ Risk: medium\n[ralph] 01:39:38 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 01:39:39 📋 Task: T01 — Integration test task\n[ralph] 01:39:39 📋 TASK_START task_id=T01 title="Integration test task" timestamp=2026-04-08T18:39:39Z\n[ralph] 01:39:39 ⏱  Timeout: coder=5s lead=5s\n[ralph] 01:39:39 ═══════════════════════════════════════════\n[ralph] 01:39:39 🤖 CODER — Attempt 1/3\n[ralph] 01:39:39 Task: T01 — Integration test task\n[ralph] 01:39:39 ═══════════════════════════════════════════\n[ralph] 01:39:39 🤖 [CODER] Attempt 1...\n[ralph] 01:39:39 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 01:39:40 🧮 Coder prompt t...mplementation evidence found.\n[ralph] 01:39:47 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T18:39:47Z\n[ralph] 01:39:47 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue\n[ralph] 01:39:47 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 01:39:48 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 01:39:48 ════════════════════════════════════════════════════\n[ralph] 01:39:48 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)\n[ralph] 01:39:48 ════════════════════════════════════════════════════\n[ralph] 01:39:48 📊 Final:\n=== Final State ===\nStatus: blocked\nStep: failed\nMessage: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.\n\n=== Task Progress ===\n  Total: 0/1 tasks done\n  Phase R1: 0/1\n\n', stderr='').returncode
+            },
+            {
+                "id": "T02",
+                "phase": "R2",
+                "title": "Blocked after first task",
+                "description": "Should keep phase from reporting completion",
+                "status": "pending",
+                "priority": "medium",
+                "target_files": ["src/generated_by_codex.ts"],
+                "dependencies": ["T99"],
+                "timeout": 5,
+            },
+        ]
+        write_tasks(project_dir, tasks)
+    
+        result = subprocess.run(
+            [str(RALPH_SH), "phase", "R2"],
+            cwd=project_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "║ ✅ TASK COMPLETE" in result.stdout
+>       assert "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02" in result.stdout
+E       assert 'Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02' in '[ralph] 23:39:42 🔍 Pre-task check: fast Python validation\n[ralph] 23:39:42 ✅ Pre-task check passed\n[ralph] 23:39:43 🧠 Model: default (complexity: moderate)\n[ralph] 23:39:43 📋 Complexity: moderate\n[ralph] 23:39:43 ⚠️ Risk: medium\n[ralph] 23:39:43 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 23:39:43 📋 Task: T01 — Runnable first\n[ralph] 23:39:43 📋 TASK_START task_id=T01 title="Runnable first" timestamp=2026-04-10T16:39:43Z\n[ralph] 23:39:43 ⏱  Timeout: coder=5s lead=5s\n[ralph] 23:39:43 ═══════════════════════════════════════════\n[ralph] 23:39:43 🤖 CODER — Attempt 1/3\n[ralph] 23:39:43 Task: T01 — Runnable first\n[ralph] 23:39:43 ═══════════════════════════════════════════\n[ralph] 23:39:43 🤖 [CODER] Attempt 1...\n[ralph] 23:39:44 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 23:39:45 🧮 Coder prompt tokens: profile=broad tokens=247 limit=25000\n[ralph] 23:39:45 ⚠️ Runtime protection stash was created but could not be resolved\n[ralph] 23:39:46 [CODEX] tokens used\n[ralph] 23:39:46 [CODEX] 123\n[ralph] 23:39:48 💰 [CODER] Tokens: 0 | Task total: 0 | Session ...score after task T01: 18.04/100\n[ralph] 23:39:52 ⚠️ Trust score below 50 — consider pausing auto-pilot\n[ralph] 23:39:52 ╔═══════════════════════════════════════════╗\n[ralph] 23:39:52 ║ ✅ TASK COMPLETE                          ║\n[ralph] 23:39:52 ║ Task:     T01                       ║\n[ralph] 23:39:52 ║ Title:    Runnable first                    ║\n[ralph] 23:39:52 ║ Duration: 9s                        ║\n[ralph] 23:39:52 ║ Attempts: 1/3                 ║\n[ralph] 23:39:52 ║ Quality:  8/10                    ║\n[ralph] 23:39:52 ╚═══════════════════════════════════════════╝\n[ralph] 23:39:52 💰 Task T01 cost: ~123 tokens (~$0.00 at $3/1M input)\n[ralph] 23:39:53 🎉 Phase R2 complete!\n[ralph] 23:39:53 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 23:39:53 ════════════════════════════════════════════════════\n[ralph] 23:39:53 💰 SESSION TOTAL: 1 tasks, ~123 tokens (~$0.00)\n[ralph] 23:39:53 ════════════════════════════════════════════════════\n[ralph] 23:39:53 📊 Final:\n=== Final State ===\nStatus: idle\nStep: idle\nMessage: Phase R2 complete\n\n=== Task Progress ===\n  Total: 1/1 tasks done\n  Phase R1: 1/1\n\n'
+E        +  where '[ralph] 23:39:42 🔍 Pre-task check: fast Python validation\n[ralph] 23:39:42 ✅ Pre-task check passed\n[ralph] 23:39:43 🧠 Model: default (complexity: moderate)\n[ralph] 23:39:43 📋 Complexity: moderate\n[ralph] 23:39:43 ⚠️ Risk: medium\n[ralph] 23:39:43 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 23:39:43 📋 Task: T01 — Runnable first\n[ralph] 23:39:43 📋 TASK_START task_id=T01 title="Runnable first" timestamp=2026-04-10T16:39:43Z\n[ralph] 23:39:43 ⏱  Timeout: coder=5s lead=5s\n[ralph] 23:39:43 ═══════════════════════════════════════════\n[ralph] 23:39:43 🤖 CODER — Attempt 1/3\n[ralph] 23:39:43 Task: T01 — Runnable first\n[ralph] 23:39:43 ═══════════════════════════════════════════\n[ralph] 23:39:43 🤖 [CODER] Attempt 1...\n[ralph] 23:39:44 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 23:39:45 🧮 Coder prompt tokens: profile=broad tokens=247 limit=25000\n[ralph] 23:39:45 ⚠️ Runtime protection stash was created but could not be resolved\n[ralph] 23:39:46 [CODEX] tokens used\n[ralph] 23:39:46 [CODEX] 123\n[ralph] 23:39:48 💰 [CODER] Tokens: 0 | Task total: 0 | Session ...score after task T01: 18.04/100\n[ralph] 23:39:52 ⚠️ Trust score below 50 — consider pausing auto-pilot\n[ralph] 23:39:52 ╔═══════════════════════════════════════════╗\n[ralph] 23:39:52 ║ ✅ TASK COMPLETE                          ║\n[ralph] 23:39:52 ║ Task:     T01                       ║\n[ralph] 23:39:52 ║ Title:    Runnable first                    ║\n[ralph] 23:39:52 ║ Duration: 9s                        ║\n[ralph] 23:39:52 ║ Attempts: 1/3                 ║\n[ralph] 23:39:52 ║ Quality:  8/10                    ║\n[ralph] 23:39:52 ╚═══════════════════════════════════════════╝\n[ralph] 23:39:52 💰 Task T01 cost: ~123 tokens (~$0.00 at $3/1M input)\n[ralph] 23:39:53 🎉 Phase R2 complete!\n[ralph] 23:39:53 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 23:39:53 ════════════════════════════════════════════════════\n[ralph] 23:39:53 💰 SESSION TOTAL: 1 tasks, ~123 tokens (~$0.00)\n[ralph] 23:39:53 ════════════════════════════════════════════════════\n[ralph] 23:39:53 📊 Final:\n=== Final State ===\nStatus: idle\nStep: idle\nMessage: Phase R2 complete\n\n=== Task Progress ===\n  Total: 1/1 tasks done\n  Phase R1: 1/1\n\n' = CompletedProcess(args=['/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph.sh', 'phase', 'R2'], returncode=0, stdout='[ralph] 23:39:42 🔍 Pre-task check: fast Python validation\n[ralph] 23:39:42 ✅ Pre-task check passed\n[ralph] 23:39:43 🧠 Model: default (complexity: moderate)\n[ralph] 23:39:43 📋 Complexity: moderate\n[ralph] 23:39:43 ⚠️ Risk: medium\n[ralph] 23:39:43 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 23:39:43 📋 Task: T01 — Runnable first\n[ralph] 23:39:43 📋 TASK_START task_id=T01 title="Runnable first" timestamp=2026-04-10T16:39:43Z\n[ralph] 23:39:43 ⏱  Timeout: coder=5s lead=5s\n[ralph] 23:39:43 ═══════════════════════════════════════════\n[ralph] 23:39:43 🤖 CODER — Attempt 1/3\n[ralph] 23:39:43 Task: T01 — Runnable first\n[ralph] 23:39:43 ═══════════════════════════════════════════\n[ralph] 23:39:43 🤖 [CODER] Attempt 1...\n[ralph] 23:39:44 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 23:39:45 🧮 Coder prompt tokens: profile=broad tokens=247 limit=25000\n[ralph] 23:39:45 ⚠️ Runtime protection s...task T01: 18.04/100\n[ralph] 23:39:52 ⚠️ Trust score below 50 — consider pausing auto-pilot\n[ralph] 23:39:52 ╔═══════════════════════════════════════════╗\n[ralph] 23:39:52 ║ ✅ TASK COMPLETE                          ║\n[ralph] 23:39:52 ║ Task:     T01                       ║\n[ralph] 23:39:52 ║ Title:    Runnable first                    ║\n[ralph] 23:39:52 ║ Duration: 9s                        ║\n[ralph] 23:39:52 ║ Attempts: 1/3                 ║\n[ralph] 23:39:52 ║ Quality:  8/10                    ║\n[ralph] 23:39:52 ╚═══════════════════════════════════════════╝\n[ralph] 23:39:52 💰 Task T01 cost: ~123 tokens (~$0.00 at $3/1M input)\n[ralph] 23:39:53 🎉 Phase R2 complete!\n[ralph] 23:39:53 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 23:39:53 ════════════════════════════════════════════════════\n[ralph] 23:39:53 💰 SESSION TOTAL: 1 tasks, ~123 tokens (~$0.00)\n[ralph] 23:39:53 ════════════════════════════════════════════════════\n[ralph] 23:39:53 📊 Final:\n=== Final State ===\nStatus: idle\nStep: idle\nMessage: Phase R2 complete\n\n=== Task Progress ===\n  Total: 1/1 tasks done\n  Phase R1: 1/1\n\n', stderr='').stdout
 
-tests/test_integration.py:2278: AssertionError
+tests/test_integration.py:1857: AssertionError
 =========================== short test summary info ============================
-FAILED tests/test_integration.py::test_ralph_rejects_oversized_prompt - Asser...
-FAILED tests/test_integration.py::test_ralph_handoff_ignores_runtime_owned_dirty_artifacts_without_opening_candidate_path
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_without_worktree_or_repo_backed_candidate_state
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_when_valid_task_evidence_is_contaminated_by_unrelated_tracked_changes
-FAILED tests/test_integration.py::test_ralph_fails_closed_on_lead_stdout_review_mismatch
-FAILED tests/test_integration.py::test_ralph_blocks_contradictory_bookkeeping_only_fix_instructions
-FAILED tests/test_integration.py::test_ralph_blocks_diff_only_fix_without_retry_loop
-FAILED tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure
-============= 8 failed, 204 passed, 1 skipped in 853.09s (0:14:13) =============
+FAILED tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown
+FAILED tests/test_integration.py::test_ralph_task_mode_finalizes_idle_state_without_false_queue_completion
+FAILED tests/test_integration.py::test_ralph_task_mode_runs_requested_pending_task_exactly
+FAILED tests/test_integration.py::test_ralph_phase_mode_only_runs_pending_task_from_requested_phase
+FAILED tests/test_integration.py::test_ralph_auto_mode_still_runs_next_runnable_pending_task
+FAILED tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task
+============= 6 failed, 205 passed, 1 skipped in 802.31s (0:13:22) =============
 make: *** [test] Error 1
 tests failed
 ```
@@ -661,10 +532,10 @@ deprecated: `[features].web_search_request` is deprecated because web search is 
 Set `web_search` to `"live"`, `"cached"`, or `"disabled"` at the top level (or under a profile) in config.toml if you want to override it.
 codex
 BEGIN_RALPH_REVIEW_JSON
-{"decision":"fix","task_id":"R19-01","summary":"Защита runtime-файлов добавлена, но регрессии в интеграционных сценариях и неполное подтверждение критериев не позволяют принять задачу.","quality_score":4,"issues":["SCOPE: в diff изменены только target-файлы `ralph.sh` и `src/ralph/resources/ralph.sh`; отдельно отмеченные `.ralph/memory/recent.md` и `progress.md` вне scope и не обоснованы этим таском.","TESTS: `make test` не проходит: 8 failing integration tests, включая `tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure` и связанные сценарии handoff/verification.","ACCEPTANCE: нет доказательства, что runtime files reliably восстанавливаются `even on failure`; текущая обвязка возвращает ошибку из `end_runtime_file_protection`, но не показано тестами, что восстановление выполняется корректно при сбоях coder/verification.","REGRESSIONS: изменение single-task failure path (`set_task_failure_exit_state` и новые ветки break/continue) меняет итоговое поведение рантайма и уже ломает существующие проверки закрытия/верификации.","QUALITY: логика защиты смешана с несвязанными изменениями финального exit-state, что увеличивает риск побочных эффектов и затрудняет локальную проверку задачи."],"fix_instructions":"Свести изменение к минимальному scope задачи: оставить только protection gate вокруг coder exec и убрать/исправить изменения финального failure/closure flow в `ralph.sh` и `src/ralph/resources/ralph.sh`, чтобы восстановить прохождение упавших integration tests; затем добавить/обновить интеграционный тест, который явно проверяет stash+restore для `tasks.json`, `progress.md` и `.ralph/memory/` при успешном и аварийном завершении coder.","alert_reason":"","progress_note":"R19-01 требует доработки: gate частично реализован, но текущий diff вносит регрессии в runtime closure/verification.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
+{"decision":"fix","task_id":"R19-01","summary":"Runtime protection gate regressed task/phase selection and does not reliably restore runtime files; tests are failing and an out-of-scope file was modified.","quality_score":28,"issues":["SCOPE: out-of-scope file modified: system_promt.md.","TESTS: make test failed with 6 integration failures, including tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task and related task/phase mode regressions.","ACCEPTANCE: not met. The new stash flow logs 'Runtime protection stash was created but could not be resolved', so runtime-owned files are not reliably restored after coder exec.","REGRESSION: resetting tasks.json/progress.md/.ralph/memory before coder exec changes live runtime state used by subsequent task/phase selection, which caused Ralph to report 'Phase R2 complete!' instead of preserving blocked pending tasks.","QUALITY: protection logic depends on resolving the stash later by message lookup, which is brittle and fails in the observed test run."],"fix_instructions":"Replace the message-based stash resolution in ralph.sh and src/ralph/resources/ralph.sh with a deterministic capture-and-restore mechanism for tasks.json, progress.md, and .ralph/memory so those files are always restored on both success and failure without altering live task selection state; then remove the unrelated system_promt.md change and rerun the failing integration tests.","alert_reason":"","progress_note":"R19-01 needs one focused fix: make runtime file protection restoration deterministic and non-regressive.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
 END_RALPH_REVIEW_JSON
 tokens used
-29,575
+27,814
 BEGIN_RALPH_REVIEW_JSON
-{"decision":"fix","task_id":"R19-01","summary":"Защита runtime-файлов добавлена, но регрессии в интеграционных сценариях и неполное подтверждение критериев не позволяют принять задачу.","quality_score":4,"issues":["SCOPE: в diff изменены только target-файлы `ralph.sh` и `src/ralph/resources/ralph.sh`; отдельно отмеченные `.ralph/memory/recent.md` и `progress.md` вне scope и не обоснованы этим таском.","TESTS: `make test` не проходит: 8 failing integration tests, включая `tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure` и связанные сценарии handoff/verification.","ACCEPTANCE: нет доказательства, что runtime files reliably восстанавливаются `even on failure`; текущая обвязка возвращает ошибку из `end_runtime_file_protection`, но не показано тестами, что восстановление выполняется корректно при сбоях coder/verification.","REGRESSIONS: изменение single-task failure path (`set_task_failure_exit_state` и новые ветки break/continue) меняет итоговое поведение рантайма и уже ломает существующие проверки закрытия/верификации.","QUALITY: логика защиты смешана с несвязанными изменениями финального exit-state, что увеличивает риск побочных эффектов и затрудняет локальную проверку задачи."],"fix_instructions":"Свести изменение к минимальному scope задачи: оставить только protection gate вокруг coder exec и убрать/исправить изменения финального failure/closure flow в `ralph.sh` и `src/ralph/resources/ralph.sh`, чтобы восстановить прохождение упавших integration tests; затем добавить/обновить интеграционный тест, который явно проверяет stash+restore для `tasks.json`, `progress.md` и `.ralph/memory/` при успешном и аварийном завершении coder.","alert_reason":"","progress_note":"R19-01 требует доработки: gate частично реализован, но текущий diff вносит регрессии в runtime closure/verification.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
+{"decision":"fix","task_id":"R19-01","summary":"Runtime protection gate regressed task/phase selection and does not reliably restore runtime files; tests are failing and an out-of-scope file was modified.","quality_score":28,"issues":["SCOPE: out-of-scope file modified: system_promt.md.","TESTS: make test failed with 6 integration failures, including tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task and related task/phase mode regressions.","ACCEPTANCE: not met. The new stash flow logs 'Runtime protection stash was created but could not be resolved', so runtime-owned files are not reliably restored after coder exec.","REGRESSION: resetting tasks.json/progress.md/.ralph/memory before coder exec changes live runtime state used by subsequent task/phase selection, which caused Ralph to report 'Phase R2 complete!' instead of preserving blocked pending tasks.","QUALITY: protection logic depends on resolving the stash later by message lookup, which is brittle and fails in the observed test run."],"fix_instructions":"Replace the message-based stash resolution in ralph.sh and src/ralph/resources/ralph.sh with a deterministic capture-and-restore mechanism for tasks.json, progress.md, and .ralph/memory so those files are always restored on both success and failure without altering live task selection state; then remove the unrelated system_promt.md change and rerun the failing integration tests.","alert_reason":"","progress_note":"R19-01 needs one focused fix: make runtime file protection restoration deterministic and non-regressive.","checklist":{"scope_ok":false,"tests_ok":false,"acceptance_ok":false,"regressions_ok":false,"quality_ok":false}}
 END_RALPH_REVIEW_JSON

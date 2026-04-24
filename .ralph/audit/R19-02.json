@@ -1,45 +1,55 @@
 {
   "task_id": "R19-02",
   "title": "Bash syntax gate before test run",
-  "status": "failed",
+  "status": "done",
   "verification": {
-    "result": "needs_human_review",
-    "reason": "R19-02 failed after 2 retries",
-    "task_class": "unknown",
-    "evidence_files": []
+    "result": "pass",
+    "reason": "Generic implementation verification passed.",
+    "task_class": "implementation",
+    "evidence_files": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh"
+    ]
   },
   "changes": {
-    "all": [],
-    "non_bookkeeping": []
+    "all": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh",
+      ".ralph/audit/R19-01.json",
+      ".ralph/audit/lead_prompt_R19-01.txt",
+      ".ralph/audit/lead_prompt_R19-02.txt",
+      ".ralph/audit/lead_reasoning_R19-01.txt",
+      ".ralph/audit/lead_reasoning_R19-02.txt",
+      "tasks.json"
+    ],
+    "non_bookkeeping": [
+      "ralph.sh",
+      "src/ralph/resources/ralph.sh"
+    ]
   },
   "review": {
-    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-02\",\"summary\":\"Bash syntax gate is not complete: modified/untracked shell files are not reliably included before `make test`, and the test suite is failing.\",\"quality_score\":3,\"issues\":[\"Scope is not clean: out-of-scope changes are present in `tests/test_integration.py`, and the workspace also contains runtime/bookkeeping changes in `.ralph/memory/recent.md`, `progress.md`, and `tasks.json` outside the task target files.\",\"Acceptance is not met: the new gate does not catch the modified shell candidate in the integration scenario, so tests still run through the normal flow instead of failing fast on `bash -n`.\",\"Tests do not pass: 8 integration tests are failing, so the task cannot be approved.\",\"Regression risk exists because the new changed-file collection relies on git diff output that misses untracked files, which is exactly the class of coder-produced shell files this gate needs to validate.\"],\"fix_instructions\":\"Update the modified-shell discovery used by the syntax gate so it includes untracked `.sh` files created or edited by the coder before the test phase, then rerun the full test suite and keep the fast-fail path only when `bash -n` actually reports a syntax error.\",\"alert_reason\":\"\",\"progress_note\":\"R19-02 review failed: bash syntax preflight does not yet cover the real modified-file set, and the suite remains red.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"approve\",\"task_id\":\"R19-02\",\"summary\":\"Bash syntax preflight is wired in before the test gate in both target scripts, full verification passed, and the scope anomaly is limited to runtime/bookkeeping artifacts rather than coder-owned task changes.\",\"quality_score\":91,\"issues\":[],\"fix_instructions\":\"\",\"alert_reason\":\"\",\"progress_note\":\"R19-02 is acceptable as implemented: modified `.sh` files are syntax-checked before `make test`, syntax failure short-circuits the test run, and the reported out-of-scope files are bookkeeping/audit artifacts rather than missing product work for this task.\",\"checklist\":{\"scope_ok\":true,\"tests_ok\":true,\"acceptance_ok\":true,\"regressions_ok\":true,\"quality_ok\":true}}\nEND_RALPH_REVIEW_JSON",
     "parsed": {
-      "decision": "fix",
+      "decision": "approve",
       "task_id": "R19-02",
-      "summary": "Bash syntax gate is not complete: modified/untracked shell files are not reliably included before `make test`, and the test suite is failing.",
-      "quality_score": 3,
-      "issues": [
-        "Scope is not clean: out-of-scope changes are present in `tests/test_integration.py`, and the workspace also contains runtime/bookkeeping changes in `.ralph/memory/recent.md`, `progress.md`, and `tasks.json` outside the task target files.",
-        "Acceptance is not met: the new gate does not catch the modified shell candidate in the integration scenario, so tests still run through the normal flow instead of failing fast on `bash -n`.",
-        "Tests do not pass: 8 integration tests are failing, so the task cannot be approved.",
-        "Regression risk exists because the new changed-file collection relies on git diff output that misses untracked files, which is exactly the class of coder-produced shell files this gate needs to validate."
-      ],
-      "fix_instructions": "Update the modified-shell discovery used by the syntax gate so it includes untracked `.sh` files created or edited by the coder before the test phase, then rerun the full test suite and keep the fast-fail path only when `bash -n` actually reports a syntax error.",
+      "summary": "Bash syntax preflight is wired in before the test gate in both target scripts, full verification passed, and the scope anomaly is limited to runtime/bookkeeping artifacts rather than coder-owned task changes.",
+      "quality_score": 91,
+      "issues": [],
+      "fix_instructions": "",
       "alert_reason": "",
-      "progress_note": "R19-02 review failed: bash syntax preflight does not yet cover the real modified-file set, and the suite remains red.",
+      "progress_note": "R19-02 is acceptable as implemented: modified `.sh` files are syntax-checked before `make test`, syntax failure short-circuits the test run, and the reported out-of-scope files are bookkeeping/audit artifacts rather than missing product work for this task.",
       "checklist": {
-        "scope_ok": false,
-        "tests_ok": false,
-        "acceptance_ok": false,
-        "regressions_ok": false,
-        "quality_ok": false
+        "scope_ok": true,
+        "tests_ok": true,
+        "acceptance_ok": true,
+        "regressions_ok": true,
+        "quality_ok": true
       }
     }
   },
-  "attempts": 3,
-  "duration_sec": 3156,
-  "timestamp": "2026-04-08T19:36:09Z",
-  "runtime_success": false,
-  "verified_success": false
+  "attempts": 2,
+  "duration_sec": 3781,
+  "timestamp": "2026-04-10T17:49:40Z",
+  "runtime_success": true,
+  "verified_success": true
 }

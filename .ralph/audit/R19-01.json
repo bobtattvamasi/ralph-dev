@@ -13,22 +13,22 @@
     "non_bookkeeping": []
   },
   "review": {
-    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-01\",\"summary\":\"Защита runtime-файлов добавлена, но регрессии в интеграционных сценариях и неполное подтверждение критериев не позволяют принять задачу.\",\"quality_score\":4,\"issues\":[\"SCOPE: в diff изменены только target-файлы `ralph.sh` и `src/ralph/resources/ralph.sh`; отдельно отмеченные `.ralph/memory/recent.md` и `progress.md` вне scope и не обоснованы этим таском.\",\"TESTS: `make test` не проходит: 8 failing integration tests, включая `tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure` и связанные сценарии handoff/verification.\",\"ACCEPTANCE: нет доказательства, что runtime files reliably восстанавливаются `even on failure`; текущая обвязка возвращает ошибку из `end_runtime_file_protection`, но не показано тестами, что восстановление выполняется корректно при сбоях coder/verification.\",\"REGRESSIONS: изменение single-task failure path (`set_task_failure_exit_state` и новые ветки break/continue) меняет итоговое поведение рантайма и уже ломает существующие проверки закрытия/верификации.\",\"QUALITY: логика защиты смешана с несвязанными изменениями финального exit-state, что увеличивает риск побочных эффектов и затрудняет локальную проверку задачи.\"],\"fix_instructions\":\"Свести изменение к минимальному scope задачи: оставить только protection gate вокруг coder exec и убрать/исправить изменения финального failure/closure flow в `ralph.sh` и `src/ralph/resources/ralph.sh`, чтобы восстановить прохождение упавших integration tests; затем добавить/обновить интеграционный тест, который явно проверяет stash+restore для `tasks.json`, `progress.md` и `.ralph/memory/` при успешном и аварийном завершении coder.\",\"alert_reason\":\"\",\"progress_note\":\"R19-01 требует доработки: gate частично реализован, но текущий diff вносит регрессии в runtime closure/verification.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
+    "raw": "BEGIN_RALPH_REVIEW_JSON\n{\"decision\":\"fix\",\"task_id\":\"R19-01\",\"summary\":\"Runtime protection gate regressed task/phase selection and does not reliably restore runtime files; tests are failing and an out-of-scope file was modified.\",\"quality_score\":28,\"issues\":[\"SCOPE: out-of-scope file modified: system_promt.md.\",\"TESTS: make test failed with 6 integration failures, including tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task and related task/phase mode regressions.\",\"ACCEPTANCE: not met. The new stash flow logs 'Runtime protection stash was created but could not be resolved', so runtime-owned files are not reliably restored after coder exec.\",\"REGRESSION: resetting tasks.json/progress.md/.ralph/memory before coder exec changes live runtime state used by subsequent task/phase selection, which caused Ralph to report 'Phase R2 complete!' instead of preserving blocked pending tasks.\",\"QUALITY: protection logic depends on resolving the stash later by message lookup, which is brittle and fails in the observed test run.\"],\"fix_instructions\":\"Replace the message-based stash resolution in ralph.sh and src/ralph/resources/ralph.sh with a deterministic capture-and-restore mechanism for tasks.json, progress.md, and .ralph/memory so those files are always restored on both success and failure without altering live task selection state; then remove the unrelated system_promt.md change and rerun the failing integration tests.\",\"alert_reason\":\"\",\"progress_note\":\"R19-01 needs one focused fix: make runtime file protection restoration deterministic and non-regressive.\",\"checklist\":{\"scope_ok\":false,\"tests_ok\":false,\"acceptance_ok\":false,\"regressions_ok\":false,\"quality_ok\":false}}\nEND_RALPH_REVIEW_JSON",
     "parsed": {
       "decision": "fix",
       "task_id": "R19-01",
-      "summary": "Защита runtime-файлов добавлена, но регрессии в интеграционных сценариях и неполное подтверждение критериев не позволяют принять задачу.",
-      "quality_score": 4,
+      "summary": "Runtime protection gate regressed task/phase selection and does not reliably restore runtime files; tests are failing and an out-of-scope file was modified.",
+      "quality_score": 28,
       "issues": [
-        "SCOPE: в diff изменены только target-файлы `ralph.sh` и `src/ralph/resources/ralph.sh`; отдельно отмеченные `.ralph/memory/recent.md` и `progress.md` вне scope и не обоснованы этим таском.",
-        "TESTS: `make test` не проходит: 8 failing integration tests, включая `tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure` и связанные сценарии handoff/verification.",
-        "ACCEPTANCE: нет доказательства, что runtime files reliably восстанавливаются `even on failure`; текущая обвязка возвращает ошибку из `end_runtime_file_protection`, но не показано тестами, что восстановление выполняется корректно при сбоях coder/verification.",
-        "REGRESSIONS: изменение single-task failure path (`set_task_failure_exit_state` и новые ветки break/continue) меняет итоговое поведение рантайма и уже ломает существующие проверки закрытия/верификации.",
-        "QUALITY: логика защиты смешана с несвязанными изменениями финального exit-state, что увеличивает риск побочных эффектов и затрудняет локальную проверку задачи."
+        "SCOPE: out-of-scope file modified: system_promt.md.",
+        "TESTS: make test failed with 6 integration failures, including tests/test_integration.py::test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task and related task/phase mode regressions.",
+        "ACCEPTANCE: not met. The new stash flow logs 'Runtime protection stash was created but could not be resolved', so runtime-owned files are not reliably restored after coder exec.",
+        "REGRESSION: resetting tasks.json/progress.md/.ralph/memory before coder exec changes live runtime state used by subsequent task/phase selection, which caused Ralph to report 'Phase R2 complete!' instead of preserving blocked pending tasks.",
+        "QUALITY: protection logic depends on resolving the stash later by message lookup, which is brittle and fails in the observed test run."
       ],
-      "fix_instructions": "Свести изменение к минимальному scope задачи: оставить только protection gate вокруг coder exec и убрать/исправить изменения финального failure/closure flow в `ralph.sh` и `src/ralph/resources/ralph.sh`, чтобы восстановить прохождение упавших integration tests; затем добавить/обновить интеграционный тест, который явно проверяет stash+restore для `tasks.json`, `progress.md` и `.ralph/memory/` при успешном и аварийном завершении coder.",
+      "fix_instructions": "Replace the message-based stash resolution in ralph.sh and src/ralph/resources/ralph.sh with a deterministic capture-and-restore mechanism for tasks.json, progress.md, and .ralph/memory so those files are always restored on both success and failure without altering live task selection state; then remove the unrelated system_promt.md change and rerun the failing integration tests.",
       "alert_reason": "",
-      "progress_note": "R19-01 требует доработки: gate частично реализован, но текущий diff вносит регрессии в runtime closure/verification.",
+      "progress_note": "R19-01 needs one focused fix: make runtime file protection restoration deterministic and non-regressive.",
       "checklist": {
         "scope_ok": false,
         "tests_ok": false,
@@ -38,9 +38,9 @@
       }
     }
   },
-  "attempts": 3,
-  "duration_sec": 3570,
-  "timestamp": "2026-04-08T18:43:30Z",
+  "attempts": 1,
+  "duration_sec": 1004,
+  "timestamp": "2026-04-10T16:46:36Z",
   "runtime_success": true,
   "verified_success": false
 }

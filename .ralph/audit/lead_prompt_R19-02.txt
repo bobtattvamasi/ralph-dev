@@ -17,7 +17,9 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
   ],
   "priority": "critical",
   "complexity": "simple",
-  "role": "coder"
+  "role": "coder",
+  "completed_at": null,
+  "revision_notes": "reset: bugs fixed in HEAD"
 }
 
 ## Target Files
@@ -26,8 +28,11 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
 
 ## Scope Anomaly Warning
 The following files were modified but are NOT in target_files:
-.ralph/memory/recent.md
-progress.md
+.ralph/audit/R19-01.json
+.ralph/audit/lead_prompt_R19-01.txt
+.ralph/audit/lead_prompt_R19-02.txt
+.ralph/audit/lead_reasoning_R19-01.txt
+.ralph/audit/lead_reasoning_R19-02.txt
 tasks.json
 Please evaluate whether these changes are justified.
 
@@ -78,340 +83,209 @@ END_RALPH_REVIEW_JSON
 ## Diff
 ```diff
 diff --git a/ralph.sh b/ralph.sh
-index 6c0237c..277e346 100755
+index 78f6d30..c8d4dae 100755
 --- a/ralph.sh
 +++ b/ralph.sh
-@@ -3046,6 +3046,49 @@ for cmd in commands:
- PY
+@@ -147,7 +147,10 @@ RUNTIME_PROTECTION_STASH_REF=""
+ find_runtime_protection_stash_ref() {
+     local stash_message="$1"
+ 
+-    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '$2 == msg { print $1; exit }'
++    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '
++        $2 == msg { print $1; exit }
++        index($2, ": " msg) == length($2) - length(msg) - 1 { print $1; exit }
++    '
  }
  
-+collect_modified_shell_paths() {
+ protect_runtime_files_before_coder() {
+@@ -320,6 +323,32 @@ run_project_test_command() {
+     bash -lc "$PROJECT_TEST_CMD"
+ }
+ 
++validate_modified_shell_scripts() {
 +    local base_hash="$1"
 +    local target_hash="$2"
-+    local candidate_paths=""
-+    local path=""
++    local file_path=""
++    local syntax_errors=""
++    local output=""
 +
-+    if [ "$base_hash" = "$target_hash" ]; then
-+        candidate_paths=$(task_scoped_changed_name_only_from_ref "$base_hash")
-+    else
-+        candidate_paths=$(task_scoped_name_only_between_refs "$base_hash" "$target_hash")
++    while IFS= read -r file_path; do
++        [ -n "$file_path" ] || continue
++        [ -f "$file_path" ] || continue
++
++        output=$(bash -n "$file_path" 2>&1) || {
++            if [ -n "$output" ]; then
++                syntax_errors="${syntax_errors}${syntax_errors:+$'\n'}$output"
++            else
++                syntax_errors="${syntax_errors}${syntax_errors:+$'\n'}BASH SYNTAX ERROR in: $file_path"
++            fi
++        }
++    done < <(git diff --name-only "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null || true)
++
++    if [ -n "$syntax_errors" ]; then
++        printf '%s\n' "$syntax_errors"
++        return 1
 +    fi
-+
-+    [ -n "$candidate_paths" ] || return 0
-+
-+    while IFS= read -r path; do
-+        [ -n "$path" ] || continue
-+        case "$path" in
-+            *.sh) printf '%s\n' "$path" ;;
-+        esac
-+    done <<< "$candidate_paths"
 +}
 +
-+validate_modified_shell_syntax() {
-+    local base_hash="$1"
-+    local target_hash="$2"
-+    local shell_paths=""
-+    local path=""
-+    local failed=0
-+
-+    shell_paths=$(collect_modified_shell_paths "$base_hash" "$target_hash")
-+    [ -n "$shell_paths" ] || return 0
-+
-+    while IFS= read -r path; do
-+        [ -n "$path" ] || continue
-+        [ -f "$path" ] || continue
-+        if ! bash -n -- "$path"; then
-+            failed=1
-+        fi
-+    done <<< "$shell_paths"
-+
-+    return "$failed"
-+}
-+
- stage_changed_paths() {
-     local changed_paths=""
-     local path=""
-@@ -3075,6 +3118,16 @@ task_scoped_diff_between_refs() {
-         2>/dev/null || true
+ is_single_task_mode() {
+     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
  }
- 
-+task_scoped_name_only_between_refs() {
-+    local base_hash="$1"
-+    local target_hash="$2"
-+    git diff --name-only "$base_hash" "$target_hash" -- \
-+        ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
-+        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
-+        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
-+        2>/dev/null || true
-+}
-+
- task_scoped_cached_name_only_from_ref() {
-     local base_hash="$1"
-     git diff --cached --name-only "$base_hash" -- \
-@@ -3084,6 +3137,18 @@ task_scoped_cached_name_only_from_ref() {
-         2>/dev/null || true
- }
- 
-+task_scoped_changed_name_only_from_ref() {
-+    local base_hash="$1"
-+    {
-+        task_scoped_cached_name_only_from_ref "$base_hash"
-+        git diff --name-only "$base_hash" -- \
-+            ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
-+            ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
-+            ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
-+            2>/dev/null || true
-+    } | awk 'NF && !seen[$0]++'
-+}
-+
- task_scoped_cached_diff_from_ref() {
-     local base_hash="$1"
-     git diff --cached "$base_hash" -- \
-@@ -4348,6 +4413,31 @@ print(task.get('role', 'coder'))
+@@ -4244,21 +4273,16 @@ print(task.get('role', 'coder'))
              GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
          fi
-         TEST_START=$(date +%s)
-+        set +e
-+        TEST_OUTPUT=$(validate_modified_shell_syntax "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH" 2>&1)
-+        SHELL_SYNTAX_STATUS=$?
-+        set -e
-+        TEST_DURATION=$(( $(date +%s) - TEST_START ))
-+        if [ "$SHELL_SYNTAX_STATUS" -ne 0 ]; then
+         # R19-02: bash syntax gate before expensive test suite
+-        SHELL_SYNTAX_FAIL=""
+-        for _shf in $(git diff --name-only "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" 2>/dev/null | grep '\.sh$' || true); do
+-            if [ -f "$_shf" ] && ! bash -n "$_shf" 2>/dev/null; then
+-                SHELL_SYNTAX_FAIL="${SHELL_SYNTAX_FAIL}${SHELL_SYNTAX_FAIL:+ }$_shf"
+-            fi
+-        done
+-        if [ -n "$SHELL_SYNTAX_FAIL" ]; then
+-            log "🛑 Bash syntax errors in: $SHELL_SYNTAX_FAIL — skipping test suite"
+-            TEST_OUTPUT="BASH SYNTAX ERROR in: $SHELL_SYNTAX_FAIL"
++        SHELL_SYNTAX_OUTPUT=""
++        if ! SHELL_SYNTAX_OUTPUT=$(validate_modified_shell_scripts "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}"); then
++            log "🛑 Bash syntax validation failed in modified .sh files; skipping test suite"
++            TEST_OUTPUT="$SHELL_SYNTAX_OUTPUT"
+             TEST_DURATION=0
+         else
+-        TEST_START=$(date +%s)
+-        TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
+-        TEST_DURATION=$(( $(date +%s) - TEST_START ))
+-        log "⏱️ Test gate took ${TEST_DURATION}s"
++            TEST_START=$(date +%s)
++            TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
++            TEST_DURATION=$(( $(date +%s) - TEST_START ))
 +            log "⏱️ Test gate took ${TEST_DURATION}s"
-+            log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
-+            log "🛑 Bash syntax gate failed; skipping test command"
-+            RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
-+            if [ -n "$RETRY_TEST_OUTPUT" ]; then
-+                printf '%s' "$RETRY_TEST_OUTPUT" > "$RETRY_TEST_OUTPUT_FILE"
-+            else
-+                rm -f "$RETRY_TEST_OUTPUT_FILE"
-+            fi
-+            FIX_INSTRUCTIONS="Bash syntax validation failed for modified shell scripts. Fix the reported shell syntax errors before rerunning tests.
-+
-+$TEST_OUTPUT"
-+            printf '%s' "$FIX_INSTRUCTIONS" > "$RETRY_FEEDBACK_FILE"
-+            printf '%s' "syntax" > "$RETRY_FEEDBACK_SOURCE_FILE"
-+            FIX_RETRY=$((FIX_RETRY+1))
-+            notify "🔧 $TASK_ID bash syntax fix needed ($FIX_RETRY/$MAX_FIX_RETRIES)"
-+            log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: bash -n failed for modified .sh files"
-+            continue
-+        fi
-         TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
-         TEST_DURATION=$(( $(date +%s) - TEST_START ))
-         log "⏱️ Test gate took ${TEST_DURATION}s"
+         fi
+         log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
+         RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
 diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
-index 6c0237c..277e346 100755
+index 78f6d30..c8d4dae 100755
 --- a/src/ralph/resources/ralph.sh
 +++ b/src/ralph/resources/ralph.sh
-@@ -3046,6 +3046,49 @@ for cmd in commands:
- PY
+@@ -147,7 +147,10 @@ RUNTIME_PROTECTION_STASH_REF=""
+ find_runtime_protection_stash_ref() {
+     local stash_message="$1"
+ 
+-    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '$2 == msg { print $1; exit }'
++    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '
++        $2 == msg { print $1; exit }
++        index($2, ": " msg) == length($2) - length(msg) - 1 { print $1; exit }
++    '
  }
  
-+collect_modified_shell_paths() {
+ protect_runtime_files_before_coder() {
+@@ -320,6 +323,32 @@ run_project_test_command() {
+     bash -lc "$PROJECT_TEST_CMD"
+ }
+ 
++validate_modified_shell_scripts() {
 +    local base_hash="$1"
 +    local target_hash="$2"
-+    local candidate_paths=""
-+    local path=""
++    local file_path=""
++    local syntax_errors=""
++    local output=""
 +
-+    if [ "$base_hash" = "$target_hash" ]; then
-+        candidate_paths=$(task_scoped_changed_name_only_from_ref "$base_hash")
-+    else
-+        candidate_paths=$(task_scoped_name_only_between_refs "$base_hash" "$target_hash")
++    while IFS= read -r file_path; do
++        [ -n "$file_path" ] || continue
++        [ -f "$file_path" ] || continue
++
++        output=$(bash -n "$file_path" 2>&1) || {
++            if [ -n "$output" ]; then
++                syntax_errors="${syntax_errors}${syntax_errors:+$'\n'}$output"
++            else
++                syntax_errors="${syntax_errors}${syntax_errors:+$'\n'}BASH SYNTAX ERROR in: $file_path"
++            fi
++        }
++    done < <(git diff --name-only "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null || true)
++
++    if [ -n "$syntax_errors" ]; then
++        printf '%s\n' "$syntax_errors"
++        return 1
 +    fi
-+
-+    [ -n "$candidate_paths" ] || return 0
-+
-+    while IFS= read -r path; do
-+        [ -n "$path" ] || continue
-+        case "$path" in
-+            *.sh) printf '%s\n' "$path" ;;
-+        esac
-+    done <<< "$candidate_paths"
 +}
 +
-+validate_modified_shell_syntax() {
-+    local base_hash="$1"
-+    local target_hash="$2"
-+    local shell_paths=""
-+    local path=""
-+    local failed=0
-+
-+    shell_paths=$(collect_modified_shell_paths "$base_hash" "$target_hash")
-+    [ -n "$shell_paths" ] || return 0
-+
-+    while IFS= read -r path; do
-+        [ -n "$path" ] || continue
-+        [ -f "$path" ] || continue
-+        if ! bash -n -- "$path"; then
-+            failed=1
-+        fi
-+    done <<< "$shell_paths"
-+
-+    return "$failed"
-+}
-+
- stage_changed_paths() {
-     local changed_paths=""
-     local path=""
-@@ -3075,6 +3118,16 @@ task_scoped_diff_between_refs() {
-         2>/dev/null || true
+ is_single_task_mode() {
+     [ "$MODE" = "task" ] || [ "$MODE" = "handoff" ]
  }
- 
-+task_scoped_name_only_between_refs() {
-+    local base_hash="$1"
-+    local target_hash="$2"
-+    git diff --name-only "$base_hash" "$target_hash" -- \
-+        ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
-+        ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
-+        ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
-+        2>/dev/null || true
-+}
-+
- task_scoped_cached_name_only_from_ref() {
-     local base_hash="$1"
-     git diff --cached --name-only "$base_hash" -- \
-@@ -3084,6 +3137,18 @@ task_scoped_cached_name_only_from_ref() {
-         2>/dev/null || true
- }
- 
-+task_scoped_changed_name_only_from_ref() {
-+    local base_hash="$1"
-+    {
-+        task_scoped_cached_name_only_from_ref "$base_hash"
-+        git diff --name-only "$base_hash" -- \
-+            ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' \
-+            ':!ralph_main.pid' ':!ralph_codex.pid' ':!ralph_codex.pgid' \
-+            ':!tasks.json' ':!progress.md' ':!logs/**' ':!.ralph/audit/**' ':!.ralph/memory/recent.md' \
-+            2>/dev/null || true
-+    } | awk 'NF && !seen[$0]++'
-+}
-+
- task_scoped_cached_diff_from_ref() {
-     local base_hash="$1"
-     git diff --cached "$base_hash" -- \
-@@ -4348,6 +4413,31 @@ print(task.get('role', 'coder'))
+@@ -4244,21 +4273,16 @@ print(task.get('role', 'coder'))
              GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
          fi
-         TEST_START=$(date +%s)
-+        set +e
-+        TEST_OUTPUT=$(validate_modified_shell_syntax "$EFFECTIVE_REVIEW_BASE_HASH" "$EFFECTIVE_REVIEW_TARGET_HASH" 2>&1)
-+        SHELL_SYNTAX_STATUS=$?
-+        set -e
-+        TEST_DURATION=$(( $(date +%s) - TEST_START ))
-+        if [ "$SHELL_SYNTAX_STATUS" -ne 0 ]; then
+         # R19-02: bash syntax gate before expensive test suite
+-        SHELL_SYNTAX_FAIL=""
+-        for _shf in $(git diff --name-only "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" 2>/dev/null | grep '\.sh$' || true); do
+-            if [ -f "$_shf" ] && ! bash -n "$_shf" 2>/dev/null; then
+-                SHELL_SYNTAX_FAIL="${SHELL_SYNTAX_FAIL}${SHELL_SYNTAX_FAIL:+ }$_shf"
+-            fi
+-        done
+-        if [ -n "$SHELL_SYNTAX_FAIL" ]; then
+-            log "🛑 Bash syntax errors in: $SHELL_SYNTAX_FAIL — skipping test suite"
+-            TEST_OUTPUT="BASH SYNTAX ERROR in: $SHELL_SYNTAX_FAIL"
++        SHELL_SYNTAX_OUTPUT=""
++        if ! SHELL_SYNTAX_OUTPUT=$(validate_modified_shell_scripts "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}"); then
++            log "🛑 Bash syntax validation failed in modified .sh files; skipping test suite"
++            TEST_OUTPUT="$SHELL_SYNTAX_OUTPUT"
+             TEST_DURATION=0
+         else
+-        TEST_START=$(date +%s)
+-        TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
+-        TEST_DURATION=$(( $(date +%s) - TEST_START ))
+-        log "⏱️ Test gate took ${TEST_DURATION}s"
++            TEST_START=$(date +%s)
++            TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
++            TEST_DURATION=$(( $(date +%s) - TEST_START ))
 +            log "⏱️ Test gate took ${TEST_DURATION}s"
-+            log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
-+            log "🛑 Bash syntax gate failed; skipping test command"
-+            RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
-+            if [ -n "$RETRY_TEST_OUTPUT" ]; then
-+                printf '%s' "$RETRY_TEST_OUTPUT" > "$RETRY_TEST_OUTPUT_FILE"
-+            else
-+                rm -f "$RETRY_TEST_OUTPUT_FILE"
-+            fi
-+            FIX_INSTRUCTIONS="Bash syntax validation failed for modified shell scripts. Fix the reported shell syntax errors before rerunning tests.
-+
-+$TEST_OUTPUT"
-+            printf '%s' "$FIX_INSTRUCTIONS" > "$RETRY_FEEDBACK_FILE"
-+            printf '%s' "syntax" > "$RETRY_FEEDBACK_SOURCE_FILE"
-+            FIX_RETRY=$((FIX_RETRY+1))
-+            notify "🔧 $TASK_ID bash syntax fix needed ($FIX_RETRY/$MAX_FIX_RETRIES)"
-+            log "🔧 Fix $FIX_RETRY/$MAX_FIX_RETRIES: bash -n failed for modified .sh files"
-+            continue
-+        fi
-         TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
-         TEST_DURATION=$(( $(date +%s) - TEST_START ))
-         log "⏱️ Test gate took ${TEST_DURATION}s"
-diff --git a/tests/test_integration.py b/tests/test_integration.py
-index e649d25..8aeb8ed 100644
---- a/tests/test_integration.py
-+++ b/tests/test_integration.py
-@@ -1283,6 +1283,39 @@ exec "{sys.executable}" "$@"
-     assert state["message"] == "Task T01 complete"
- 
- 
-+def test_ralph_bash_syntax_gate_skips_test_command_and_requests_fix_immediately(tmp_path: Path) -> None:
-+    project_dir, env = create_test_project(tmp_path)
-+    write_test_logging_makefile(project_dir)
-+    (project_dir / "scripts").mkdir()
-+    env["MOCK_CODEX_EXTRA_WRITES_JSON"] = json.dumps(
-+        [
-+            {
-+                "path": "scripts/broken_candidate.sh",
-+                "content": "#!/usr/bin/env bash\nif [ \"${1:-}\" = \"x\" ]; then\n  echo broken\n",
-+                "mode": "write",
-+            }
-+        ]
-+    )
-+
-+    result = subprocess.run(
-+        [str(RALPH_SH), "task", "T01"],
-+        cwd=project_dir,
-+        env=env,
-+        capture_output=True,
-+        text=True,
-+        timeout=45,
-+    )
-+
-+    combined_output = result.stdout + result.stderr
-+
-+    assert result.returncode != 0
-+    assert "🛑 Bash syntax gate failed; skipping test command" in result.stdout
-+    assert "🔧 Fix 1/2: bash -n failed for modified .sh files" in result.stdout
-+    assert "scripts/broken_candidate.sh" in combined_output
-+    assert not (project_dir / "make_test.log").exists()
-+    assert "👔 TECH LEAD — Reviewing" not in result.stdout
-+
-+
- def test_ralph_task_success_preserves_final_state_if_success_tail_reporting_hits_formatter_error(tmp_path: Path) -> None:
-     project_dir, env = create_test_project(tmp_path)
-     python_shim = tmp_path / "bin" / "python3"
+         fi
+         log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
+         RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
 ```
 
-Previous diff snapshot: 10928 bytes
+Previous diff snapshot: 7085 bytes
 
 ## Tests
 ```
-E         [ralph] 02:32:20 👔 Decision: approve
-E         [ralph] 02:32:20 ───────────────────────────────────────────
-E         [ralph] 02:32:20 📋 RESULT: approve (quality: 8/10)
-E         [ralph] 02:32:20 ───────────────────────────────────────────
-E         [ralph] 02:32:20 🧪 Verification: fail_fix (implementation)
-E         [ralph] 02:32:20 🧪 Verification reason: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         [ralph] 02:32:20 🛑 Verification blocked closure without retry: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         [ralph] 02:32:20 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T19:32:20Z
-E         [ralph] 02:32:20 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue
-E         [ralph] 02:32:21 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 02:32:21 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 02:32:21 ════════════════════════════════════════════════════
-E         [ralph] 02:32:21 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)
-E         [ralph] 02:32:21 ════════════════════════════════════════════════════
-E         [ralph] 02:32:21 📊 Final:
-E         === Final State ===
-E         Status: blocked
-E         Step: failed
-E         Message: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         
-E         === Task Progress ===
-E           Total: 0/1 tasks done
-E           Phase R1: 0/1
-E         
-E         
-E       assert 1 == 0
-E        +  where 1 = CompletedProcess(args=['/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph.sh', 'task', 'T01'], returncode=1, stdout='[ralph] 02:32:11 🔍 Pre-task check: fast Python validation\n[ralph] 02:32:11 ✅ Pre-task check passed\n🎯 Requested task T01 is runnable and will be executed directly\n[ralph] 02:32:12 🧠 Model: default (complexity: moderate)\n[ralph] 02:32:12 📋 Complexity: moderate\n[ralph] 02:32:12 ⚠️ Risk: medium\n[ralph] 02:32:12 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 02:32:12 📋 Task: T01 — Integration test task\n[ralph] 02:32:12 📋 TASK_START task_id=T01 title="Integration test task" timestamp=2026-04-08T19:32:12Z\n[ralph] 02:32:12 ⏱  Timeout: coder=5s lead=5s\n[ralph] 02:32:12 ═══════════════════════════════════════════\n[ralph] 02:32:12 🤖 CODER — Attempt 1/3\n[ralph] 02:32:12 Task: T01 — Integration test task\n[ralph] 02:32:12 ═══════════════════════════════════════════\n[ralph] 02:32:12 🤖 [CODER] Attempt 1...\n[ralph] 02:32:13 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 02:32:13 🔍 Web search pol...mplementation evidence found.\n[ralph] 02:32:20 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T19:32:20Z\n[ralph] 02:32:20 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue\n[ralph] 02:32:21 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 02:32:21 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 02:32:21 ════════════════════════════════════════════════════\n[ralph] 02:32:21 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)\n[ralph] 02:32:21 ════════════════════════════════════════════════════\n[ralph] 02:32:21 📊 Final:\n=== Final State ===\nStatus: blocked\nStep: failed\nMessage: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.\n\n=== Task Progress ===\n  Total: 0/1 tasks done\n  Phase R1: 0/1\n\n', stderr='').returncode
+tests/test_ralph_shell_helpers.py::test_parse_lead_review_json_fail_closes_on_unparseable_sources PASSED [ 82%]
+tests/test_ralph_shell_helpers.py::test_run_task_closure_verification_falls_back_when_verifier_crashes PASSED [ 82%]
+tests/test_ralph_shell_helpers.py::test_task_scoped_diff_between_refs_includes_ralph_shell_changes PASSED [ 83%]
+tests/test_ralph_shell_helpers.py::test_write_benchmark_report_clamps_other_time_and_accepts_missing_manual_duration PASSED [ 83%]
+tests/test_re_audit_tasks.py::test_reaudit_module_imports_from_repo_root PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_dry_run_classifies_obvious_false_positive PASSED [ 84%]
+tests/test_re_audit_tasks.py::test_reaudit_command_alias_handler_counts_as_verified_done PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_missing_command_still_becomes_false_positive PASSED [ 85%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_updates_tasks_for_strong_case PASSED [ 86%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_false_positive_keeps_reason_and_clears_stale_latest_run_truth PASSED [ 86%]
+tests/test_re_audit_tasks.py::test_reaudit_ambiguous_case_becomes_needs_human_review PASSED [ 87%]
+tests/test_re_audit_tasks.py::test_reaudit_report_stays_task_scoped PASSED [ 87%]
+tests/test_re_audit_tasks.py::test_reaudit_verified_case_becomes_verified_done PASSED [ 88%]
+tests/test_re_audit_tasks.py::test_reaudit_partial_case_is_reported PASSED [ 88%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_partial_and_needs_human_review PASSED [ 89%]
+tests/test_re_audit_tasks.py::test_reaudit_apply_skips_tasks_already_aligned_to_verified_done PASSED [ 89%]
+tests/test_re_audit_tasks.py::test_next_task_still_only_picks_pending PASSED [ 90%]
+tests/test_run_eval.py::test_load_fixture_reads_basic_eval_source PASSED [ 90%]
+tests/test_run_eval.py::test_evaluate_fixture_applies_bounded_limit PASSED [ 90%]
+tests/test_run_eval.py::test_run_eval_cli_emits_json_result PASSED       [ 91%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_full_tasks PASSED [ 91%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_load_minimal_tasks PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_priority_uses_default PASSED [ 92%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_dependencies_uses_default PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_timeout_uses_default PASSED [ 93%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_missing_completed_at PASSED [ 94%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_required_fields_exist PASSED [ 94%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_empty_tasks_file PASSED [ 95%]
+tests/test_tasks_parsing.py::TestTaskParsing::test_no_tasks_key PASSED   [ 95%]
+tests/test_verify_task_closure.py::test_bookkeeping_only_diff_blocks_implementation_task PASSED [ 96%]
+tests/test_verify_task_closure.py::test_missing_script_file_blocks_closure PASSED [ 96%]
+tests/test_verify_task_closure.py::test_missing_command_handler_blocks_closure PASSED [ 97%]
+tests/test_verify_task_closure.py::test_command_alias_handler_counts_as_valid_runtime_evidence PASSED [ 97%]
+tests/test_verify_task_closure.py::test_missing_template_file_blocks_closure PASSED [ 98%]
+tests/test_verify_task_closure.py::test_docs_only_task_can_pass_with_docs_evidence PASSED [ 98%]
+tests/test_verify_task_closure.py::test_tests_only_task_requires_actual_test_evidence PASSED [ 99%]
+tests/test_verify_task_closure.py::test_reaudit_reporting_task_passes_with_saved_report_evidence PASSED [ 99%]
+tests/test_verify_task_closure.py::test_generic_implementation_task_still_fails_on_report_and_state_files_only PASSED [100%]
 
-tests/test_integration.py:2311: AssertionError
-=========================== short test summary info ============================
-FAILED tests/test_integration.py::test_ralph_rejects_oversized_prompt - Asser...
-FAILED tests/test_integration.py::test_ralph_handoff_ignores_runtime_owned_dirty_artifacts_without_opening_candidate_path
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_without_worktree_or_repo_backed_candidate_state
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_when_valid_task_evidence_is_contaminated_by_unrelated_tracked_changes
-FAILED tests/test_integration.py::test_ralph_fails_closed_on_lead_stdout_review_mismatch
-FAILED tests/test_integration.py::test_ralph_blocks_contradictory_bookkeeping_only_fix_instructions
-FAILED tests/test_integration.py::test_ralph_blocks_diff_only_fix_without_retry_loop
-FAILED tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure
-============= 8 failed, 205 passed, 1 skipped in 833.98s (0:13:53) =============
-make: *** [test] Error 1
-tests failed
+================= 211 passed, 1 skipped in 2419.33s (0:40:19) ==================
 ```
 
 ## Review Checklist — evaluate each item:

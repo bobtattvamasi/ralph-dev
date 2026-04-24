@@ -17,7 +17,9 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
   ],
   "priority": "critical",
   "complexity": "moderate",
-  "role": "coder"
+  "role": "coder",
+  "completed_at": null,
+  "revision_notes": "reset: bugs fixed in HEAD"
 }
 
 ## Target Files
@@ -26,6 +28,14 @@ Read AGENTS.md, ARCHITECTURE.md, MEMORY_SYSTEM.md, and AGENTS_LEAD.md first.
 
 ## Scope Anomaly Warning
 The following files were modified but are NOT in target_files:
+.ralph/audit/R19-01.json
+.ralph/audit/R19-02.json
+.ralph/audit/lead_prompt_R19-01.txt
+.ralph/audit/lead_prompt_R19-02.txt
+.ralph/audit/lead_prompt_R19-05.txt
+.ralph/audit/lead_reasoning_R19-01.txt
+.ralph/audit/lead_reasoning_R19-02.txt
+.ralph/audit/lead_reasoning_R19-05.txt
 .ralph/memory/recent.md
 progress.md
 tasks.json
@@ -78,144 +88,397 @@ END_RALPH_REVIEW_JSON
 ## Diff
 ```diff
 diff --git a/ralph.sh b/ralph.sh
-index 277e346..cd5e870 100755
+index c8d4dae..60971bf 100755
 --- a/ralph.sh
 +++ b/ralph.sh
-@@ -257,6 +257,28 @@ end_runtime_file_protection() {
-     remove_new_runtime_protected_paths "$snapshot_file" || return 1
- }
+@@ -143,6 +143,24 @@ PY
  
-+revert_tracked_paths() {
-+    local reason="${1:-}"
-+    shift || true
-+    local changed_paths=("$@")
-+    local tracked_paths=()
-+    local path=""
+ RUNTIME_PROTECTED_PATHS=(tasks.json progress.md .ralph/memory)
+ RUNTIME_PROTECTION_STASH_REF=""
++AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
 +
-+    [ "${#changed_paths[@]}" -gt 0 ] || return 0
++is_runtime_protected_path() {
++    local path="${1:-}"
++    local protected_path=""
 +
-+    for path in "${changed_paths[@]}"; do
-+        [ -n "$path" ] || continue
-+        if git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
-+            tracked_paths+=("$path")
-+        fi
++    [ -n "$path" ] || return 1
++
++    for protected_path in "${RUNTIME_PROTECTED_PATHS[@]}"; do
++        case "$path" in
++            "$protected_path"|"$protected_path"/*)
++                return 0
++                ;;
++        esac
 +    done
 +
-+    [ "${#tracked_paths[@]}" -gt 0 ] || return 0
++    return 1
++}
+ 
+ find_runtime_protection_stash_ref() {
+     local stash_message="$1"
+@@ -194,6 +212,49 @@ restore_runtime_files_after_coder() {
+     fi
+ }
+ 
++revert_paths_from_worktree() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
++    [ "$#" -gt 0 ] || return 0
 +
-+    git checkout -- "${tracked_paths[@]}" >/dev/null 2>&1 || return 1
-+    log "↩️ Auto-reverted ${reason}: $(printf '%s\n' "${tracked_paths[@]}" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
++    local paths=("$@")
++    git checkout -- "${paths[@]}" >/dev/null 2>&1 || true
++    git clean -fd -- "${paths[@]}" >/dev/null 2>&1 || true
 +}
 +
- run_coder_codex_protected() {
-     local prompt="${1:-}"
-     local output_file="${2:-}"
-@@ -4465,6 +4487,13 @@ PY
-             if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
-                 python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: out-of-scope files: $SCOPE_ANOMALY" >/dev/null 2>&1 || true
++worktree_changed_files() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
++
++    {
++        git diff --name-only HEAD 2>/dev/null
++        git diff --cached --name-only 2>/dev/null
++        git ls-files --others --exclude-standard 2>/dev/null
++    } | awk 'NF' | sort -u
++}
++
++auto_revert_out_of_scope_files() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
++
++    local out_of_scope_raw="${1:-}"
++    local reverted_paths=()
++    local path=""
++
++    AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
++
++    while IFS= read -r path; do
++        [ -n "$path" ] || continue
++        if is_runtime_protected_path "$path"; then
++            continue
++        fi
++        reverted_paths+=("$path")
++    done <<< "$out_of_scope_raw"
++
++    [ "${#reverted_paths[@]}" -gt 0 ] || return 0
++
++    revert_paths_from_worktree "${reverted_paths[@]}"
++    AUTO_REVERTED_OUT_OF_SCOPE_PATHS=$(printf '%s\n' "${reverted_paths[@]}")
++    log "↩️ Auto-reverted out-of-scope files before lead review: $(printf '%s\n' "${reverted_paths[@]}" | paste -sd ', ' -)"
++}
++
+ cleanup() {
+     # Prevent recursive cleanup (explicit call + trap).
+     if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
+@@ -4291,7 +4352,7 @@ print(task.get('role', 'coder'))
+         else
+             rm -f "$RETRY_TEST_OUTPUT_FILE"
+         fi
+-        ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
++        ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
+         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
+ import json
+ import os
+@@ -4300,13 +4361,40 @@ task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
+ target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
+ actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
+ out_of_scope = [path for path in actual_changed if path not in target_files]
+-print("\n".join(out_of_scope), end="")
++runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
++filtered = []
++for path in out_of_scope:
++    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
++        continue
++    filtered.append(path)
++print("\n".join(filtered), end="")
+ PY
+ )
+         if [ -n "$SCOPE_ANOMALY" ]; then
++            SCOPE_ANOMALY_REVERTED=""
+             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
+-            if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
+-                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: out-of-scope files: $SCOPE_ANOMALY" >/dev/null 2>&1 || true
++            auto_revert_out_of_scope_files "$SCOPE_ANOMALY"
++            SCOPE_ANOMALY_REVERTED="$AUTO_REVERTED_OUT_OF_SCOPE_PATHS"
++            ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
++            SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
++import json
++import os
++
++task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
++target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
++actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
++out_of_scope = [path for path in actual_changed if path not in target_files]
++runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
++filtered = []
++for path in out_of_scope:
++    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
++        continue
++    filtered.append(path)
++print("\n".join(filtered), end="")
++PY
++)
++            if [ -n "$SCOPE_ANOMALY_REVERTED" ] && [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
++                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: auto-reverted out-of-scope files: $SCOPE_ANOMALY_REVERTED" >/dev/null 2>&1 || true
              fi
-+            mapfile -t SCOPE_ANOMALY_PATHS < <(printf '%s\n' "$SCOPE_ANOMALY")
-+            revert_tracked_paths "out-of-scope files before lead review" "${SCOPE_ANOMALY_PATHS[@]}"
-+            if [ "${REVIEW_BASE_HASH:-$PRE_HASH}" = "${REVIEW_TARGET_HASH:-$POST_HASH}" ]; then
-+                GIT_DIFF="(no changes committed)"
-+            else
-+                GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
-+            fi
          fi
  
-         REVIEW_FILE="/tmp/ralph_review_$$.txt"
 diff --git a/src/ralph/resources/ralph.sh b/src/ralph/resources/ralph.sh
-index 277e346..cd5e870 100755
+index c8d4dae..60971bf 100755
 --- a/src/ralph/resources/ralph.sh
 +++ b/src/ralph/resources/ralph.sh
-@@ -257,6 +257,28 @@ end_runtime_file_protection() {
-     remove_new_runtime_protected_paths "$snapshot_file" || return 1
- }
+@@ -143,6 +143,24 @@ PY
  
-+revert_tracked_paths() {
-+    local reason="${1:-}"
-+    shift || true
-+    local changed_paths=("$@")
-+    local tracked_paths=()
-+    local path=""
+ RUNTIME_PROTECTED_PATHS=(tasks.json progress.md .ralph/memory)
+ RUNTIME_PROTECTION_STASH_REF=""
++AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
 +
-+    [ "${#changed_paths[@]}" -gt 0 ] || return 0
++is_runtime_protected_path() {
++    local path="${1:-}"
++    local protected_path=""
 +
-+    for path in "${changed_paths[@]}"; do
-+        [ -n "$path" ] || continue
-+        if git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
-+            tracked_paths+=("$path")
-+        fi
++    [ -n "$path" ] || return 1
++
++    for protected_path in "${RUNTIME_PROTECTED_PATHS[@]}"; do
++        case "$path" in
++            "$protected_path"|"$protected_path"/*)
++                return 0
++                ;;
++        esac
 +    done
 +
-+    [ "${#tracked_paths[@]}" -gt 0 ] || return 0
++    return 1
++}
+ 
+ find_runtime_protection_stash_ref() {
+     local stash_message="$1"
+@@ -194,6 +212,49 @@ restore_runtime_files_after_coder() {
+     fi
+ }
+ 
++revert_paths_from_worktree() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
++    [ "$#" -gt 0 ] || return 0
 +
-+    git checkout -- "${tracked_paths[@]}" >/dev/null 2>&1 || return 1
-+    log "↩️ Auto-reverted ${reason}: $(printf '%s\n' "${tracked_paths[@]}" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
++    local paths=("$@")
++    git checkout -- "${paths[@]}" >/dev/null 2>&1 || true
++    git clean -fd -- "${paths[@]}" >/dev/null 2>&1 || true
 +}
 +
- run_coder_codex_protected() {
-     local prompt="${1:-}"
-     local output_file="${2:-}"
-@@ -4465,6 +4487,13 @@ PY
-             if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
-                 python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: out-of-scope files: $SCOPE_ANOMALY" >/dev/null 2>&1 || true
++worktree_changed_files() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
++
++    {
++        git diff --name-only HEAD 2>/dev/null
++        git diff --cached --name-only 2>/dev/null
++        git ls-files --others --exclude-standard 2>/dev/null
++    } | awk 'NF' | sort -u
++}
++
++auto_revert_out_of_scope_files() {
++    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
++
++    local out_of_scope_raw="${1:-}"
++    local reverted_paths=()
++    local path=""
++
++    AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
++
++    while IFS= read -r path; do
++        [ -n "$path" ] || continue
++        if is_runtime_protected_path "$path"; then
++            continue
++        fi
++        reverted_paths+=("$path")
++    done <<< "$out_of_scope_raw"
++
++    [ "${#reverted_paths[@]}" -gt 0 ] || return 0
++
++    revert_paths_from_worktree "${reverted_paths[@]}"
++    AUTO_REVERTED_OUT_OF_SCOPE_PATHS=$(printf '%s\n' "${reverted_paths[@]}")
++    log "↩️ Auto-reverted out-of-scope files before lead review: $(printf '%s\n' "${reverted_paths[@]}" | paste -sd ', ' -)"
++}
++
+ cleanup() {
+     # Prevent recursive cleanup (explicit call + trap).
+     if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
+@@ -4291,7 +4352,7 @@ print(task.get('role', 'coder'))
+         else
+             rm -f "$RETRY_TEST_OUTPUT_FILE"
+         fi
+-        ACTUAL_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || true)
++        ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
+         SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
+ import json
+ import os
+@@ -4300,13 +4361,40 @@ task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
+ target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
+ actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
+ out_of_scope = [path for path in actual_changed if path not in target_files]
+-print("\n".join(out_of_scope), end="")
++runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
++filtered = []
++for path in out_of_scope:
++    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
++        continue
++    filtered.append(path)
++print("\n".join(filtered), end="")
+ PY
+ )
+         if [ -n "$SCOPE_ANOMALY" ]; then
++            SCOPE_ANOMALY_REVERTED=""
+             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
+-            if [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
+-                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: out-of-scope files: $SCOPE_ANOMALY" >/dev/null 2>&1 || true
++            auto_revert_out_of_scope_files "$SCOPE_ANOMALY"
++            SCOPE_ANOMALY_REVERTED="$AUTO_REVERTED_OUT_OF_SCOPE_PATHS"
++            ACTUAL_CHANGED_FILES=$(worktree_changed_files || true)
++            SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
++import json
++import os
++
++task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
++target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
++actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
++out_of_scope = [path for path in actual_changed if path not in target_files]
++runtime_protected = ("tasks.json", "progress.md", ".ralph/memory")
++filtered = []
++for path in out_of_scope:
++    if any(path == item or path.startswith(f"{item}/") for item in runtime_protected):
++        continue
++    filtered.append(path)
++print("\n".join(filtered), end="")
++PY
++)
++            if [ -n "$SCOPE_ANOMALY_REVERTED" ] && [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
++                python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: auto-reverted out-of-scope files: $SCOPE_ANOMALY_REVERTED" >/dev/null 2>&1 || true
              fi
-+            mapfile -t SCOPE_ANOMALY_PATHS < <(printf '%s\n' "$SCOPE_ANOMALY")
-+            revert_tracked_paths "out-of-scope files before lead review" "${SCOPE_ANOMALY_PATHS[@]}"
-+            if [ "${REVIEW_BASE_HASH:-$PRE_HASH}" = "${REVIEW_TARGET_HASH:-$POST_HASH}" ]; then
-+                GIT_DIFF="(no changes committed)"
-+            else
-+                GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
-+            fi
          fi
  
-         REVIEW_FILE="/tmp/ralph_review_$$.txt"
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+index f57be49..6adcffb 100644
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -101,6 +101,7 @@ lead_fix_count_file = os.environ.get("MOCK_LEAD_FIX_COUNT_FILE", "")
+ write_file = os.environ.get("MOCK_CODEX_WRITE_FILE", "")
+ write_content = os.environ.get("MOCK_CODEX_WRITE_CONTENT", "// generated by mock codex\\n")
+ write_mode = os.environ.get("MOCK_CODEX_WRITE_MODE", "append")
++extra_write_files_raw = os.environ.get("MOCK_CODEX_EXTRA_WRITE_FILES", "")
+ stdout_text = os.environ.get("MOCK_CODEX_STDOUT_TEXT", "")
+ if review_file:
+     if lead_prompt_capture_file:
+@@ -238,6 +239,12 @@ else:
+         file_mode = "a" if write_mode == "append" else "w"
+         with target.open(file_mode, encoding="utf-8") as fh:
+             fh.write(write_content)
++    if extra_write_files_raw:
++        for extra_path in json.loads(extra_write_files_raw):
++            target = Path(extra_path)
++            target.parent.mkdir(parents=True, exist_ok=True)
++            with target.open("a", encoding="utf-8") as fh:
++                fh.write(write_content)
+     if sleep_s > 0:
+         time.sleep(sleep_s)
+ 
+@@ -1864,6 +1871,57 @@ def test_ralph_phase_mode_marks_final_state_deadlocked_after_last_runnable_task(
+     assert state["message"] == "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02"
+ 
+ 
++def test_ralph_phase_mode_auto_reverts_non_runtime_out_of_scope_files_without_resetting_runtime_state(tmp_path: Path) -> None:
++    project_dir, env = create_test_project(tmp_path)
++    tasks = load_tasks(project_dir)
++    tasks["phases"]["R2"] = {"name": "Phase 2", "description": "Phase-mode scope anomaly coverage"}
++    tasks["tasks"] = [
++        {
++            "id": "T01",
++            "phase": "R2",
++            "title": "Runnable with out-of-scope write",
++            "description": "Should revert only the non-runtime out-of-scope file.",
++            "status": "pending",
++            "priority": "high",
++            "target_files": ["src/generated_by_codex.ts"],
++            "dependencies": [],
++            "timeout": 5,
++        },
++        {
++            "id": "T02",
++            "phase": "R2",
++            "title": "Blocked follower",
++            "description": "Keeps phase mode from reporting completion.",
++            "status": "pending",
++            "priority": "medium",
++            "target_files": ["src/generated_by_codex.ts"],
++            "dependencies": ["T99"],
++            "timeout": 5,
++        },
++    ]
++    write_tasks(project_dir, tasks)
++    env["MOCK_CODEX_EXTRA_WRITE_FILES"] = json.dumps(["notes/out_of_scope.txt"])
++
++    result = subprocess.run(
++        [str(RALPH_SH), "phase", "R2"],
++        cwd=project_dir,
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=20,
++    )
++
++    assert result.returncode == 0, result.stdout + result.stderr
++    assert "↩️ Auto-reverted out-of-scope files before lead review: notes/out_of_scope.txt" in result.stdout
++    assert "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02" in result.stdout
++    assert not (project_dir / "notes" / "out_of_scope.txt").exists()
++    assert load_task_status(project_dir, "T01") == "verified_done"
++    assert load_task_status(project_dir, "T02") == "pending"
++    state = load_state(project_dir)
++    assert state["current_phase_step"] == "deadlocked"
++    assert state["message"] == "Phase R2 deadlocked: pending tasks remain blocked by dependencies: T02"
++
++
+ def test_ralph_auto_mode_does_not_report_complete_when_only_blocked_statuses_remain(tmp_path: Path) -> None:
+     project_dir, env = create_test_project(tmp_path)
+     tasks = load_tasks(project_dir)
 ```
 
-Previous diff snapshot: 3847 bytes
+Previous diff snapshot: 14060 bytes
 
 ## Tests
 ```
-E         [ralph] 02:47:50 🛑 Verification blocked closure without retry: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         [ralph] 02:47:50 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T19:47:50Z
-E         [ralph] 02:47:50 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue
-E         [ralph] 02:47:50 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 02:47:51 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured
-E         [ralph] 02:47:51 ════════════════════════════════════════════════════
-E         [ralph] 02:47:51 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)
-E         [ralph] 02:47:51 ════════════════════════════════════════════════════
-E         [ralph] 02:47:51 📊 Final:
-E         === Final State ===
-E         Status: blocked
-E         Step: failed
-E         Message: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.
-E         
-E         === Task Progress ===
-E           Total: 0/1 tasks done
-E           Phase R1: 0/1
-E         
-E         
-E       assert 1 == 0
-E        +  where 1 = CompletedProcess(args=['/Users/bogdan_galaxy/Documents/My_deals/mine_projects/AI-Agent_experiments/structure-of-mind/ralph-dev/ralph.sh', 'task', 'T01'], returncode=1, stdout='[ralph] 02:47:41 🔍 Pre-task check: fast Python validation\n[ralph] 02:47:41 ✅ Pre-task check passed\n🎯 Requested task T01 is runnable and will be executed directly\n[ralph] 02:47:42 🧠 Model: default (complexity: moderate)\n[ralph] 02:47:42 📋 Complexity: moderate\n[ralph] 02:47:42 ⚠️ Risk: medium\n[ralph] 02:47:42 🧩 Role: coder (coder instructions: AGENTS_CODER.md, lead instructions: AGENTS_LEAD.md)\n[ralph] 02:47:42 📋 Task: T01 — Integration test task\n[ralph] 02:47:42 📋 TASK_START task_id=T01 title="Integration test task" timestamp=2026-04-08T19:47:42Z\n[ralph] 02:47:42 ⏱  Timeout: coder=5s lead=5s\n[ralph] 02:47:42 ═══════════════════════════════════════════\n[ralph] 02:47:42 🤖 CODER — Attempt 1/3\n[ralph] 02:47:42 Task: T01 — Integration test task\n[ralph] 02:47:42 ═══════════════════════════════════════════\n[ralph] 02:47:42 🤖 [CODER] Attempt 1...\n[ralph] 02:47:43 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 02:47:43 🔍 Web search pol...mplementation evidence found.\n[ralph] 02:47:50 📋 TASK_FAIL task_id=T01 status=verification runtime_success=true verified_success=false reason="Verification failed: only bookkeeping/state/report files changed; no implementation evidence found." attempts=0 timestamp=2026-04-08T19:47:50Z\n[ralph] 02:47:50 ⚠️ Task T01 blocked: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found. — skipping, continuing queue\n[ralph] 02:47:50 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 02:47:51 ⚠️ Notification helper: WARNING ralph.notify: Notification skipped: Telegram token/chat id not configured\n[ralph] 02:47:51 ════════════════════════════════════════════════════\n[ralph] 02:47:51 💰 SESSION TOTAL: 0 tasks, ~123 tokens (~$0.00)\n[ralph] 02:47:51 ════════════════════════════════════════════════════\n[ralph] 02:47:51 📊 Final:\n=== Final State ===\nStatus: blocked\nStep: failed\nMessage: Task T01 failed: Verification failed: only bookkeeping/state/report files changed; no implementation evidence found.\n\n=== Task Progress ===\n  Total: 0/1 tasks done\n  Phase R1: 0/1\n\n', stderr='').returncode
 
-tests/test_integration.py:2311: AssertionError
+tests/test_integration.py:2850: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1256: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1242: in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-18/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt')
+name = '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-18/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt'
+flags = 16777216, mode = 438
+
+    def _opener(self, name, flags, mode=0o666):
+        # A stub for the opener argument to built-in open()
+>       return self._accessor.open(self, flags, mode)
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/rr/3zshwzlx6kq65dw6dwx8qkbw0000gn/T/pytest-of-bogdan_galaxy/pytest-18/test_ralph_waits_for_assets_an0/project/src/assets/hero-image.txt'
+
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py:1110: FileNotFoundError
 =========================== short test summary info ============================
 FAILED tests/test_integration.py::test_ralph_benchmark_reports_auto_vs_manual_breakdown
-FAILED tests/test_integration.py::test_ralph_rejects_oversized_prompt - Asser...
+FAILED tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run
+FAILED tests/test_integration.py::test_ralph_uses_narrow_coder_prompt_for_moderate_exact_task_run
+FAILED tests/test_integration.py::test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry
+FAILED tests/test_integration.py::test_ralph_injects_human_comment_into_coder_prompt_and_consumes_it
+FAILED tests/test_integration.py::test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_task_mode_fast_pre_task_check_completes_within_30_seconds
 FAILED tests/test_integration.py::test_ralph_auto_mode_runs_preflight_make_test_before_task_execution
 FAILED tests/test_integration.py::test_ralph_task_mode_can_force_preflight_make_test_explicitly
 FAILED tests/test_integration.py::test_ralph_preflight_uses_project_configured_test_command
+FAILED tests/test_integration.py::test_ralph_phase_mode_uses_fast_pre_task_check_without_preflight_make_test
+FAILED tests/test_integration.py::test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_docs
 FAILED tests/test_integration.py::test_ralph_auto_mode_narrow_task_does_not_read_project_docs_eagerly
-FAILED tests/test_integration.py::test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_run
-FAILED tests/test_integration.py::test_ralph_handoff_ignores_runtime_owned_dirty_artifacts_without_opening_candidate_path
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_without_worktree_or_repo_backed_candidate_state
-FAILED tests/test_integration.py::test_ralph_handoff_fail_closes_when_valid_task_evidence_is_contaminated_by_unrelated_tracked_changes
-FAILED tests/test_integration.py::test_ralph_fails_closed_on_lead_stdout_review_mismatch
-FAILED tests/test_integration.py::test_ralph_blocks_contradictory_bookkeeping_only_fix_instructions
-FAILED tests/test_integration.py::test_ralph_blocks_diff_only_fix_without_retry_loop
-FAILED tests/test_integration.py::test_ralph_blocks_bookkeeping_only_closure
-============ 14 failed, 199 passed, 1 skipped in 762.34s (0:12:42) =============
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_narrow_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_trims_token_dense_broad_prompt_to_budget
+FAILED tests/test_integration.py::test_ralph_phase_mode_auto_reverts_non_runtime_out_of_scope_files_without_resetting_runtime_state
+FAILED tests/test_integration.py::test_ralph_marks_task_skipped_on_skip_control
+FAILED tests/test_integration.py::test_ralph_waits_for_assets_and_resumes_when_files_arrive
+============ 18 failed, 194 passed, 1 skipped in 805.93s (0:13:25) =============
 make: *** [test] Error 1
 tests failed
 ```

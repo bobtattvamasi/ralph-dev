@@ -36,43 +36,6 @@ def is_placeholder_review(value: dict) -> bool:
     return task_id == PLACEHOLDER_TASK_ID or summary == PLACEHOLDER_SUMMARY
 
 
-def normalize_issues(issues: object) -> list[str]:
-    if isinstance(issues, list):
-        return [str(item).strip() for item in issues if str(item).strip()]
-    if issues is None:
-        return []
-    text = str(issues).strip()
-    return [text] if text else []
-
-
-def canonicalize_review(value: dict) -> dict | None:
-    nested_review = value.get("review")
-    if isinstance(nested_review, dict):
-        raw_review = nested_review.get("raw")
-        if isinstance(raw_review, str) and raw_review.strip():
-            parsed_raw = extract_json_object(raw_review)
-            if parsed_raw is not None:
-                return parsed_raw
-        parsed_review = nested_review.get("parsed")
-        if isinstance(parsed_review, dict):
-            parsed_structured = canonicalize_review(parsed_review)
-            if parsed_structured is not None:
-                return parsed_structured
-
-    if not is_review_candidate(value) or is_placeholder_review(value):
-        return None
-
-    decision = str(value.get("decision", "")).strip()
-    if decision == "done":
-        decision = "approve"
-
-    return {
-        "decision": decision,
-        "quality_score": value.get("quality_score", "?"),
-        "issues": normalize_issues(value.get("issues")),
-    }
-
-
 def collect_json_objects(text: str) -> list[dict]:
     candidates: list[dict] = []
     seen: set[str] = set()
@@ -81,7 +44,7 @@ def collect_json_objects(text: str) -> list[dict]:
         if char != "{":
             continue
         try:
-            parsed, end = decoder.raw_decode(text[idx:])
+            parsed, _end = decoder.raw_decode(text[idx:])
         except JSONDecodeError:
             continue
         if not isinstance(parsed, dict):
@@ -113,19 +76,17 @@ def collect_marker_reviews(text: str) -> list[dict]:
 
 
 def extract_json_object(text: str) -> dict | None:
-    direct = try_load(text.strip())
-    if direct is not None:
-        direct_review = canonicalize_review(direct)
-        if direct_review is not None:
-            return direct_review
-
     marker_reviews = [
-        canonicalize_review(candidate)
+        candidate
         for candidate in collect_marker_reviews(text)
+        if is_review_candidate(candidate) and not is_placeholder_review(candidate)
     ]
-    marker_reviews = [candidate for candidate in marker_reviews if candidate is not None]
     if marker_reviews:
         return marker_reviews[-1]
+
+    direct = try_load(text.strip())
+    if direct is not None and is_review_candidate(direct) and not is_placeholder_review(direct):
+        return direct
 
     fenced_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
     candidates: list[dict] = []
@@ -138,14 +99,13 @@ def extract_json_object(text: str) -> dict | None:
     trusted: list[dict] = []
     seen: set[str] = set()
     for candidate in candidates:
-        normalized = canonicalize_review(candidate)
-        if normalized is None:
+        if not is_review_candidate(candidate) or is_placeholder_review(candidate):
             continue
-        key = json.dumps(normalized, sort_keys=True, ensure_ascii=False)
+        key = json.dumps(candidate, sort_keys=True, ensure_ascii=False)
         if key in seen:
             continue
         seen.add(key)
-        trusted.append(normalized)
+        trusted.append(candidate)
 
     if not trusted:
         return None

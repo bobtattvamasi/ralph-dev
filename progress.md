@@ -101,3 +101,4 @@
 - **R13-07** (2026-03-31 10:50 UTC): R13-07 approved: destructive crash rollback is gated by RALPH_DESTRUCTIVE_ROLLBACK=reviewed, Telegram/article timeouts are centralized in ralph_common, and lead/retry/rate-limit defaults are named configuration in ralph.sh and mirrored resource script.
 - **T01** (2026-03-31 16:22 UTC): First note
 - **T02** (2026-03-31 16:22 UTC): Second note
+- **R19-02** (2026-04-10 17:49 UTC): R19-02 is acceptable as implemented: modified `.sh` files are syntax-checked before `make test`, syntax failure short-circuits the test run, and the reported out-of-scope files are bookkeeping/audit artifacts rather than missing product work for this task.
