@@ -7,6 +7,12 @@ set -euo pipefail
 
 RALPH_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+if command -v gawk >/dev/null 2>&1; then
+    AWK=gawk
+else
+    AWK=awk
+fi
+
 resolve_dir_path() {
     local candidate="${1:-}"
 
@@ -296,7 +302,7 @@ worktree_changed_files() {
         git diff --name-only HEAD 2>/dev/null
         git diff --cached --name-only 2>/dev/null
         git ls-files --others --exclude-standard 2>/dev/null
-    } | awk 'NF' | sort -u
+    } | "${AWK}" 'NF' | sort -u
 }
 
 auto_revert_out_of_scope_files() {
@@ -548,7 +554,7 @@ detect_long_python_heredocs_in_modified_shell_scripts() {
     local base_hash="$1"
     local target_hash="$2"
     local violations=""
-    violations=$(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | awk '
+    violations=$(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | "${AWK}" '
 function extract_marker(line, token) {
     if (match(line, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
         token = substr(line, RSTART, RLENGTH)
@@ -976,7 +982,7 @@ handoff_commit_parent_hash() {
     local commit_hash="$1"
     local parent_hash=""
 
-    parent_hash=$(git rev-list --parents -n 1 "$commit_hash" 2>/dev/null | awk '{print $2}')
+    parent_hash=$(git rev-list --parents -n 1 "$commit_hash" 2>/dev/null | "${AWK}" '{print $2}')
     if [ -n "$parent_hash" ]; then
         printf '%s\n' "$parent_hash"
     else
@@ -1059,7 +1065,7 @@ handoff_unrelated_worktree_tracked_changes() {
         {
             git diff --name-only 2>/dev/null
             git diff --cached --name-only 2>/dev/null
-        } | awk 'NF' | sort -u
+        } | "${AWK}" 'NF' | sort -u
     )
     [ -n "$tracked_paths" ] || return 0
 
@@ -3411,15 +3417,26 @@ resolve_git_ref() {
 
 run_task_closure_verification() {
     local verifier_failed=0
+    local verification_debug_file="/tmp/ralph_verify_task_closure_${$}.log"
+
+    rm -f "$verification_debug_file"
 
     PRE_CLOSURE_CHANGED_FILES_JSON=$(collect_preclosure_changed_files_json)
     if ! VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
         RALPH_PROJECT_DIR="$PROJECT_DIR" \
         RALPH_CHANGED_FILES_JSON="$PRE_CLOSURE_CHANGED_FILES_JSON" \
-        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>/dev/null); then
+        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>"$verification_debug_file"); then
         verifier_failed=1
         VERIFICATION_JSON='{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}'
     fi
+
+    if [ -s "$verification_debug_file" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            log "$line"
+        done < "$verification_debug_file"
+    fi
+    rm -f "$verification_debug_file"
 
     VERIFICATION_RESULT=$(echo "$VERIFICATION_JSON" | python3 -c "
 import sys, json

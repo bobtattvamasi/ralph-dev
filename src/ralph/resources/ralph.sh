@@ -7,6 +7,12 @@ set -euo pipefail
 
 RALPH_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+if command -v gawk >/dev/null 2>&1; then
+    AWK=gawk
+else
+    AWK=awk
+fi
+
 resolve_dir_path() {
     local candidate="${1:-}"
 
@@ -165,7 +171,7 @@ is_runtime_protected_path() {
 find_runtime_protection_stash_ref() {
     local stash_message="$1"
 
-    git stash list --format='%gd%x09%gs' 2>/dev/null | awk -F '\t' -v msg="$stash_message" '
+    git stash list --format='%gd%x09%gs' 2>/dev/null | "${AWK}" -F '\t' -v msg="$stash_message" '
         $2 == msg { print $1; exit }
         index($2, ": " msg) == length($2) - length(msg) - 1 { print $1; exit }
     '
@@ -228,7 +234,7 @@ worktree_changed_files() {
         git diff --name-only HEAD 2>/dev/null
         git diff --cached --name-only 2>/dev/null
         git ls-files --others --exclude-standard 2>/dev/null
-    } | awk 'NF' | sort -u
+    } | "${AWK}" 'NF' | sort -u
 }
 
 auto_revert_out_of_scope_files() {
@@ -414,7 +420,7 @@ detect_long_python_heredocs_in_modified_shell_scripts() {
     local base_hash="$1"
     local target_hash="$2"
     local violations=""
-    violations=$(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | awk '
+    violations=$(git diff --no-color --unified=0 "$base_hash" "$target_hash" -- '*.sh' 2>/dev/null | "${AWK}" '
 function extract_marker(line, token) {
     if (match(line, /<<-?[[:space:]]*('\''PY'\''|'\''PYTHON'\''|"PY"|"PYTHON"|PY|PYTHON)([[:space:]]*|$)/)) {
         token = substr(line, RSTART, RLENGTH)
@@ -842,7 +848,7 @@ handoff_commit_parent_hash() {
     local commit_hash="$1"
     local parent_hash=""
 
-    parent_hash=$(git rev-list --parents -n 1 "$commit_hash" 2>/dev/null | awk '{print $2}')
+    parent_hash=$(git rev-list --parents -n 1 "$commit_hash" 2>/dev/null | "${AWK}" '{print $2}')
     if [ -n "$parent_hash" ]; then
         printf '%s\n' "$parent_hash"
     else
@@ -924,7 +930,7 @@ handoff_unrelated_worktree_tracked_changes() {
         {
             git diff --name-only 2>/dev/null
             git diff --cached --name-only 2>/dev/null
-        } | awk 'NF' | sort -u
+        } | "${AWK}" 'NF' | sort -u
     )
     [ -n "$tracked_paths" ] || return 0
 
