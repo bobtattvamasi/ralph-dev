@@ -325,6 +325,70 @@ auto_revert_out_of_scope_files() {
     fi
 }
 
+detect_scope_anomaly() {
+    TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$1" RELEVANT_CONTEXT="${RELEVANT_CONTEXT:-}" python3 - <<'PY'
+import json
+import os
+import re
+from pathlib import Path
+
+task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
+target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
+actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
+relevant_context = os.environ.get("RELEVANT_CONTEXT", "")
+
+# Allow files already pulled into the coder prompt as the inferred hot zone.
+hot_zone_paths = {
+    match.strip()
+    for match in re.findall(r"^## File: (.+)$", relevant_context, flags=re.MULTILINE)
+    if match.strip()
+}
+allowed_paths = target_files | hot_zone_paths
+out_of_scope = [path for path in actual_changed if path not in allowed_paths]
+
+bookkeeping_exact = {
+    "tasks.json",
+    "progress.md",
+    "ralph_state.json",
+    "ralph_control.json",
+    "ralph_alerts.log",
+    "ralph_main.pid",
+    "ralph_codex.pid",
+    "ralph_codex.pgid",
+    ".ralph/memory/recent.md",
+    ".ralph/memory/decisions.md",
+    ".ralph/memory/patterns.md",
+}
+bookkeeping_prefixes = ("logs/", ".pytest_cache/", "__pycache__/", ".ralph/audit/", "ralph/audit/")
+asset_paths = {"assets_manifest.json"}
+manifest_path = Path("assets_manifest.json")
+if manifest_path.exists():
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        manifest = {}
+    for asset in manifest.get("assets", []) or []:
+        for key in ("source_path", "target_path"):
+            value = str(asset.get(key, "")).strip()
+            if value:
+                asset_paths.add(value)
+
+filtered = []
+for path in out_of_scope:
+    if path.endswith(".lock"):
+        continue
+    if path in bookkeeping_exact:
+        continue
+    if any(path.startswith(prefix) for prefix in bookkeeping_prefixes):
+        continue
+    if path in asset_paths:
+        continue
+    filtered.append(path)
+
+print("\n".join(filtered), end="")
+PY
+}
+
 cleanup() {
     # Prevent recursive cleanup (explicit call + trap).
     if [ "${CLEANUP_RUNNING:-0}" -eq 1 ]; then
@@ -4553,55 +4617,7 @@ import sys
 data = json.load(sys.stdin)
 print("\n".join(data), end="")
 ' 2>/dev/null || true)
-        SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
-target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
-actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
-out_of_scope = [path for path in actual_changed if path not in target_files]
-bookkeeping_exact = {
-    "tasks.json",
-    "progress.md",
-    "ralph_state.json",
-    "ralph_control.json",
-    "ralph_alerts.log",
-    "ralph_main.pid",
-    "ralph_codex.pid",
-    "ralph_codex.pgid",
-    ".ralph/memory/recent.md",
-    ".ralph/memory/decisions.md",
-    ".ralph/memory/patterns.md",
-}
-bookkeeping_prefixes = ("logs/", ".pytest_cache/", "__pycache__/", ".ralph/audit/", "ralph/audit/")
-asset_paths = {"assets_manifest.json"}
-manifest_path = Path("assets_manifest.json")
-if manifest_path.exists():
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except Exception:
-        manifest = {}
-    for asset in manifest.get("assets", []) or []:
-        for key in ("source_path", "target_path"):
-            value = str(asset.get(key, "")).strip()
-            if value:
-                asset_paths.add(value)
-filtered = []
-for path in out_of_scope:
-    if path.endswith(".lock"):
-        continue
-    if path in bookkeeping_exact:
-        continue
-    if any(path.startswith(prefix) for prefix in bookkeeping_prefixes):
-        continue
-    if path in asset_paths:
-        continue
-    filtered.append(path)
-print("\n".join(filtered), end="")
-PY
-)
+        SCOPE_ANOMALY=$(detect_scope_anomaly "$ACTUAL_CHANGED_FILES")
         if [ -n "$SCOPE_ANOMALY" ]; then
             SCOPE_ANOMALY_REVERTED=""
             log "⚠️ Scope anomaly: coder modified files outside target_files: $(printf '%s' "$SCOPE_ANOMALY" | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
@@ -4613,55 +4629,7 @@ import sys
 data = json.load(sys.stdin)
 print("\n".join(data), end="")
 ' 2>/dev/null || true)
-            SCOPE_ANOMALY=$(TASK_JSON="$TASK_JSON" ACTUAL_CHANGED_FILES="$ACTUAL_CHANGED_FILES" python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
-target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
-actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
-out_of_scope = [path for path in actual_changed if path not in target_files]
-bookkeeping_exact = {
-    "tasks.json",
-    "progress.md",
-    "ralph_state.json",
-    "ralph_control.json",
-    "ralph_alerts.log",
-    "ralph_main.pid",
-    "ralph_codex.pid",
-    "ralph_codex.pgid",
-    ".ralph/memory/recent.md",
-    ".ralph/memory/decisions.md",
-    ".ralph/memory/patterns.md",
-}
-bookkeeping_prefixes = ("logs/", ".pytest_cache/", "__pycache__/", ".ralph/audit/", "ralph/audit/")
-asset_paths = {"assets_manifest.json"}
-manifest_path = Path("assets_manifest.json")
-if manifest_path.exists():
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except Exception:
-        manifest = {}
-    for asset in manifest.get("assets", []) or []:
-        for key in ("source_path", "target_path"):
-            value = str(asset.get(key, "")).strip()
-            if value:
-                asset_paths.add(value)
-filtered = []
-for path in out_of_scope:
-    if path.endswith(".lock"):
-        continue
-    if path in bookkeeping_exact:
-        continue
-    if any(path.startswith(prefix) for prefix in bookkeeping_prefixes):
-        continue
-    if path in asset_paths:
-        continue
-    filtered.append(path)
-print("\n".join(filtered), end="")
-PY
-)
+            SCOPE_ANOMALY=$(detect_scope_anomaly "$ACTUAL_CHANGED_FILES")
             if [ -n "$SCOPE_ANOMALY_REVERTED" ] && [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
                 python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: auto-reverted out-of-scope files: $SCOPE_ANOMALY_REVERTED" >/dev/null 2>&1 || true
             fi
