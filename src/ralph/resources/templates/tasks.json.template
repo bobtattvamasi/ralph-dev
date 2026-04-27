@@ -13,14 +13,19 @@
     ]
   },
   "task_template": {
-    "id": "TASK-ID",
+    "id": "T01",
     "phase": "R1",
-    "title": "Task title",
-    "description": "Task description",
+    "title": "Integration test task",
+    "description": "Create or update src/generated_by_codex.ts with the required implementation.",
     "status": "pending",
     "dependencies": [],
-    "acceptance_criteria": [],
-    "target_files": []
+    "acceptance_criteria": [
+      "src/generated_by_codex.ts exists",
+      "src/generated_by_codex.ts is updated"
+    ],
+    "target_files": [
+      "src/generated_by_codex.ts"
+    ]
   },
   "phases": {},
   "tasks": []

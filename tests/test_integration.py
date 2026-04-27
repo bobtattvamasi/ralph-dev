@@ -1379,6 +1379,10 @@ def test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_ru
     tasks["tasks"][0]["acceptance_criteria"] = [
         "scripts/run_eval.py exists and is safely executable or importable"
     ]
+    tasks["tasks"][0]["target_files"] = [
+        "scripts/run_eval.py",
+        "src/ralph/resources/scripts/run_eval.py",
+    ]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir(exist_ok=True)
@@ -1452,6 +1456,10 @@ def test_ralph_handoff_mode_closes_from_repo_backed_candidate_state_without_code
     tasks["tasks"][0]["acceptance_criteria"] = [
         "scripts/run_eval.py exists and is safely executable or importable"
     ]
+    tasks["tasks"][0]["target_files"] = [
+        "scripts/run_eval.py",
+        "src/ralph/resources/scripts/run_eval.py",
+    ]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir(exist_ok=True)
@@ -1504,6 +1512,10 @@ def test_ralph_handoff_mode_can_use_earlier_repo_backed_candidate_commit_even_wi
     tasks["tasks"][0]["description"] = "Add scripts/run_eval.py and keep it importable."
     tasks["tasks"][0]["acceptance_criteria"] = [
         "scripts/run_eval.py exists and is safely executable or importable"
+    ]
+    tasks["tasks"][0]["target_files"] = [
+        "scripts/run_eval.py",
+        "src/ralph/resources/scripts/run_eval.py",
     ]
     write_tasks(project_dir, tasks)
 
@@ -1581,6 +1593,10 @@ def test_ralph_handoff_fail_closes_when_valid_task_evidence_is_contaminated_by_u
     tasks["tasks"][0]["description"] = "Add scripts/run_eval.py and keep it importable."
     tasks["tasks"][0]["acceptance_criteria"] = [
         "scripts/run_eval.py exists and is safely executable or importable"
+    ]
+    tasks["tasks"][0]["target_files"] = [
+        "scripts/run_eval.py",
+        "src/ralph/resources/scripts/run_eval.py",
     ]
     write_tasks(project_dir, tasks)
 
@@ -1762,6 +1778,9 @@ def test_ralph_auto_mode_logs_scope_warning_for_tasks_with_more_than_three_targe
         "scripts/three.py",
     ]
     write_tasks(project_dir, tasks)
+    env["MOCK_CODEX_EXTRA_WRITE_FILES"] = json.dumps(
+        ["scripts/one.py", "scripts/two.py", "scripts/three.py"]
+    )
 
     next_task_result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "next_task.py")],
