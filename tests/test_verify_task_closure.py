@@ -217,3 +217,23 @@ def test_generic_implementation_task_still_fails_on_report_and_state_files_only(
     assert result["result"] == "fail_fix"
     assert result["task_class"] == "implementation"
     assert "only bookkeeping/state/report files changed" in result["reason"]
+
+
+def test_target_files_mismatch_returns_detailed_debug_context(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write(project / "src" / "generated_by_codex.ts", "export const generatedByCodex = true;\n")
+    task = {
+        "id": "R10-X8",
+        "title": "Integration test task",
+        "description": "Create or update src/generated_by_codex.ts with the required implementation.",
+        "acceptance_criteria": ["src/generated_by_codex.ts exists"],
+        "target_files": ["src/generated_by_codex.ts"],
+    }
+
+    result = verify_task_completion(task, project, ["src/other_file.ts"])
+
+    assert result["result"] == "fail_fix"
+    assert "target_files do not exactly match implementation evidence" in result["reason"]
+    assert result["target_file_debug"]["expected_files"] == ["src/generated_by_codex.ts"]
+    assert result["target_file_debug"]["unexpected_files"] == ["src/other_file.ts"]
+    assert "DEBUG: Expected files: ['src/generated_by_codex.ts']" in result["debug_lines"]

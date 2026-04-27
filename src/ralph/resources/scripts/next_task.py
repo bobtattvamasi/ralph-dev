@@ -66,7 +66,10 @@ def main():
         for warning in warnings:
             print(f"WARNING: {warning}", file=sys.stderr)
             log_selection_warning(project_dir, warning)
-    print(json.dumps(task, indent=2, ensure_ascii=False))
+    payload = dict(task)
+    payload["scope_too_wide"] = bool(warnings)
+    payload["selection_warnings"] = warnings
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
