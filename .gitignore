@@ -8,3 +8,10 @@ ralph_alerts.log
 ralph_codex.pid
 ralph_main.pid
 .DS_Store
+.ralph/audit/*
+# Ralph artifacts
+.ralph/ARCHITECTURE_DEBT.md
+.ralph/memory/
+logs/
+ralph_state.json
+ralph_control.json
