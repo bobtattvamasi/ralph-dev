@@ -15,3 +15,19 @@ ralph_main.pid
 logs/
 ralph_state.json
 ralph_control.json
+
+# Ralph runtime / diagnostics
+.ralph/audit/
+.ralph/ARCHITECTURE_DEBT.md
+.ralph/memory/
+logs/
+ralph_state.json
+ralph_control.json
+ralph_main.pid
+ralph_codex.pid
+ralph_codex.pgid
+
+# Python local env / caches
+venv/
+.pytest_cache/
+__pycache__/
