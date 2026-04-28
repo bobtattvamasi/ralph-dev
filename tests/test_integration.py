@@ -559,6 +559,46 @@ def test_ralph_marks_task_done_on_success(tmp_path: Path) -> None:
     assert state["message"] == "Task T01 complete"
 
 
+def test_ralph_status_works_from_outside_project_with_project_flag(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+
+    result = subprocess.run(
+        [str(RALPH_SH), "--project", str(project_dir), "status"],
+        cwd=outside_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Task Progress" in result.stdout
+    assert "Next pending:" in result.stdout
+
+
+def test_ralph_status_works_from_outside_project_with_env_override(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    env["RALPH_PROJECT"] = str(project_dir)
+    env.pop("RALPH_PROJECT_DIR", None)
+
+    result = subprocess.run(
+        [str(RALPH_SH), "status"],
+        cwd=outside_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Task Progress" in result.stdout
+    assert "Next pending:" in result.stdout
+
+
 
 
 

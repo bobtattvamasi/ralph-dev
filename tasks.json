@@ -3394,7 +3394,7 @@
     {
       "id": "R16-03",
       "phase": "R16",
-      "status": "pending",
+      "status": "done",
       "title": "PROJECT_DIR full separation",
       "description": "Make ralph.sh work cleanly from any directory via --project flag or RALPH_PROJECT env var. Resolve tasks.json, AGENTS.md, .ralph/, and related paths relative to PROJECT_DIR.",
       "target_files": [
@@ -3408,7 +3408,7 @@
       "priority": "high",
       "complexity": "complex",
       "role": "coder",
-      "completed_at": null,
+      "completed_at": "2026-04-28T16:05:00+07:00",
       "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
     },
     {
@@ -4105,7 +4105,7 @@
       "id": "F06",
       "phase": "R1.5",
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "title": "Improve Telegram notifications and logging for better debug visibility",
       "description": "Настроить fallback уведомления и детализированное логгирование ошибок.",
       "dependencies": [
@@ -4116,7 +4116,8 @@
       ],
       "target_files": [
         "docs/TODO_TARGET_F06.md"
-      ]
+      ],
+      "completed_at": "2026-04-28T15:52:00+07:00"
     }
   ]
 }
