@@ -320,6 +320,8 @@ MAX_ATTEMPTS=$((MAX_FIX_RETRIES + 1))
 MAX_CODEX_RETRIES=3
 DEFAULT_CODER_TIMEOUT_SEC="${RALPH_DEFAULT_CODER_TIMEOUT_SEC:-900}"
 DEFAULT_LEAD_TIMEOUT_SEC="${RALPH_DEFAULT_LEAD_TIMEOUT_SEC:-300}"
+DEFAULT_PRETASK_FAST_TIMEOUT_SEC="${RALPH_DEFAULT_PRETASK_FAST_TIMEOUT_SEC:-30}"
+DEFAULT_PRETASK_FULL_TIMEOUT_SEC="${RALPH_DEFAULT_PRETASK_FULL_TIMEOUT_SEC:-180}"
 DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC:-$DEFAULT_CODER_TIMEOUT_SEC}"
 DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC:-120}"
 DEFAULT_CODEX_RETRY_DELAYS="${RALPH_DEFAULT_CODEX_RETRY_DELAYS:-60 120 300}"
@@ -914,7 +916,7 @@ handoff_stage_paths() {
 
 handoff_is_runtime_owned_path() {
     case "${1:-}" in
-        tasks.json|progress.md|audit_report.md|ralph_state.json|ralph_control.json|ralph_alerts.log|ralph_main.pid|ralph_codex.pid|ralph_codex.pgid|.ralph/memory/recent.md|.ralph/memory/decisions.md|.ralph/memory/patterns.md) return 0 ;;
+        tasks.json|progress.md|audit_report.md|make_test.log|custom_test.log|ralph_state.json|ralph_control.json|ralph_alerts.log|ralph_main.pid|ralph_codex.pid|ralph_codex.pgid|.ralph/memory/recent.md|.ralph/memory/decisions.md|.ralph/memory/patterns.md) return 0 ;;
         *.lock) return 0 ;;
         logs/*|.pytest_cache/*|__pycache__/*|.ralph/memory/*|.ralph/audit/*|ralph/audit/*) return 0 ;;
     esac
@@ -3629,18 +3631,82 @@ print(f"validated {len(python_files)} Python files")
 PY
 }
 
+run_pre_task_check_with_timeout() {
+    local check_mode="$1"
+    local timeout_sec="$2"
+    local log_file="$3"
+    local runner_pid=""
+    local started_at=0
+    local elapsed=0
+    local status=0
+
+    : > "$log_file"
+    started_at=$(date +%s)
+
+    (
+        if [ "$check_mode" = "full" ]; then
+            run_project_test_command
+        else
+            run_fast_python_validation /dev/stdout
+        fi
+    ) >"$log_file" 2>&1 &
+    runner_pid=$!
+
+    while kill -0 "$runner_pid" 2>/dev/null; do
+        elapsed=$(( $(date +%s) - started_at ))
+        if [ "$elapsed" -ge "$timeout_sec" ]; then
+            printf 'Pre-task check timed out after %ss\n' "$timeout_sec" >>"$log_file"
+            kill_tree "$runner_pid"
+            wait "$runner_pid" 2>/dev/null || true
+            return 124
+        fi
+        sleep 1
+    done
+
+    set +e
+    wait "$runner_pid"
+    status=$?
+    set -e
+    return "$status"
+}
+
 run_pre_task_check() {
     local log_file="${1:-/tmp/ralph_test.log}"
+    local check_mode="fast"
+    local timeout_sec="$DEFAULT_PRETASK_FAST_TIMEOUT_SEC"
+    local started_at=0
+    local duration=0
+    local status=0
 
     if should_run_full_pre_task_suite; then
+        check_mode="full"
+        timeout_sec="$DEFAULT_PRETASK_FULL_TIMEOUT_SEC"
         PRETASK_CHECK_SCOPE="$PROJECT_TEST_CMD"
         PRETASK_HEAL_DESCRIPTION="Before starting the task queue, the configured test command is failing: $PROJECT_TEST_CMD. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features."
-        run_project_test_command >"$log_file" 2>&1
     else
         PRETASK_CHECK_SCOPE="fast Python validation"
         PRETASK_HEAL_DESCRIPTION="Before starting the task queue, fast Python validation is failing. Fix Python syntax errors and unresolved imports without changing tasks.json or progress.md. Do NOT add new features."
-        run_fast_python_validation "$log_file"
     fi
+
+    log "🔍 Pre-task check: $PRETASK_CHECK_SCOPE"
+    log "🔍 Pre-task details: mode=$check_mode timeout=${timeout_sec}s log=$log_file"
+    started_at=$(date +%s)
+
+    run_pre_task_check_with_timeout "$check_mode" "$timeout_sec" "$log_file"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        duration=$(( $(date +%s) - started_at ))
+        log "✅ Pre-task check passed in ${duration}s"
+        return 0
+    fi
+
+    duration=$(( $(date +%s) - started_at ))
+    if [ "$status" -eq 124 ]; then
+        log "❌ Pre-task check timed out after ${duration}s"
+    else
+        log "❌ Pre-task check failed after ${duration}s (exit=$status)"
+    fi
+    return "$status"
 }
 
 benchmark_select_simple_tasks() {
@@ -4045,17 +4111,11 @@ fi
 # ─── Smoke test ───
 check_and_recover_state
 
-if should_run_full_pre_task_suite; then
-    log "🔍 Pre-task check: $PROJECT_TEST_CMD"
-else
-    log "🔍 Pre-task check: fast Python validation"
-fi
 if ! run_pre_task_check /tmp/ralph_test.log; then
-    log "❌ Pre-task check failed!"
+    log "📄 Pre-task check log tail:"
     tail -20 /tmp/ralph_test.log
     self_heal_environment || exit 1
 fi
-log "✅ Pre-task check passed"
 if [ "$RECOVERY_MODE" -eq 1 ]; then
     write_state "running" "" "recovery" "Recovered from previous non-idle state ($PREV_STATUS)"
 else

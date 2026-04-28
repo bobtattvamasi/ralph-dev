@@ -23,6 +23,8 @@ BOOKKEEPING_EXACT = {
     "tasks.json",
     "progress.md",
     "audit_report.md",
+    "make_test.log",
+    "custom_test.log",
     "ralph_state.json",
     "ralph_control.json",
     "ralph_alerts.log",

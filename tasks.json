@@ -4012,6 +4012,70 @@
       "depends_on": [
         "R20-03"
       ]
+    },
+    {
+      "id": "F01",
+      "phase": "R1.5",
+      "priority": "high",
+      "status": "pending",
+      "title": "Fix pre-task make/test invocation and logging inconsistencies",
+      "description": "Устранить мультивызовы, таймауты и отсутствие make_test.log в preflight проверках.",
+      "dependencies": []
+    },
+    {
+      "id": "F02",
+      "phase": "R1.5",
+      "priority": "high",
+      "status": "pending",
+      "title": "Correct task closure validation of target_files vs actual modified files",
+      "description": "Обработка bookkeeping-only, docs-only, runtime-owned файлов для верных блокировок.",
+      "dependencies": [
+        "F01"
+      ]
+    },
+    {
+      "id": "F03",
+      "phase": "R1.5",
+      "priority": "high",
+      "status": "pending",
+      "title": "Repair retry logic and cumulative diff aggregation",
+      "description": "Обеспечить корректный prompt для lead review с накопленным диффом.",
+      "dependencies": [
+        "F02"
+      ]
+    },
+    {
+      "id": "F04",
+      "phase": "R1.5",
+      "priority": "high",
+      "status": "pending",
+      "title": "Enable async support for bot tests by adding pytest-asyncio",
+      "description": "Добавить и исправить настройку для работы async функций в тестах бота.",
+      "dependencies": [
+        "F03"
+      ]
+    },
+    {
+      "id": "F05",
+      "phase": "R1.5",
+      "priority": "high",
+      "status": "pending",
+      "title": "Fix test timeouts and hangs in phase/benchmark tests",
+      "description": "Оптимизировать таймауты и проанализировать зависания, чтобы тесты стабильно проходили.",
+      "dependencies": [
+        "F04"
+      ]
+    },
+    {
+      "id": "F06",
+      "phase": "R1.5",
+      "priority": "high",
+      "status": "pending",
+      "title": "Improve Telegram notifications and logging for better debug visibility",
+      "description": "Настроить fallback уведомления и детализированное логгирование ошибок.",
+      "dependencies": [
+        "F05"
+      ]
     }
   ]
 }

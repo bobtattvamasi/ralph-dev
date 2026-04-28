@@ -475,6 +475,15 @@ def write_tasks(project_dir: Path, data: dict) -> None:
     (project_dir / "tasks.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def configure_preflight_task_fixture(project_dir: Path, *committed_paths: str) -> None:
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["target_files"] = ["coder_started"]
+    tasks["tasks"][0]["acceptance_criteria"] = ["coder_started is updated"]
+    write_tasks(project_dir, tasks)
+    if committed_paths:
+        commit_repo_changes(project_dir, "test: seed preflight fixture", *committed_paths)
+
+
 def load_state(project_dir: Path) -> dict:
     return json.loads((project_dir / "ralph_state.json").read_text(encoding="utf-8"))
 
@@ -791,6 +800,7 @@ def test_ralph_rejects_oversized_prompt(tmp_path: Path) -> None:
 def test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     make_log = write_test_logging_makefile(project_dir)
+    configure_preflight_task_fixture(project_dir, "Makefile")
     env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
     env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
 
@@ -811,6 +821,7 @@ def test_ralph_task_mode_uses_fast_pre_task_check_without_preflight_make_test(tm
 def test_ralph_task_mode_fast_pre_task_check_completes_within_30_seconds(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     make_log = write_test_logging_makefile(project_dir, pre_sleep_s=35.0)
+    configure_preflight_task_fixture(project_dir, "Makefile")
     env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
     env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
 
@@ -834,6 +845,7 @@ def test_ralph_task_mode_fast_pre_task_check_completes_within_30_seconds(tmp_pat
 def test_ralph_auto_mode_runs_preflight_make_test_before_task_execution(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     make_log = write_test_logging_makefile(project_dir)
+    configure_preflight_task_fixture(project_dir, "Makefile")
     env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
     env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
 
@@ -854,6 +866,7 @@ def test_ralph_auto_mode_runs_preflight_make_test_before_task_execution(tmp_path
 def test_ralph_task_mode_can_force_preflight_make_test_explicitly(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     make_log = write_test_logging_makefile(project_dir)
+    configure_preflight_task_fixture(project_dir, "Makefile")
     env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
     env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
     env["RALPH_PRETASK_FULL_TEST"] = "1"
@@ -885,6 +898,7 @@ def test_ralph_preflight_uses_project_configured_test_command(tmp_path: Path) ->
         "fh.write(phase + '\\n'); "
         "fh.close()\"",
     )
+    configure_preflight_task_fixture(project_dir, "Makefile", ".ralph/project.json")
     env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
     env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
     env["RALPH_PRETASK_FULL_TEST"] = "1"
@@ -943,6 +957,7 @@ def test_ralph_self_heal_for_preflight_make_test_skips_runtime_artifacts_in_wip_
 def test_ralph_phase_mode_uses_fast_pre_task_check_without_preflight_make_test(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     make_log = write_test_logging_makefile(project_dir)
+    configure_preflight_task_fixture(project_dir, "Makefile")
     env["MOCK_CODEX_WRITE_FILE"] = "coder_started"
     env["MOCK_CODEX_WRITE_CONTENT"] = "started\n"
 
