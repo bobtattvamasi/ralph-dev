@@ -4051,7 +4051,7 @@
       "id": "F03",
       "phase": "R1.5",
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "title": "Repair retry logic and cumulative diff aggregation",
       "description": "Обеспечить корректный prompt для lead review с накопленным диффом.",
       "dependencies": [
@@ -4062,13 +4062,14 @@
       ],
       "target_files": [
         "docs/TODO_TARGET_F03.md"
-      ]
+      ],
+      "completed_at": "2026-04-28T08:27:03.347057+00:00"
     },
     {
       "id": "F04",
       "phase": "R1.5",
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "title": "Enable async support for bot tests by adding pytest-asyncio",
       "description": "Добавить и исправить настройку для работы async функций в тестах бота.",
       "dependencies": [
@@ -4079,13 +4080,14 @@
       ],
       "target_files": [
         "docs/TODO_TARGET_F04.md"
-      ]
+      ],
+      "completed_at": "2026-04-28T08:31:12.102945+00:00"
     },
     {
       "id": "F05",
       "phase": "R1.5",
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "title": "Fix test timeouts and hangs in phase/benchmark tests",
       "description": "Оптимизировать таймауты и проанализировать зависания, чтобы тесты стабильно проходили.",
       "dependencies": [
@@ -4096,7 +4098,8 @@
       ],
       "target_files": [
         "docs/TODO_TARGET_F05.md"
-      ]
+      ],
+      "completed_at": "2026-04-28T15:40:00+07:00"
     },
     {
       "id": "F06",

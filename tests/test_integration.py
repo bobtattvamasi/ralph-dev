@@ -452,6 +452,7 @@ def create_benchmark_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     ]
     write_tasks(project_dir, tasks)
     write_test_logging_makefile(project_dir, pre_sleep_s=0.1, post_sleep_s=0.1)
+    commit_repo_changes(project_dir, "test: seed benchmark makefile", "Makefile")
     env["MOCK_CODEX_SLEEP"] = "0.6"
     env["MOCK_CODEX_WRITE_FILE"] = "src/generated_by_codex.ts"
     env["MOCK_CODEX_WRITE_CONTENT"] = "export const generatedByCodex = true;\\n"
@@ -482,6 +483,15 @@ def configure_preflight_task_fixture(project_dir: Path, *committed_paths: str) -
     write_tasks(project_dir, tasks)
     if committed_paths:
         commit_repo_changes(project_dir, "test: seed preflight fixture", *committed_paths)
+
+
+def configure_prompt_builder_task_fixture(project_dir: Path, *committed_paths: str) -> None:
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["target_files"] = ["src/prompt_builder.ts"]
+    tasks["tasks"][0]["acceptance_criteria"] = ["src/prompt_builder.ts is updated"]
+    write_tasks(project_dir, tasks)
+    if committed_paths:
+        commit_repo_changes(project_dir, "test: seed prompt-builder retry fixture", *committed_paths)
 
 
 def load_state(project_dir: Path) -> dict:
@@ -2376,6 +2386,7 @@ def test_ralph_retry_prompt_includes_failed_attempt_context(tmp_path: Path) -> N
         "\t@false\n",
         encoding="utf-8",
     )
+    configure_prompt_builder_task_fixture(project_dir, "Makefile")
 
     result = subprocess.run(
         [str(RALPH_SH), "task", "T01"],
@@ -2441,6 +2452,7 @@ def test_ralph_sanitizes_noisy_fix_and_keeps_exact_feature_gap(tmp_path: Path) -
 
 def test_ralph_lead_review_uses_cumulative_diff_from_task_start_across_retries(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
+    configure_prompt_builder_task_fixture(project_dir)
     env["MOCK_CODEX_MODE"] = "lead_fix_once"
     env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_fix_once.marker")
     env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
@@ -2465,6 +2477,7 @@ def test_ralph_lead_review_uses_cumulative_diff_from_task_start_across_retries(t
 
 def test_ralph_allows_noop_retry_after_prior_attempt_already_changed_files(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
+    configure_prompt_builder_task_fixture(project_dir)
     env["MOCK_CODEX_MODE"] = "lead_fix_once"
     env["MOCK_LEAD_FIX_MARKER"] = str(tmp_path / "lead_fix_once.marker")
     env["MOCK_CODEX_WRITE_FILE"] = "src/prompt_builder.ts"
@@ -3033,7 +3046,12 @@ def test_ralph_saves_codex_output_snapshot_on_failure(tmp_path: Path) -> None:
 def test_ralph_waits_for_assets_and_resumes_when_files_arrive(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     env["MOCK_CODEX_MODE"] = "asset_manifest_wait"
+    env["MOCK_CODEX_WRITE_FILE"] = ""
     env["RALPH_ASSET_POLL_INTERVAL"] = "1"
+    tasks = load_tasks(project_dir)
+    tasks["tasks"][0]["target_files"] = ["src/assets/hero-image.txt"]
+    tasks["tasks"][0]["acceptance_criteria"] = ["src/assets/hero-image.txt exists"]
+    write_tasks(project_dir, tasks)
 
     process = subprocess.Popen(
         [str(RALPH_SH), "task", "T01"],

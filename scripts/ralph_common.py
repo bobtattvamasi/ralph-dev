@@ -23,6 +23,7 @@ BOOKKEEPING_EXACT = {
     "tasks.json",
     "progress.md",
     "audit_report.md",
+    "assets_manifest.json",
     "make_test.log",
     "custom_test.log",
     "ralph_state.json",
@@ -34,12 +35,18 @@ BOOKKEEPING_EXACT = {
     ".ralph/memory/recent.md",
     ".ralph/memory/decisions.md",
     ".ralph/memory/patterns.md",
+    "ralph/memory/recent.md",
+    "ralph/memory/decisions.md",
+    "ralph/memory/patterns.md",
 }
 BOOKKEEPING_PREFIXES = (
     "logs/",
     ".pytest_cache/",
     "__pycache__/",
+    ".ralph/assets/",
+    "ralph/assets/",
     ".ralph/memory/",
+    "ralph/memory/",
     ".ralph/audit/",
     "ralph/audit/",
 )

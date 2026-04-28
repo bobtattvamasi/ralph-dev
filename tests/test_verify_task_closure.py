@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.ralph_common import is_bookkeeping_file
 from scripts.verify_task_closure import verify_task_completion
 
 
@@ -217,6 +218,14 @@ def test_generic_implementation_task_still_fails_on_report_and_state_files_only(
     assert result["result"] == "fail_fix"
     assert result["task_class"] == "implementation"
     assert "only bookkeeping/state/report files changed" in result["reason"]
+
+
+def test_runtime_memory_and_asset_manifest_paths_are_bookkeeping_after_normalization() -> None:
+    assert is_bookkeeping_file(".ralph/memory/recent.md")
+    assert is_bookkeeping_file("ralph/memory/recent.md")
+    assert is_bookkeeping_file(".ralph/assets/inbox/hero-image.txt")
+    assert is_bookkeeping_file("ralph/assets/inbox/hero-image.txt")
+    assert is_bookkeeping_file("assets_manifest.json")
 
 
 def test_target_files_mismatch_returns_detailed_debug_context(tmp_path: Path) -> None:
