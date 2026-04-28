@@ -4017,21 +4017,35 @@
       "id": "F01",
       "phase": "R1.5",
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "title": "Fix pre-task make/test invocation and logging inconsistencies",
       "description": "Устранить мультивызовы, таймауты и отсутствие make_test.log в preflight проверках.",
-      "dependencies": []
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Complete task F01 and verify the intended behavior"
+      ],
+      "target_files": [
+        "docs/TODO_TARGET_F01.md"
+      ],
+      "completed_at": "2026-04-28T08:15:23.973881+00:00"
     },
     {
       "id": "F02",
       "phase": "R1.5",
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "title": "Correct task closure validation of target_files vs actual modified files",
       "description": "Обработка bookkeeping-only, docs-only, runtime-owned файлов для верных блокировок.",
       "dependencies": [
         "F01"
-      ]
+      ],
+      "acceptance_criteria": [
+        "Complete task F02 and verify the intended behavior"
+      ],
+      "target_files": [
+        "docs/TODO_TARGET_F02.md"
+      ],
+      "completed_at": "2026-04-28T08:21:45.910393+00:00"
     },
     {
       "id": "F03",
@@ -4042,6 +4056,12 @@
       "description": "Обеспечить корректный prompt для lead review с накопленным диффом.",
       "dependencies": [
         "F02"
+      ],
+      "acceptance_criteria": [
+        "Complete task F03 and verify the intended behavior"
+      ],
+      "target_files": [
+        "docs/TODO_TARGET_F03.md"
       ]
     },
     {
@@ -4053,6 +4073,12 @@
       "description": "Добавить и исправить настройку для работы async функций в тестах бота.",
       "dependencies": [
         "F03"
+      ],
+      "acceptance_criteria": [
+        "Complete task F04 and verify the intended behavior"
+      ],
+      "target_files": [
+        "docs/TODO_TARGET_F04.md"
       ]
     },
     {
@@ -4064,6 +4090,12 @@
       "description": "Оптимизировать таймауты и проанализировать зависания, чтобы тесты стабильно проходили.",
       "dependencies": [
         "F04"
+      ],
+      "acceptance_criteria": [
+        "Complete task F05 and verify the intended behavior"
+      ],
+      "target_files": [
+        "docs/TODO_TARGET_F05.md"
       ]
     },
     {
@@ -4075,6 +4107,12 @@
       "description": "Настроить fallback уведомления и детализированное логгирование ошибок.",
       "dependencies": [
         "F05"
+      ],
+      "acceptance_criteria": [
+        "Complete task F06 and verify the intended behavior"
+      ],
+      "target_files": [
+        "docs/TODO_TARGET_F06.md"
       ]
     }
   ]
