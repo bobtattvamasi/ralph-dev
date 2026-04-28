@@ -37,6 +37,7 @@ BOOKKEEPING_PREFIXES = (
     "logs/",
     ".pytest_cache/",
     "__pycache__/",
+    ".ralph/memory/",
     ".ralph/audit/",
     "ralph/audit/",
 )

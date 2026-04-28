@@ -433,10 +433,22 @@ def verify_task_completion(task: dict, project_dir: Path, changed_files: list[st
 
 def main() -> None:
     raw_task = sys.stdin.read().strip() or "{}"
-    task = json.loads(raw_task)
-    project_dir = resolve_project_dir(os.environ.get("RALPH_PROJECT_DIR"), script_path=__file__)
-    changed_files = json.loads(os.environ.get("RALPH_CHANGED_FILES_JSON", "[]"))
-    verification = verify_task_completion(task, project_dir, changed_files)
+    changed_files: list[str] = []
+    try:
+        task = json.loads(raw_task)
+        project_dir = resolve_project_dir(os.environ.get("RALPH_PROJECT_DIR"), script_path=__file__)
+        changed_files = json.loads(os.environ.get("RALPH_CHANGED_FILES_JSON", "[]"))
+        verification = verify_task_completion(task, project_dir, changed_files)
+    except Exception:
+        normalized_changed = [normalize_path(path) for path in changed_files if isinstance(path, str) and normalize_path(path)]
+        non_bookkeeping = [path for path in normalized_changed if not is_bookkeeping_file(path)]
+        verification = result(
+            "needs_human_review",
+            "implementation",
+            "Verification script failed unexpectedly.",
+            normalized_changed,
+            non_bookkeeping,
+        )
     for line in verification.get("debug_lines", []) or []:
         print(line, file=sys.stderr)
     print(json.dumps(verification, ensure_ascii=False))

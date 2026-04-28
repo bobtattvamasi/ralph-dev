@@ -365,7 +365,7 @@ bookkeeping_exact = {
     ".ralph/memory/decisions.md",
     ".ralph/memory/patterns.md",
 }
-bookkeeping_prefixes = ("logs/", ".pytest_cache/", "__pycache__/", ".ralph/audit/", "ralph/audit/")
+bookkeeping_prefixes = ("logs/", ".pytest_cache/", "__pycache__/", ".ralph/memory/", ".ralph/audit/", "ralph/audit/")
 asset_paths = {"assets_manifest.json"}
 manifest_path = Path("assets_manifest.json")
 if manifest_path.exists():
@@ -1050,7 +1050,7 @@ handoff_is_runtime_owned_path() {
     case "${1:-}" in
         tasks.json|progress.md|audit_report.md|ralph_state.json|ralph_control.json|ralph_alerts.log|ralph_main.pid|ralph_codex.pid|ralph_codex.pgid|.ralph/memory/recent.md|.ralph/memory/decisions.md|.ralph/memory/patterns.md) return 0 ;;
         *.lock) return 0 ;;
-        logs/*|.pytest_cache/*|__pycache__/*|.ralph/audit/*|ralph/audit/*) return 0 ;;
+        logs/*|.pytest_cache/*|__pycache__/*|.ralph/memory/*|.ralph/audit/*|ralph/audit/*) return 0 ;;
     esac
     return 1
 }
@@ -3431,7 +3431,7 @@ run_task_closure_verification() {
         VERIFICATION_JSON='{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}'
     fi
 
-    if [ -s "$verification_debug_file" ]; then
+    if [ -s "$verification_debug_file" ] && [ "$verifier_failed" -eq 0 ]; then
         while IFS= read -r line; do
             [ -n "$line" ] || continue
             log "$line"

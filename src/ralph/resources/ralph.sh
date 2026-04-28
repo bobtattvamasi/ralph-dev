@@ -915,7 +915,8 @@ handoff_stage_paths() {
 handoff_is_runtime_owned_path() {
     case "${1:-}" in
         tasks.json|progress.md|audit_report.md|ralph_state.json|ralph_control.json|ralph_alerts.log|ralph_main.pid|ralph_codex.pid|ralph_codex.pgid|.ralph/memory/recent.md|.ralph/memory/decisions.md|.ralph/memory/patterns.md) return 0 ;;
-        logs/*|.pytest_cache/*|__pycache__/*|.ralph/audit/*|ralph/audit/*) return 0 ;;
+        *.lock) return 0 ;;
+        logs/*|.pytest_cache/*|__pycache__/*|.ralph/memory/*|.ralph/audit/*|ralph/audit/*) return 0 ;;
     esac
     return 1
 }
@@ -3258,15 +3259,26 @@ resolve_git_ref() {
 
 run_task_closure_verification() {
     local verifier_failed=0
+    local verification_debug_file="/tmp/ralph_verify_task_closure_${$}.log"
+
+    rm -f "$verification_debug_file"
 
     PRE_CLOSURE_CHANGED_FILES_JSON=$(collect_preclosure_changed_files_json)
     if ! VERIFICATION_JSON=$(printf '%s' "$TASK_JSON" | \
         RALPH_PROJECT_DIR="$PROJECT_DIR" \
         RALPH_CHANGED_FILES_JSON="$PRE_CLOSURE_CHANGED_FILES_JSON" \
-        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>/dev/null); then
+        python3 "$RALPH_DIR/scripts/verify_task_closure.py" 2>"$verification_debug_file"); then
         verifier_failed=1
         VERIFICATION_JSON='{"result":"needs_human_review","task_class":"implementation","reason":"Verification script failed unexpectedly.","changed_files":[],"changed_files_non_bookkeeping":[],"bookkeeping_only":false}'
     fi
+
+    if [ -s "$verification_debug_file" ] && [ "$verifier_failed" -eq 0 ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            log "$line"
+        done < "$verification_debug_file"
+    fi
+    rm -f "$verification_debug_file"
 
     VERIFICATION_RESULT=$(echo "$VERIFICATION_JSON" | python3 -c "
 import sys, json

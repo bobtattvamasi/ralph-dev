@@ -323,6 +323,28 @@ def init_git_repo(project_dir: Path) -> None:
     )
 
 
+def commit_repo_changes(project_dir: Path, message: str, *paths: str) -> None:
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_AUTHOR_NAME": "Test User",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test User",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        }
+    )
+    add_cmd = ["git", "add", "."] if not paths else ["git", "add", *paths]
+    subprocess.run(add_cmd, cwd=project_dir, check=True, capture_output=True, text=True, env=env)
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
 def create_test_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -564,6 +586,7 @@ def test_ralph_uses_narrow_coder_prompt_for_simple_exact_task_run(tmp_path: Path
         "scripts/narrow_target.py is updated",
         "Simple exact-task path stays narrow by default",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
@@ -611,6 +634,7 @@ def test_ralph_uses_narrow_coder_prompt_for_moderate_exact_task_run(tmp_path: Pa
         "scripts/narrow_target.py is updated",
         "Exact-task prompts stay narrow even when task complexity is moderate",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
@@ -654,6 +678,7 @@ def test_ralph_keeps_narrow_coder_prompt_for_moderate_exact_task_fix_retry(tmp_p
         "scripts/narrow_target.py is updated",
         "Exact-task prompts stay narrow even when task complexity is moderate",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
@@ -968,10 +993,12 @@ def test_ralph_keeps_narrow_prompt_with_targeted_required_context(tmp_path: Path
         "scripts/narrow_target.py is updated",
         "scripts/helper.py is treated as high-signal local context",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
     (project_dir / "scripts" / "helper.py").write_text("HELPER_FLAG = True\n", encoding="utf-8")
+    commit_repo_changes(project_dir, "test: seed helper context", "scripts/helper.py")
     prompt_file = tmp_path / "coder_prompt_narrow_with_context.txt"
     env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
     env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
@@ -1012,6 +1039,7 @@ def test_ralph_caps_large_local_context_for_narrow_prompt(tmp_path: Path) -> Non
         "scripts/narrow_target.py is updated",
         "oversized local context is trimmed to keep the prompt narrow",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
@@ -1019,6 +1047,7 @@ def test_ralph_caps_large_local_context_for_narrow_prompt(tmp_path: Path) -> Non
         "HELPER_FLAG = True\n" + ("# helper context line\n" * 5000),
         encoding="utf-8",
     )
+    commit_repo_changes(project_dir, "test: seed oversized helper context", "scripts/helper.py")
     prompt_file = tmp_path / "coder_prompt_narrow_large_context.txt"
     env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
     env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
@@ -1057,6 +1086,7 @@ def test_ralph_uses_broad_prompt_when_exact_task_explicitly_requires_project_doc
         "scripts/narrow_target.py is updated",
         "ARCHITECTURE.md is included because the task explicitly requires project-wide docs",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
@@ -1099,6 +1129,7 @@ def test_ralph_auto_mode_narrow_task_does_not_read_project_docs_eagerly(tmp_path
         "scripts/narrow_target.py is updated",
         "Simple exact-task path stays narrow by default",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
@@ -1133,10 +1164,12 @@ def test_ralph_trims_token_dense_narrow_prompt_to_budget(tmp_path: Path) -> None
     tasks["tasks"][0]["description"] = "Update scripts/narrow_target.py with the smallest exact-task change."
     tasks["tasks"][0]["complexity"] = "simple"
     tasks["tasks"][0]["acceptance_criteria"] = [f"token-{i} a b c d e f g" for i in range(6000)]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
     (project_dir / "AGENTS_CODER.md").write_text("# Coder\n" + ("x y z q r s\n" * 1200), encoding="utf-8")
+    commit_repo_changes(project_dir, "test: seed token dense coder prompt doc", "AGENTS_CODER.md")
     prompt_file = tmp_path / "coder_prompt_narrow_token_dense.txt"
     env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
     env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
@@ -1174,6 +1207,7 @@ def test_ralph_trims_token_dense_broad_prompt_to_budget(tmp_path: Path) -> None:
         "scripts/narrow_target.py is updated",
         "project-wide docs remain available while the broad prompt stays under budget",
     ]
+    tasks["tasks"][0]["target_files"] = ["scripts/narrow_target.py"]
     write_tasks(project_dir, tasks)
 
     (project_dir / "scripts").mkdir()
@@ -1184,6 +1218,16 @@ def test_ralph_trims_token_dense_broad_prompt_to_budget(tmp_path: Path) -> None:
     (project_dir / ".ralph" / "memory" / "core.md").write_text(token_dense_doc, encoding="utf-8")
     (project_dir / ".ralph" / "memory" / "recent.md").write_text(token_dense_doc, encoding="utf-8")
     (project_dir / "AGENTS_CODER.md").write_text("# Coder\n" + ("x y z q r s\n" * 1500), encoding="utf-8")
+    commit_repo_changes(
+        project_dir,
+        "test: seed token dense broad prompt docs",
+        "AGENTS.md",
+        "ARCHITECTURE.md",
+        "MEMORY_SYSTEM.md",
+        ".ralph/memory/core.md",
+        ".ralph/memory/recent.md",
+        "AGENTS_CODER.md",
+    )
     prompt_file = tmp_path / "coder_prompt_broad_token_dense.txt"
     env["MOCK_CODEX_CAPTURE_PROMPT_FILE"] = str(prompt_file)
     env["MOCK_CODEX_WRITE_FILE"] = "scripts/narrow_target.py"
