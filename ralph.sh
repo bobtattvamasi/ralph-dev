@@ -591,8 +591,9 @@ function flush_block() {
 /^@@ / {
     flush_block()
     in_hunk = 1
-    if (match($0, /\+([0-9]+)/, parts)) {
-        new_line = parts[1] + 0
+    if (match($0, /\+[0-9]+/)) {
+        hunk_start = substr($0, RSTART, RLENGTH)
+        new_line = substr(hunk_start, 2) + 0
     } else {
         new_line = 0
     }
