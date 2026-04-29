@@ -81,6 +81,21 @@ if [ ! -f "$PROJECT_DIR/tasks.json" ]; then
     exit 1
 fi
 
+ensure_startup_runtime_dependencies() {
+    case "${MODE:-}" in
+        task|handoff|phase|auto|benchmark) ;;
+        *) return 0 ;;
+    esac
+
+    local tool=""
+    for tool in codex gtimeout git python3; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            printf '❌ Missing runtime dependency: %s\n' "$tool" >&2
+            return 1
+        fi
+    done
+}
+
 kill_tree() {
     local pid="${1:-}"
 
@@ -342,6 +357,7 @@ task = json.loads(os.environ.get("TASK_JSON", "null") or "null") or {}
 target_files = {str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()}
 actual_changed = [line.strip() for line in os.environ.get("ACTUAL_CHANGED_FILES", "").splitlines() if line.strip()]
 relevant_context = os.environ.get("RELEVANT_CONTEXT", "")
+combined = "\n".join([str(task.get("title", "")).lower(), str(task.get("description", "")).lower(), *[str(item).lower() for item in (task.get("acceptance_criteria") or [])]])
 
 # Allow files already pulled into the coder prompt as the inferred hot zone.
 hot_zone_paths = {
@@ -350,6 +366,8 @@ hot_zone_paths = {
     if match.strip()
 }
 allowed_paths = target_files | hot_zone_paths
+if "docs/" in combined or any(keyword in combined for keyword in ("docs:", "readme", "documentation", "changelog")):
+    allowed_paths |= {path for path in actual_changed if path.startswith("docs/") or path.endswith(".md")}
 out_of_scope = [path for path in actual_changed if path not in allowed_paths]
 
 bookkeeping_exact = {
@@ -3240,13 +3258,15 @@ except Exception:
 }
 
 collect_preclosure_changed_files_json() {
-    python3 - "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" <<'PY'
+    AUTO_REVERTED_OUT_OF_SCOPE_PATHS="${AUTO_REVERTED_OUT_OF_SCOPE_PATHS:-}" python3 - "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" <<'PY'
 import json
+import os
 import subprocess
 import sys
 
 base_hash = sys.argv[1]
 target_hash = sys.argv[2]
+reverted = {line.strip() for line in os.environ.get("AUTO_REVERTED_OUT_OF_SCOPE_PATHS", "").splitlines() if line.strip()}
 commands = [
     ["git", "diff", "--name-only", base_hash, target_hash],
     ["git", "diff", "--name-only", "--cached"],
@@ -3261,7 +3281,7 @@ for cmd in commands:
         continue
     for line in proc.stdout.splitlines():
         path = line.strip()
-        if not path or path in seen:
+        if not path or path in seen or path in reverted:
             continue
         seen.add(path)
         result.append(path)
@@ -4251,6 +4271,10 @@ fi
 if [ "$MODE" = "re-audit-last" ]; then
     python3 "$RALPH_DIR/scripts/re_audit_tasks.py" --last "${TARGET:-10}" ${EXTRA:+--apply}
     exit $?
+fi
+
+if ! ensure_startup_runtime_dependencies; then
+    exit 1
 fi
 
 if [ "$MODE" = "benchmark" ]; then

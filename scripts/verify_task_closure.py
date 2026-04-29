@@ -175,14 +175,14 @@ def verify_task_completion(task: dict, project_dir: Path, changed_files: list[st
     debug_lines = format_target_file_debug(target_file_debug)
     target_files_declared = bool(target_file_debug.get("expected_files"))
 
-    if task_class not in {"docs-only", "template"} and not non_bookkeeping:
+    if task_class not in {"docs-only", "template", "reaudit-report"} and not non_bookkeeping:
         reason = "Verification failed: only bookkeeping/state/report files changed; no implementation evidence found."
         failure = result("fail_fix", task_class, reason, changed_files, non_bookkeeping)
         failure["debug_lines"] = debug_lines
         failure["target_file_debug"] = target_file_debug
         return failure
 
-    if target_files_declared:
+    if target_files_declared and task_class not in {"docs-only", "reaudit-report"}:
         missing_expected = target_file_debug.get("missing_expected_files", [])
         unexpected_files = target_file_debug.get("unexpected_files", [])
         missing_on_disk = target_file_debug.get("missing_on_disk_files", [])

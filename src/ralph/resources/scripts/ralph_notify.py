@@ -25,6 +25,44 @@ CHAT_ID = os.environ.get("RALPH_TELEGRAM_CHAT_ID", "")
 TELEGRAM_TIMEOUT_SEC = get_telegram_timeout_sec()
 
 
+def _payload_preview(text: str) -> str:
+    return text[:300].replace("\n", "\\n")
+
+
+def _read_error_body(exc: BaseException) -> str:
+    body_stream = getattr(exc, "fp", None)
+    if body_stream is None:
+        return ""
+    try:
+        body = body_stream.read()
+    except Exception:
+        return ""
+    finally:
+        try:
+            body_stream.close()
+        except Exception:
+            pass
+    if isinstance(body, str):
+        return body
+    if isinstance(body, (bytes, bytearray)):
+        try:
+            return body.decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+    return ""
+
+
+def _log_send_failure(exc: BaseException, text: str) -> None:
+    LOGGER.error(
+        "Notification failed: error=%s payload_length=%s payload_preview=%s timeout=%ss error_body=%s",
+        f"{exc.__class__.__name__}: {exc}",
+        len(text),
+        _payload_preview(text),
+        TELEGRAM_TIMEOUT_SEC,
+        _read_error_body(exc),
+    )
+
+
 def send(text: str) -> None:
     if not TOKEN or not CHAT_ID:
         LOGGER.warning("Notification skipped: Telegram token/chat id not configured")
@@ -43,9 +81,9 @@ def send(text: str) -> None:
             timeout=TELEGRAM_TIMEOUT_SEC,
         )
     except urllib.error.URLError as exc:
-        LOGGER.error("Notification failed: %s", exc)
+        _log_send_failure(exc, text)
     except OSError as exc:
-        LOGGER.error("Notification failed: %s", exc)
+        _log_send_failure(exc, text)
 
 
 if __name__ == "__main__":

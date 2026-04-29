@@ -98,6 +98,11 @@ def run_helper(project_dir: Path, body: str, *, env: dict[str, str] | None = Non
     )
 
 
+def write_tool_shim(path: Path) -> None:
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
 def test_handoff_candidate_paths_include_packaged_and_test_evidence(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     (project_dir / "scripts" / "ralph_bot.py").write_text(
@@ -242,6 +247,34 @@ def test_run_task_closure_verification_falls_back_when_verifier_crashes(tmp_path
     assert lines[0] == "needs_human_review"
     assert lines[1] == "implementation"
     assert lines[2] == "Verification script failed unexpectedly."
+
+
+def test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_status(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+
+    for tool in ("codex", "gtimeout", "git", "python3"):
+        missing = run_helper(
+            project_dir,
+            f"command() {{ if [ \"$1\" = \"-v\" ] && [ \"$2\" = \"{tool}\" ]; then return 1; fi; builtin command \"$@\"; }}\n"
+            "MODE=task\nensure_startup_runtime_dependencies\n",
+        )
+        combined = missing.stdout + missing.stderr
+        assert missing.returncode != 0, combined
+        assert f"Missing runtime dependency: {tool}" in combined
+
+    ok = run_helper(
+        project_dir,
+        "MODE=task\nensure_startup_runtime_dependencies\nprintf 'ok\\n'\n",
+    )
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert ok.stdout.strip() == "ok"
+
+    status_ok = run_helper(
+        project_dir,
+        "MODE=status\nensure_startup_runtime_dependencies\nprintf 'status-ok\\n'\n",
+    )
+    assert status_ok.returncode == 0, status_ok.stdout + status_ok.stderr
+    assert status_ok.stdout.strip() == "status-ok"
 
 
 def test_task_scoped_diff_between_refs_includes_ralph_shell_changes(tmp_path: Path) -> None:
