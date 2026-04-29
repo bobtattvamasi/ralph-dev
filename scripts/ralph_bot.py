@@ -1009,6 +1009,65 @@ def log_bot(message: str) -> None:
     print(f"[bot] {message}", file=sys.stderr)
 
 
+def _read_pid_value(path: Path) -> int | None:
+    """Return a numeric pid/pgid from a pidfile when present."""
+    try:
+        value = int(path.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return value if value > 1 else None
+
+
+def terminate_tracked_processes(reason: str) -> list[str]:
+    """Best-effort teardown for tracked Ralph/Codex processes."""
+    killed: list[str] = []
+    pgid_file = PROJECT_DIR / "ralph_codex.pgid"
+    pgid = _read_pid_value(pgid_file)
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+            killed.append(f"pgid:{pgid}")
+        except (ProcessLookupError, PermissionError, OSError) as exc:
+            log_bot(f"{reason}: failed SIGTERM for codex pgid {pgid}: {exc}")
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except (PermissionError, OSError) as exc:
+            log_bot(f"{reason}: failed SIGKILL for codex pgid {pgid}: {exc}")
+        pgid_file.unlink(missing_ok=True)
+
+    for pf in ["ralph_codex.pid", "ralph_main.pid"]:
+        pid_file = PROJECT_DIR / pf
+        pid = _read_pid_value(pid_file)
+        if pid is None:
+            pid_file.unlink(missing_ok=True)
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(f"{pf}:{pid}")
+        except (ProcessLookupError, PermissionError, OSError) as exc:
+            log_bot(f"{reason}: failed SIGTERM for {pf}={pid}: {exc}")
+        for sig_name in ("TERM", "KILL"):
+            try:
+                subprocess.run(["pkill", f"-{sig_name}", "-P", str(pid)], capture_output=True, check=False)
+            except OSError as exc:
+                log_bot(f"{reason}: failed pkill -{sig_name} -P {pid}: {exc}")
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except (PermissionError, OSError) as exc:
+            log_bot(f"{reason}: failed SIGKILL for {pf}={pid}: {exc}")
+        pid_file.unlink(missing_ok=True)
+
+    if killed:
+        log_bot(f"{reason}: terminated tracked processes: {', '.join(killed)}")
+    else:
+        log_bot(f"{reason}: no tracked processes to terminate")
+    return killed
+
+
 def _begin_handler_logging(handler_name: str) -> None:
     """Reset per-handler send counters before command execution."""
     global CURRENT_HANDLER_NAME, CURRENT_HANDLER_SEND_COUNT
@@ -1451,30 +1510,7 @@ async def cmd_stop(force: bool = False) -> None:
     """Stop or kill Ralph."""
     global ralph_process, caffeinate_process
     if force:
-        # 1. Kill all ralph processes by PID files
-        killed_pids = []
-        # R20-01: kill process group first (catches all Codex descendants)
-        pgid_file = PROJECT_DIR / "ralph_codex.pgid"
-        if pgid_file.exists():
-            try:
-                pgid = int(pgid_file.read_text().strip())
-                os.killpg(pgid, signal.SIGKILL)
-                killed_pids.append(f"pgid:{pgid}")
-            except (ProcessLookupError, ValueError, PermissionError, OSError):
-                pass
-            pgid_file.unlink(missing_ok=True)
-
-        for pf in ["ralph_codex.pid", "ralph_main.pid"]:
-            p = PROJECT_DIR / pf
-            if p.exists():
-                try:
-                    pid = int(p.read_text().strip())
-                    os.kill(pid, signal.SIGKILL)
-                    subprocess.run(["pkill", "-KILL", "-P", str(pid)], capture_output=True)
-                    killed_pids.append(pid)
-                except (ProcessLookupError, ValueError):
-                    pass
-                p.unlink(missing_ok=True)
+        killed_pids = terminate_tracked_processes("Force stop")
 
         # 2. Kill ralph_process if bot tracks it
         if RUNTIME.ralph_process and RUNTIME.ralph_process.poll() is None:
@@ -2317,6 +2353,7 @@ async def watch_state() -> None:
             code = ralph_process.returncode
             if code != 0 and code != last_exit_code:
                 await safe_send(f"⚠️ Ralph exited with code {code}")
+                terminate_tracked_processes("Crash recovery")
             try:
                 raw_state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
             except json.JSONDecodeError as exc:

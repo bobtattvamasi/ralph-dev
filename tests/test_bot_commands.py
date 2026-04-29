@@ -698,6 +698,79 @@ async def test_watch_state_recovers_crashed_running_task(
 
 
 @pytest.mark.asyncio
+async def test_watch_state_tears_down_tracked_processes_on_crash_recovery(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_dir = bot_env["project_dir"]
+    bot.STATE_FILE.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "current_task": "T01",
+                "last_update": "2026-03-13T00:00:00+00:00",
+                "message": "Coder implementing...",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (project_dir / "ralph_codex.pgid").write_text("321\n", encoding="utf-8")
+    (project_dir / "ralph_codex.pid").write_text("654\n", encoding="utf-8")
+    (project_dir / "ralph_main.pid").write_text("987\n", encoding="utf-8")
+
+    class CrashedProcess:
+        returncode = 1
+
+        def poll(self) -> int:
+            return 1
+
+    crashed_process = CrashedProcess()
+    monkeypatch.setattr(bot, "ralph_process", crashed_process)
+    monkeypatch.setattr(bot.RUNTIME, "ralph_process", crashed_process)
+    monkeypatch.setattr(bot, "caffeinate_process", None)
+    monkeypatch.setattr(bot.RUNTIME, "caffeinate_process", None)
+
+    sleep_calls = {"count": 0}
+
+    async def fake_sleep(_seconds: float) -> None:
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] > 1:
+            raise asyncio.CancelledError
+
+    killpg_calls: list[tuple[int, int]] = []
+    kill_calls: list[tuple[int, int]] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        killpg_calls.append((pgid, sig))
+
+    def fake_kill(pid: int, sig: int) -> None:
+        kill_calls.append((pid, sig))
+
+    monkeypatch.setattr(bot.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(bot.os, "killpg", fake_killpg)
+    monkeypatch.setattr(bot.os, "kill", fake_kill)
+
+    with patch("scripts.ralph_bot.subprocess.run") as run_mock:
+        with pytest.raises(asyncio.CancelledError):
+            await bot.watch_state()
+
+    assert (321, bot.signal.SIGTERM) in killpg_calls
+    assert (321, bot.signal.SIGKILL) in killpg_calls
+    assert (654, bot.signal.SIGTERM) in kill_calls
+    assert (654, bot.signal.SIGKILL) in kill_calls
+    assert (987, bot.signal.SIGTERM) in kill_calls
+    assert (987, bot.signal.SIGKILL) in kill_calls
+    child_kills = [call.args[0] for call in run_mock.call_args_list if call.args and call.args[0][:2] == ["pkill", "-TERM"] or call.args and call.args[0][:2] == ["pkill", "-KILL"]]
+    assert ["pkill", "-TERM", "-P", "654"] in child_kills
+    assert ["pkill", "-KILL", "-P", "654"] in child_kills
+    assert ["pkill", "-TERM", "-P", "987"] in child_kills
+    assert ["pkill", "-KILL", "-P", "987"] in child_kills
+    assert not (project_dir / "ralph_codex.pgid").exists()
+    assert not (project_dir / "ralph_codex.pid").exists()
+    assert not (project_dir / "ralph_main.pid").exists()
+
+
+@pytest.mark.asyncio
 async def test_cmd_start_auto_rejects_when_state_running(bot_env: dict[str, object]) -> None:
     bot.STATE_FILE.write_text(
         json.dumps(
