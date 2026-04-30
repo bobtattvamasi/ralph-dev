@@ -14,11 +14,26 @@ REVIEW_MARKER_END = "END_RALPH_REVIEW_JSON"
 PLACEHOLDER_TASK_ID = "TASK-ID"
 PLACEHOLDER_SUMMARY = "one line summary"
 VALID_DECISIONS = {"approve", "fix", "alert", "done"}
+JSONISH_TRANSLATION = str.maketrans(
+    {
+        "“": '"',
+        "”": '"',
+        "„": '"',
+        "«": '"',
+        "»": '"',
+        "’": "'",
+        "‘": "'",
+    }
+)
+
+
+def normalize_jsonish_text(text: str) -> str:
+    return text.translate(JSONISH_TRANSLATION).strip()
 
 
 def try_load(candidate: str) -> dict | None:
     try:
-        value = json.loads(candidate)
+        value = json.loads(normalize_jsonish_text(candidate))
     except JSONDecodeError:
         return None
     if isinstance(value, dict):
@@ -40,11 +55,12 @@ def collect_json_objects(text: str) -> list[dict]:
     candidates: list[dict] = []
     seen: set[str] = set()
     decoder = json.JSONDecoder()
-    for idx, char in enumerate(text):
+    normalized_text = normalize_jsonish_text(text)
+    for idx, char in enumerate(normalized_text):
         if char != "{":
             continue
         try:
-            parsed, _end = decoder.raw_decode(text[idx:])
+            parsed, _end = decoder.raw_decode(normalized_text[idx:])
         except JSONDecodeError:
             continue
         if not isinstance(parsed, dict):
@@ -76,25 +92,26 @@ def collect_marker_reviews(text: str) -> list[dict]:
 
 
 def extract_json_object(text: str) -> dict | None:
+    normalized_text = normalize_jsonish_text(text)
     marker_reviews = [
         candidate
-        for candidate in collect_marker_reviews(text)
+        for candidate in collect_marker_reviews(normalized_text)
         if is_review_candidate(candidate) and not is_placeholder_review(candidate)
     ]
     if marker_reviews:
         return marker_reviews[-1]
 
-    direct = try_load(text.strip())
+    direct = try_load(normalized_text)
     if direct is not None and is_review_candidate(direct) and not is_placeholder_review(direct):
         return direct
 
-    fenced_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    fenced_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", normalized_text, flags=re.DOTALL | re.IGNORECASE)
     candidates: list[dict] = []
     for block in fenced_blocks:
         parsed = try_load(block.strip())
         if parsed is not None:
             candidates.append(parsed)
-    candidates.extend(collect_json_objects(text))
+    candidates.extend(collect_json_objects(normalized_text))
 
     trusted: list[dict] = []
     seen: set[str] = set()
