@@ -4882,7 +4882,24 @@ except Exception:
                     fi
                     persist_task_success_state
                     stage_changed_paths
-                    git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
+                    FINAL_COMMIT_STDERR="$(mktemp "${TMPDIR:-/tmp}/ralph_final_commit_stderr.XXXXXX")" || {
+                        log "❌ Failed to allocate temp file for final git commit stderr capture"
+                        write_state "blocked" "$TASK_ID" "git_commit" "Final git commit failed after approval"
+                        exit 1
+                    }
+                    if ! git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>"$FINAL_COMMIT_STDERR"; then
+                        log "❌ Final git commit failed after approval for $TASK_ID"
+                        if [ -s "$FINAL_COMMIT_STDERR" ]; then
+                            while IFS= read -r line; do
+                                [ -n "$line" ] && log "❌ git commit: $line"
+                            done < "$FINAL_COMMIT_STDERR"
+                        fi
+                        rm -f "$FINAL_COMMIT_STDERR"
+                        python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "Final git commit failed after approval" >/dev/null 2>&1 || true
+                        write_state "blocked" "$TASK_ID" "git_commit" "Final git commit failed after approval"
+                        exit 1
+                    fi
+                    rm -f "$FINAL_COMMIT_STDERR"
                     log_metrics "success" "true" "true"
                     log "✅ $TASK_ID done"
                     TASK_DURATION=$(( $(date +%s) - TASK_START ))

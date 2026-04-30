@@ -1594,6 +1594,9 @@ write_state() {
 
 CONTROL_ACTION="continue"
 CONTROL_TARGET=""
+CONTROL_PARSE_FAILURE_MESSAGE=""
+RECOVERY_INVALID_STATE=0
+RECOVERY_INVALID_REASON=""
 run_control_helper() {
     local subcommand="$1"
     shift || true
@@ -1630,14 +1633,12 @@ run_control_helper() {
 read_control_file() {
     local helper_output=""
     if ! helper_output=$(run_control_helper control-read); then
-        log "⚠️ Failed to read ralph_control.json; defaulting to continue"
-        printf "continue\n\n"
-        return 0
+        CONTROL_PARSE_FAILURE_MESSAGE="Failed to read ralph_control.json"
+        return 1
     fi
     if [ -z "$helper_output" ]; then
-        log "⚠️ Control helper returned empty control payload; defaulting to continue"
-        printf "continue\n\n"
-        return 0
+        CONTROL_PARSE_FAILURE_MESSAGE="Control helper returned empty control payload"
+        return 1
     fi
     printf '%s\n' "$helper_output"
 }
@@ -1651,9 +1652,7 @@ parse_control_data() {
     target=$(printf '%s\n' "$control_data" | sed -n '2p')
 
     if [ -z "$action" ]; then
-        log "⚠️ ${context}: empty control action from ralph_control.json; defaulting to continue"
-        CONTROL_ACTION="continue"
-        CONTROL_TARGET=""
+        CONTROL_PARSE_FAILURE_MESSAGE="${context}: empty control action from ralph_control.json"
         return 1
     fi
 
@@ -1666,8 +1665,16 @@ apply_control_action_snapshot() {
     local context="$1"
     local control_data=""
 
-    control_data=$(read_control_file)
-    parse_control_data "$context" "$control_data" || return 1
+    if ! control_data=$(read_control_file); then
+        log "❌ ${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to read ralph_control.json}"
+        write_state "blocked" "${TASK_ID:-}" "control_file" "${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to read ralph_control.json}"
+        exit 1
+    fi
+    if ! parse_control_data "$context" "$control_data"; then
+        log "❌ ${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to parse ralph_control.json}"
+        write_state "blocked" "${TASK_ID:-}" "control_file" "${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to parse ralph_control.json}"
+        exit 1
+    fi
     return 0
 }
 
@@ -1731,10 +1738,41 @@ run_next_task_helper() {
     printf '%s' "$helper_output"
 }
 
+run_update_task_strict() {
+    local task_id="$1"
+    local status="$2"
+    local note="${3:-}"
+    local failure_step="${4:-task_status}"
+    local failure_message="${5:-update_task.py failed}"
+    local update_task_stderr=""
+
+    update_task_stderr="$(mktemp "${TMPDIR:-/tmp}/ralph_update_task_stderr.XXXXXX")" || {
+        log "❌ Failed to allocate temp file for update_task.py stderr capture"
+        write_state "blocked" "$task_id" "$failure_step" "$failure_message"
+        exit 1
+    }
+
+    if python3 "$RALPH_DIR/scripts/update_task.py" "$task_id" "$status" "$note" 2>"$update_task_stderr"; then
+        :
+    else
+        log "❌ update_task.py failed for $task_id -> $status"
+        if [ -s "$update_task_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "❌ update_task.py: $line"
+            done < "$update_task_stderr"
+        fi
+        rm -f "$update_task_stderr"
+        write_state "blocked" "$task_id" "$failure_step" "$failure_message"
+        exit 1
+    fi
+
+    rm -f "$update_task_stderr"
+}
+
 check_control() {
     while true; do
         if [ -f ralph_control.json ]; then
-            apply_control_action_snapshot "check_control" || true
+            apply_control_action_snapshot "check_control"
             if [ "$CONTROL_ACTION" = "stop" ] || [ "$CONTROL_ACTION" = "stop_now" ]; then
                 return 1
             fi
@@ -1746,7 +1784,7 @@ check_control() {
                 write_state "paused" "" "" "Paused by user"
                 while [ "$CONTROL_ACTION" = "pause" ]; do
                     sleep 5
-                    apply_control_action_snapshot "check_control pause loop" || true
+                    apply_control_action_snapshot "check_control pause loop"
                 done
                 if [ "$CONTROL_ACTION" = "continue" ]; then
                     write_state "running" "${TASK_ID:-}" "" "Resumed by user"
@@ -1771,7 +1809,7 @@ wait_for_high_risk_approval() {
             CONTROL_ACTION="pause"
             CONTROL_TARGET=""
         else
-            apply_control_action_snapshot "wait_for_high_risk_approval" || true
+            apply_control_action_snapshot "wait_for_high_risk_approval"
         fi
 
         if [ "$CONTROL_ACTION" = "continue" ]; then
@@ -1811,7 +1849,7 @@ set_control_action() {
 skip_current_task() {
     local reason="${1:-Skipped by user via Telegram}"
     log "⏭ Skip signal received for $TASK_ID: $reason"
-    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" skipped "$reason" >/dev/null 2>&1 || true
+    run_update_task_strict "$TASK_ID" skipped "$reason" "skip_task" "Failed to persist skipped task status"
     write_state "running" "$TASK_ID" "skipped" "$reason"
     notify "⏭ $TASK_ID skipped: $reason"
     clear_control_action
@@ -1821,7 +1859,7 @@ defer_blocked_task() {
     local reason="${1:-Blocked without reason}"
     log "⚠️ Task $TASK_ID blocked: $reason — skipping, continuing queue"
     notify "⚠️ $TASK_ID blocked (auto-skipped): $reason"
-    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" blocked "$reason" >/dev/null 2>&1 || true
+    run_update_task_strict "$TASK_ID" blocked "$reason" "blocked_task" "Failed to persist blocked task status"
     write_state "running" "$TASK_ID" "blocked" "$reason"
     TASK_BLOCKED=true
     TASK_DONE=true
@@ -2777,6 +2815,8 @@ check_and_recover_state() {
     local stale_main_pid=""
     local stale_codex_pid=""
     local stale_codex_pgid=""
+    RECOVERY_INVALID_STATE=0
+    RECOVERY_INVALID_REASON=""
 
     # Prefer hidden state file if present, then regular state file.
     if [ -f ".ralph_state.json" ]; then
@@ -2807,7 +2847,11 @@ except OSError as exc:
 " "$state_file" 2>"${prev_status_stderr:-/dev/null}" || echo "unknown")
         if [ -n "$prev_status_stderr" ] && [ -s "$prev_status_stderr" ]; then
             while IFS= read -r line; do
-                [ -n "$line" ] && log "⚠️ Auto-recovery state read: $line"
+                if [ -n "$line" ]; then
+                    log "⚠️ Auto-recovery state read: $line"
+                    RECOVERY_INVALID_STATE=1
+                    [ -z "$RECOVERY_INVALID_REASON" ] && RECOVERY_INVALID_REASON="$line"
+                fi
             done < "$prev_status_stderr"
         fi
         [ -n "$prev_status_stderr" ] && rm -f "$prev_status_stderr"
@@ -4350,6 +4394,12 @@ fi
 # ─── Smoke test ───
 check_and_recover_state
 
+if [ "${RECOVERY_INVALID_STATE:-0}" -eq 1 ]; then
+    log "❌ Auto-recovery blocked startup: ${RECOVERY_INVALID_REASON:-Invalid ralph_state.json or runtime recovery metadata}"
+    write_state "blocked" "" "recovery" "${RECOVERY_INVALID_REASON:-Invalid ralph_state.json or runtime recovery metadata}"
+    exit 1
+fi
+
 if ! run_pre_task_check /tmp/ralph_test.log; then
     log "📄 Pre-task check log tail:"
     tail -20 /tmp/ralph_test.log
@@ -5039,12 +5089,6 @@ except Exception:
     print('Task completed')
 " 2>/dev/null || echo "done")
 
-                    python3 "$RALPH_DIR/scripts/update_task.py" "$TASK_ID" verified_done
-                    python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
-                    # Update memory with task summary
-                    CHANGED_FILES=$(git diff --name-only "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
-                    python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
-
                     if [ "$TASK_RISK" = "high" ]; then
                         set_control_action "pause" ""
                         CONTROL_STATUS=0
@@ -5061,9 +5105,30 @@ except Exception:
                             break
                         fi
                     fi
-                    persist_task_success_state
                     stage_changed_paths
-                    git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>/dev/null || true
+                    FINAL_COMMIT_STDERR="$(mktemp "${TMPDIR:-/tmp}/ralph_final_commit_stderr.XXXXXX")" || {
+                        log "❌ Failed to allocate temp file for final git commit stderr capture"
+                        write_state "blocked" "$TASK_ID" "git_commit" "Final git commit failed after approval"
+                        exit 1
+                    }
+                    if ! git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>"$FINAL_COMMIT_STDERR"; then
+                        log "❌ Final git commit failed after approval for $TASK_ID"
+                        if [ -s "$FINAL_COMMIT_STDERR" ]; then
+                            while IFS= read -r line; do
+                                [ -n "$line" ] && log "❌ git commit: $line"
+                            done < "$FINAL_COMMIT_STDERR"
+                        fi
+                        rm -f "$FINAL_COMMIT_STDERR"
+                        write_state "blocked" "$TASK_ID" "git_commit" "Final git commit failed after approval"
+                        exit 1
+                    fi
+                    rm -f "$FINAL_COMMIT_STDERR"
+                    run_update_task_strict "$TASK_ID" verified_done "" "task_success" "Failed to persist verified_done task status"
+                    python3 "$RALPH_DIR/scripts/update_progress.py" "$TASK_ID" "$PROGRESS_NOTE"
+                    # Update memory with task summary
+                    CHANGED_FILES=$(git diff --name-only "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
+                    python3 "$RALPH_DIR/scripts/update_memory.py" "$TASK_ID" "$TASK_TITLE" "${CHANGED_FILES:-none}" "approved" "${FIX_INSTRUCTIONS:-}" 2>/dev/null || true
+                    persist_task_success_state
                     log_metrics "success" "true" "true"
                     log "✅ $TASK_ID done"
                     TASK_DURATION=$(( $(date +%s) - TASK_START ))

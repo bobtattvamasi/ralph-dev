@@ -313,6 +313,45 @@ def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> 
     assert "Recovered stale non-idle state (running)" in state["message"]
 
 
+def test_recovery_startup_blocks_on_malformed_state_file(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "ralph_state.json").write_text("{broken json\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "check_and_recover_state\n"
+        "if [ \"${RECOVERY_INVALID_STATE:-0}\" -eq 1 ]; then\n"
+        "  write_state \"blocked\" \"\" \"recovery\" \"${RECOVERY_INVALID_REASON:-Invalid ralph_state.json or runtime recovery metadata}\"\n"
+        "  exit 1\n"
+        "fi\n",
+    )
+
+    assert result.returncode == 1
+    state = json.loads((project_dir / "ralph_state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "blocked"
+    assert state["current_phase_step"] == "recovery"
+    assert "malformed state JSON" in state["message"]
+
+
+def test_apply_control_action_snapshot_blocks_on_empty_control_payload(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+
+    result = run_helper(
+        project_dir,
+        "run_control_helper() { :; }\n"
+        "TASK_ID='T01'\n"
+        "apply_control_action_snapshot 'test_control'\n",
+    )
+
+    assert result.returncode == 1
+    state = json.loads((project_dir / "ralph_state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "blocked"
+    assert state["current_task"] == "T01"
+    assert state["current_phase_step"] == "control_file"
+    assert "ralph_control.json" in state["message"] or "control payload" in state["message"]
+
+
 def test_cleanup_kills_main_process_group_and_removes_pid_files(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     (project_dir / "ralph_codex.pgid").write_text("321\n", encoding="utf-8")
