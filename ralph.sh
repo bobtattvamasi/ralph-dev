@@ -1696,6 +1696,41 @@ apply_timeout_override() {
     fi
 }
 
+run_next_task_helper() {
+    local next_task_stderr=""
+    local helper_output=""
+
+    # next_task.py должен либо успешно вернуть JSON/null, либо явно уронить run.
+    # Нельзя маскировать ошибку helper'а под "очередь пуста".
+    next_task_stderr="$(mktemp "${TMPDIR:-/tmp}/ralph_next_task_stderr.XXXXXX")" || {
+        log "❌ Failed to allocate temp file for next_task.py stderr capture"
+        exit 1
+    }
+
+    if helper_output=$(python3 "$RALPH_DIR/scripts/next_task.py" "$@" 2>"$next_task_stderr"); then
+        :
+    else
+        log "❌ next_task.py failed while selecting the next task"
+        if [ -s "$next_task_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "❌ next_task.py: $line"
+            done < "$next_task_stderr"
+        fi
+        rm -f "$next_task_stderr"
+        write_state "blocked" "" "task_selection" "next_task.py failed during task selection"
+        exit 1
+    fi
+
+    if [ -s "$next_task_stderr" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] && log "⚠️ next_task.py: $line"
+        done < "$next_task_stderr"
+    fi
+    rm -f "$next_task_stderr"
+
+    printf '%s' "$helper_output"
+}
+
 check_control() {
     while true; do
         if [ -f ralph_control.json ]; then
@@ -3944,7 +3979,7 @@ run_manual_benchmark_for_task() {
     local manual_duration=""
     local codex_status=0
 
-    task_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --task "$task_id" 2>/dev/null || echo "null")
+    task_json=$(run_next_task_helper --task "$task_id")
     [ "$task_json" != "null" ] && [ -n "$task_json" ] || return 1
 
     TASK_JSON="$task_json"
@@ -4367,7 +4402,7 @@ while true; do
         clear_control_action
     fi
 
-    TASK_JSON=$(python3 "$RALPH_DIR/scripts/next_task.py" $NEXT_ARGS 2>/dev/null || echo "null")
+    TASK_JSON=$(run_next_task_helper $NEXT_ARGS)
     export TASK_JSON
 
     if [ "$TASK_JSON" = "null" ] || [ -z "$TASK_JSON" ]; then
@@ -5214,7 +5249,7 @@ except Exception:
     is_single_task_mode && break
 
     if [ "$MODE" = "phase" ]; then
-        REMAINING=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" 2>/dev/null || echo "null")
+        REMAINING=$(run_next_task_helper --phase "$TARGET")
         if [ "$REMAINING" = "null" ]; then
             set_queue_exit_state
             log_deadlock_reason || true
