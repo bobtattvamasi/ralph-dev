@@ -445,6 +445,14 @@ def get_live_ralph_pid() -> int | None:
     return None
 
 
+def has_live_tracked_runtime() -> bool:
+    """Return True when Ralph or its tracked Codex child is still alive."""
+    if get_live_ralph_pid() is not None:
+        return True
+    codex_pid = _read_pid_value(PROJECT_DIR / "ralph_codex.pid")
+    return codex_pid is not None and is_pid_alive(codex_pid)
+
+
 def normalize_state_for_display(state: dict) -> dict:
     """Treat stale waiting/running/paused state as idle for display only."""
     if not isinstance(state, dict):
@@ -483,8 +491,7 @@ def reset_stale_state() -> None:
         state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         status = state.get("status", "idle")
         if status in ("waiting_human", "running", "paused"):
-            ralph_alive = is_pid_alive(state.get("pid"))
-            if not ralph_alive:
+            if not has_live_tracked_runtime():
                 state["status"] = "idle"
                 state["current_task"] = ""
                 state["step"] = ""
@@ -492,6 +499,7 @@ def reset_stale_state() -> None:
                 state["message"] = "Auto-reset stale state on /auto"
                 write_state_payload(STATE_FILE, state)
                 write_control("", "")  # R20-02: reset control too
+                log_bot(f"Recovered stale state from {status} to idle")
     except json.JSONDecodeError as exc:
         log_bot(f"Failed to reset stale state: malformed {STATE_FILE.name}: {exc}")
     except OSError as exc:
@@ -1438,6 +1446,7 @@ async def cmd_switch(project_name: str) -> None:
 async def cmd_start_task(task_id: str) -> None:
     """Start single task."""
     global ralph_process
+    reset_stale_state()
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
@@ -1456,6 +1465,7 @@ async def cmd_start_task(task_id: str) -> None:
 async def cmd_start_phase(phase: str) -> None:
     """Start phase execution."""
     global ralph_process
+    reset_stale_state()
     state = read_state()
     if state.get("status") == "running":
         await safe_send("⚠️ Ralph already running. /stop first.")
@@ -2470,6 +2480,7 @@ async def main() -> None:
                 os.kill(pid, 0)  # check if alive
             except (ProcessLookupError, ValueError):
                 p.unlink(missing_ok=True)  # dead process, clean up
+    reset_stale_state()
 
     await safe_send("🤖 Ralph Bot started! Type /help for commands.")
     try:

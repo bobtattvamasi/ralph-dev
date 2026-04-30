@@ -4302,7 +4302,7 @@ if ! run_pre_task_check /tmp/ralph_test.log; then
     self_heal_environment || exit 1
 fi
 if [ "$RECOVERY_MODE" -eq 1 ]; then
-    write_state "running" "" "recovery" "Recovered from previous non-idle state ($PREV_STATUS)"
+    write_state "idle" "" "recovery" "Recovered stale non-idle state ($PREV_STATUS)"
 else
     write_state "idle" "" "idle" "Ready"
 fi

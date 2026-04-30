@@ -277,6 +277,42 @@ def test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_sta
     assert status_ok.stdout.strip() == "status-ok"
 
 
+def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "ralph_state.json").write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "current_task": "T01",
+                "current_phase_step": "coder",
+                "message": "Coder implementing...",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (project_dir / "ralph_main.pid").write_text("4242\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "check_and_recover_state\n"
+        "if [ \"$RECOVERY_MODE\" -eq 1 ]; then\n"
+        "  write_state \"idle\" \"\" \"recovery\" \"Recovered stale non-idle state ($PREV_STATUS)\"\n"
+        "else\n"
+        "  write_state \"idle\" \"\" \"idle\" \"Ready\"\n"
+        "fi\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    state = json.loads((project_dir / "ralph_state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "idle"
+    assert state["current_task"] == ""
+    assert state["current_phase_step"] == "recovery"
+    assert "Recovered stale non-idle state (running)" in state["message"]
+
+
 def test_task_scoped_diff_between_refs_includes_ralph_shell_changes(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     shutil.copy2(RALPH_SH, project_dir / "ralph.sh")

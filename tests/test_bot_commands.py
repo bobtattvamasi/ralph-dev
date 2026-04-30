@@ -840,3 +840,53 @@ def test_read_state_returns_idle_for_broken_json(bot_env: dict[str, object]) -> 
 
     assert state["status"] == "idle"
     assert state["current_task"] is None
+
+
+def test_reset_stale_state_resets_running_state_when_no_tracked_process_is_alive(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot.STATE_FILE.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "current_task": "T01",
+                "current_phase_step": "coder",
+                "message": "Coder implementing...",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bot, "has_live_tracked_runtime", lambda: False)
+
+    bot.reset_stale_state()
+
+    state = json.loads(bot.STATE_FILE.read_text(encoding="utf-8"))
+    assert state["status"] == "idle"
+    assert state["current_task"] == ""
+    assert state["current_phase_step"] == ""
+    assert state["message"] == "Auto-reset stale state on /auto"
+
+
+def test_reset_stale_state_keeps_running_state_when_tracked_process_is_alive(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot.STATE_FILE.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "current_task": "T01",
+                "current_phase_step": "coder",
+                "message": "Coder implementing...",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bot, "has_live_tracked_runtime", lambda: True)
+
+    bot.reset_stale_state()
+
+    state = json.loads(bot.STATE_FILE.read_text(encoding="utf-8"))
+    assert state["status"] == "running"
+    assert state["current_task"] == "T01"
