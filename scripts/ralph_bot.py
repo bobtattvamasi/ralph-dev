@@ -1029,12 +1029,14 @@ def _read_pid_value(path: Path) -> int | None:
 def terminate_tracked_processes(reason: str) -> list[str]:
     """Best-effort teardown for tracked Ralph/Codex processes."""
     killed: list[str] = []
+    killed_pgids: set[int] = set()
     pgid_file = PROJECT_DIR / "ralph_codex.pgid"
     pgid = _read_pid_value(pgid_file)
     if pgid is not None:
         try:
             os.killpg(pgid, signal.SIGTERM)
             killed.append(f"pgid:{pgid}")
+            killed_pgids.add(pgid)
         except (ProcessLookupError, PermissionError, OSError) as exc:
             log_bot(f"{reason}: failed SIGTERM for codex pgid {pgid}: {exc}")
         try:
@@ -1051,6 +1053,23 @@ def terminate_tracked_processes(reason: str) -> list[str]:
         if pid is None:
             pid_file.unlink(missing_ok=True)
             continue
+        try:
+            live_pgid = os.getpgid(pid)
+        except (ProcessLookupError, PermissionError, OSError, ValueError):
+            live_pgid = None
+        if live_pgid is not None and live_pgid > 1 and live_pgid not in killed_pgids:
+            try:
+                os.killpg(live_pgid, signal.SIGTERM)
+                killed.append(f"{pf}.pgid:{live_pgid}")
+                killed_pgids.add(live_pgid)
+            except (ProcessLookupError, PermissionError, OSError) as exc:
+                log_bot(f"{reason}: failed SIGTERM for {pf} pgid {live_pgid}: {exc}")
+            try:
+                os.killpg(live_pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except (PermissionError, OSError) as exc:
+                log_bot(f"{reason}: failed SIGKILL for {pf} pgid {live_pgid}: {exc}")
         try:
             os.kill(pid, signal.SIGTERM)
             killed.append(f"{pf}:{pid}")

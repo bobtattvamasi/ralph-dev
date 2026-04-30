@@ -7,7 +7,68 @@ SESSION_NOTES_FILE="$PROJECT_DIR/SESSION_NOTES.md"
 
 cd "$PROJECT_DIR"
 
-git add -A
+PROMPT_FILE=""
+RESPONSE_FILE=""
+OUTPUT_FILE=""
+TASK_SCOPE_FILE="$(mktemp)"
+trap 'rm -f "$PROMPT_FILE" "$RESPONSE_FILE" "$OUTPUT_FILE" "$TASK_SCOPE_FILE"' EXIT
+
+python3 - "$PROJECT_DIR" > "$TASK_SCOPE_FILE" <<'PY' || {
+import json
+import sys
+from pathlib import Path
+
+project_dir = Path(sys.argv[1])
+state_path = project_dir / "ralph_state.json"
+tasks_path = project_dir / "tasks.json"
+
+try:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+except Exception as exc:
+    print(f"Cannot read current task from {state_path.name}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+current_task = str(state.get("current_task") or "").strip()
+if not current_task:
+    print("Cannot determine current task for scoped auto-commit.", file=sys.stderr)
+    raise SystemExit(1)
+
+try:
+    tasks_data = json.loads(tasks_path.read_text(encoding="utf-8"))
+except Exception as exc:
+    print(f"Cannot read task scope from {tasks_path.name}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+task = next((item for item in tasks_data.get("tasks", []) if str(item.get("id", "")).strip() == current_task), None)
+if not isinstance(task, dict):
+    print(f"Current task not found in tasks.json: {current_task}", file=sys.stderr)
+    raise SystemExit(1)
+
+target_files = task.get("target_files") or []
+if not isinstance(target_files, list) or not any(str(path).strip() for path in target_files):
+    print(f"No target_files defined for current task: {current_task}", file=sys.stderr)
+    raise SystemExit(1)
+
+for path in target_files:
+    value = str(path).strip()
+    if value:
+        print(value)
+
+for extra in (f".ralph/audit/{current_task}.json", "audit_report.md"):
+    print(extra)
+PY
+    exit 1
+}
+
+while IFS= read -r scope_path; do
+    [ -n "$scope_path" ] || continue
+    if [ -e "$scope_path" ] || git ls-files --error-unmatch -- "$scope_path" >/dev/null 2>&1; then
+        git add -A -- "$scope_path"
+    fi
+done < "$TASK_SCOPE_FILE"
+
+echo "Staging files:"
+git diff --cached --name-only | sed 's/^/ - /'
 
 if git diff --cached --quiet; then
     echo "No staged changes to document."
@@ -18,7 +79,6 @@ DIFF_CONTENT="$(git diff --cached)"
 PROMPT_FILE="$(mktemp)"
 RESPONSE_FILE="$(mktemp)"
 OUTPUT_FILE="$(mktemp)"
-trap 'rm -f "$PROMPT_FILE" "$RESPONSE_FILE" "$OUTPUT_FILE"' EXIT
 
 cat > "$PROMPT_FILE" <<EOF
 Проанализируй этот diff. Напиши короткое summary изменений для человека. Затем сгенерируй commit message в формате Conventional Commits.

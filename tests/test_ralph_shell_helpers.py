@@ -313,6 +313,33 @@ def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> 
     assert "Recovered stale non-idle state (running)" in state["message"]
 
 
+def test_cleanup_kills_main_process_group_and_removes_pid_files(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "ralph_codex.pgid").write_text("321\n", encoding="utf-8")
+    (project_dir / "ralph_codex.pid").write_text("654\n", encoding="utf-8")
+    (project_dir / "ralph_main.pid").write_text("987\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "kill_process_group() { printf 'pgid:%s\\n' \"$1\" >> cleanup_calls.log; }\n"
+        "kill_tree() { printf 'pid:%s\\n' \"$1\" >> cleanup_calls.log; }\n"
+        "process_group_for_pid() { if [ \"$1\" = \"987\" ]; then printf '9870\\n'; fi }\n"
+        "OWNS_MAIN_PID=1\n"
+        "cleanup\n"
+        "cleanup\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (project_dir / "cleanup_calls.log").read_text(encoding="utf-8").splitlines()
+    assert "pgid:321" in calls
+    assert "pid:654" in calls
+    assert "pgid:9870" in calls
+    assert "pid:987" in calls
+    assert not (project_dir / "ralph_codex.pgid").exists()
+    assert not (project_dir / "ralph_codex.pid").exists()
+    assert not (project_dir / "ralph_main.pid").exists()
+
+
 def test_task_scoped_diff_between_refs_includes_ralph_shell_changes(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     shutil.copy2(RALPH_SH, project_dir / "ralph.sh")

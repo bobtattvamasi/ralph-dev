@@ -143,6 +143,17 @@ kill_process_group() {
     kill -KILL -"$pid" 2>/dev/null || true
 }
 
+process_group_for_pid() {
+    local pid="${1:-}"
+
+    [ -n "$pid" ] || return 1
+    case "$pid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+
+    ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]'
+}
+
 CLEANUP_RUNNING=0
 OWNS_MAIN_PID=0
 cleanup_orphan_coder_outputs() {
@@ -286,6 +297,7 @@ cleanup() {
     local codex_pid=""
     local codex_pgid=""
     local main_pid=""
+    local main_pgid=""
 
     if [ -f "$PROJECT_DIR/ralph_codex.pid" ]; then
         codex_pid=$(cat "$PROJECT_DIR/ralph_codex.pid" 2>/dev/null || echo "")
@@ -296,6 +308,11 @@ cleanup() {
     if [ "$OWNS_MAIN_PID" -eq 1 ] && [ -f "$PROJECT_DIR/ralph_main.pid" ]; then
         main_pid=$(cat "$PROJECT_DIR/ralph_main.pid" 2>/dev/null || echo "")
     fi
+    if [ -n "$main_pid" ] && [ "$main_pid" != "$$" ]; then
+        main_pgid=$(process_group_for_pid "$main_pid" 2>/dev/null || echo "")
+    fi
+
+    log "🧹 Cleanup: codex_pgid=${codex_pgid:-none} codex_pid=${codex_pid:-none} main_pid=${main_pid:-none} main_pgid=${main_pgid:-none}"
 
     # 1) Kill codex tree first.
     [ -n "$codex_pgid" ] && kill_process_group "$codex_pgid"
@@ -309,8 +326,9 @@ cleanup() {
         done
     fi
 
-    # 3) Kill main tree from pid-file if it points to another process.
+    # 3) Kill main process group from pid-file if it points to another process.
     # If it is this shell, only children are killed to allow clean EXIT flow.
+    [ -n "$main_pgid" ] && kill_process_group "$main_pgid"
     if [ "$OWNS_MAIN_PID" -eq 1 ] && [ -n "$main_pid" ] && [ "$main_pid" != "$$" ]; then
         kill_tree "$main_pid"
     fi
@@ -321,6 +339,7 @@ cleanup() {
         rm -f "$PROJECT_DIR/ralph_main.pid"
     fi
     rm -f "/tmp/ralph_coder_$$.txt"
+    log "🧹 Cleanup complete"
 }
 handle_interrupt() {
     log "⛔ Interrupt signal received, stopping Ralph..."

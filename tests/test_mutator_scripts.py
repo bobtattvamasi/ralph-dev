@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -18,6 +19,7 @@ import scripts.update_memory as update_memory
 
 ROOT = Path(__file__).resolve().parent.parent
 UPDATE_PROGRESS = ROOT / "scripts" / "update_progress.py"
+AUTO_COMMIT = ROOT / "scripts" / "auto_commit.sh"
 
 
 def make_project(tmp_path: Path) -> Path:
@@ -52,6 +54,32 @@ def make_project(tmp_path: Path) -> Path:
     )
     (project_dir / "progress.md").write_text("# Progress\n\n", encoding="utf-8")
     return project_dir
+
+
+def init_git_repo(project_dir: Path) -> None:
+    subprocess.run(["git", "init"], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project_dir, check=True, capture_output=True, text=True)
+
+
+def write_codex_shim(path: Path) -> None:
+    path.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "args = sys.argv[1:]\n"
+        "out = None\n"
+        "for i, arg in enumerate(args):\n"
+        "    if arg == '-o' and i + 1 < len(args):\n"
+        "        out = args[i + 1]\n"
+        "        break\n"
+        "if out is None:\n"
+        "    raise SystemExit(2)\n"
+        "with open(out, 'w', encoding='utf-8') as fh:\n"
+        "    json.dump({'summary': 'Scoped auto-commit test summary', 'commit_message': 'chore(auto-commit): scoped stage'}, fh)\n"
+        "print('ok')\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
 
 
 def test_auto_update_marks_task_complete_resets_dependents_and_appends_progress(
@@ -185,3 +213,72 @@ def test_ralph_notify_logs_transport_errors(monkeypatch: pytest.MonkeyPatch, cap
         ralph_notify.send("ping")
 
     assert "Notification failed" in caplog.text
+
+
+def test_auto_commit_scopes_staging_to_current_task_files_and_ignores_temp_artifacts(tmp_path: Path) -> None:
+    project_dir = make_project(tmp_path)
+    init_git_repo(project_dir)
+    (project_dir / "scripts").mkdir(exist_ok=True)
+    shutil.copy2(AUTO_COMMIT, project_dir / "scripts" / "auto_commit.sh")
+    (project_dir / "src").mkdir()
+    (project_dir / "tests").mkdir(exist_ok=True)
+    (project_dir / "src" / "app.py").write_text("print('base')\n", encoding="utf-8")
+    (project_dir / "tests" / "test_app.py").write_text("def test_base():\n    assert True\n", encoding="utf-8")
+    (project_dir / "README.md").write_text("# Notes\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+
+    tasks = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))
+    tasks["tasks"][0]["target_files"] = ["src/app.py", "tests/test_app.py"]
+    (project_dir / "tasks.json").write_text(json.dumps(tasks, indent=2) + "\n", encoding="utf-8")
+    (project_dir / "ralph_state.json").write_text(
+        json.dumps({"status": "running", "current_task": "T01"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (project_dir / "src" / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    (project_dir / "tests" / "test_app.py").write_text("def test_base():\n    assert 1 == 1\n", encoding="utf-8")
+    (project_dir / "README.md").write_text("# Notes\nunrelated change\n", encoding="utf-8")
+    (project_dir / "temp.tmp").write_text("temporary\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_codex_shim(bin_dir / "codex")
+
+    result = subprocess.run(
+        ["bash", str(project_dir / "scripts" / "auto_commit.sh")],
+        cwd=project_dir,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Staging files:" in result.stdout
+    assert " - src/app.py" in result.stdout
+    assert " - tests/test_app.py" in result.stdout
+    assert "README.md" not in result.stdout
+    assert "temp.tmp" not in result.stdout
+
+    committed_files = subprocess.run(
+        ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert "src/app.py" in committed_files
+    assert "tests/test_app.py" in committed_files
+    assert "SESSION_NOTES.md" in committed_files
+    assert "README.md" not in committed_files
+    assert "temp.tmp" not in committed_files
+
+    status_lines = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert " M README.md" in status_lines
+    assert "?? temp.tmp" in status_lines

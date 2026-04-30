@@ -749,6 +749,7 @@ async def test_watch_state_tears_down_tracked_processes_on_crash_recovery(
     monkeypatch.setattr(bot.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(bot.os, "killpg", fake_killpg)
     monkeypatch.setattr(bot.os, "kill", fake_kill)
+    monkeypatch.setattr(bot.os, "getpgid", lambda pid: {654: 6540, 987: 9870}[pid])
 
     with patch("scripts.ralph_bot.subprocess.run") as run_mock:
         with pytest.raises(asyncio.CancelledError):
@@ -756,6 +757,10 @@ async def test_watch_state_tears_down_tracked_processes_on_crash_recovery(
 
     assert (321, bot.signal.SIGTERM) in killpg_calls
     assert (321, bot.signal.SIGKILL) in killpg_calls
+    assert (6540, bot.signal.SIGTERM) in killpg_calls
+    assert (6540, bot.signal.SIGKILL) in killpg_calls
+    assert (9870, bot.signal.SIGTERM) in killpg_calls
+    assert (9870, bot.signal.SIGKILL) in killpg_calls
     assert (654, bot.signal.SIGTERM) in kill_calls
     assert (654, bot.signal.SIGKILL) in kill_calls
     assert (987, bot.signal.SIGTERM) in kill_calls
@@ -768,6 +773,68 @@ async def test_watch_state_tears_down_tracked_processes_on_crash_recovery(
     assert not (project_dir / "ralph_codex.pgid").exists()
     assert not (project_dir / "ralph_codex.pid").exists()
     assert not (project_dir / "ralph_main.pid").exists()
+
+
+@pytest.mark.asyncio
+async def test_cmd_stop_force_kills_tracked_process_groups_and_is_idempotent(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_dir = bot_env["project_dir"]
+    (project_dir / "ralph_codex.pgid").write_text("321\n", encoding="utf-8")
+    (project_dir / "ralph_codex.pid").write_text("654\n", encoding="utf-8")
+    (project_dir / "ralph_main.pid").write_text("987\n", encoding="utf-8")
+
+    class RunningProcess:
+        pid = 987
+
+        def __init__(self) -> None:
+            self._poll_count = 0
+            self.kill_called = 0
+            self.wait_called = 0
+
+        def poll(self) -> int | None:
+            return None
+
+        def kill(self) -> None:
+            self.kill_called += 1
+
+        def wait(self) -> int:
+            self.wait_called += 1
+            return 0
+
+    process = RunningProcess()
+    monkeypatch.setattr(bot.RUNTIME, "ralph_process", process)
+    monkeypatch.setattr(bot, "ralph_process", process)
+    monkeypatch.setattr(bot.RUNTIME, "caffeinate_process", None)
+    monkeypatch.setattr(bot, "caffeinate_process", None)
+
+    killpg_calls: list[tuple[int, int]] = []
+    kill_calls: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(bot.os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig)))
+    monkeypatch.setattr(bot.os, "kill", lambda pid, sig: kill_calls.append((pid, sig)))
+    monkeypatch.setattr(bot.os, "getpgid", lambda pid: {654: 6540, 987: 9870}[pid])
+
+    with patch("scripts.ralph_bot.subprocess.run") as run_mock:
+        await bot.cmd_stop(force=True)
+        await bot.cmd_stop(force=True)
+
+    assert (321, bot.signal.SIGTERM) in killpg_calls
+    assert (321, bot.signal.SIGKILL) in killpg_calls
+    assert (6540, bot.signal.SIGTERM) in killpg_calls
+    assert (6540, bot.signal.SIGKILL) in killpg_calls
+    assert (9870, bot.signal.SIGTERM) in killpg_calls
+    assert (9870, bot.signal.SIGKILL) in killpg_calls
+    assert not (project_dir / "ralph_codex.pgid").exists()
+    assert not (project_dir / "ralph_codex.pid").exists()
+    assert not (project_dir / "ralph_main.pid").exists()
+    assert process.kill_called == 1
+    assert process.wait_called == 1
+    assert run_mock.call_count >= 4
+    safe_send = bot_env["safe_send"]
+    messages = [call.args[0] for call in safe_send.await_args_list]
+    assert any(msg.startswith("⏹ Ralph killed.") for msg in messages)
+    assert messages[-1].startswith("⏹ Ralph killed.")
 
 
 @pytest.mark.asyncio
