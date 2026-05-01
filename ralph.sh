@@ -499,6 +499,7 @@ DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC
 DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC:-120}"
 DEFAULT_CODEX_RETRY_DELAYS="${RALPH_DEFAULT_CODEX_RETRY_DELAYS:-60 120 300}"
 DEFAULT_RATE_LIMIT_PAUSE_SEC="${RALPH_DEFAULT_RATE_LIMIT_PAUSE_SEC:-1800}"
+DEFAULT_TASK_WALL_CAP_SEC="${RALPH_DEFAULT_TASK_WALL_CAP_SEC:-1800}"
 RALPH_TIMEOUT_LEAD="${RALPH_TIMEOUT_LEAD:-$DEFAULT_LEAD_TIMEOUT_SEC}"
 CODEX_RETRY_DELAYS=(${RALPH_CODEX_RETRY_DELAYS:-$DEFAULT_CODEX_RETRY_DELAYS})
 RATE_LIMIT_PAUSE="${RALPH_RATE_LIMIT_PAUSE:-$DEFAULT_RATE_LIMIT_PAUSE_SEC}"
@@ -1778,6 +1779,25 @@ run_update_task_strict() {
     rm -f "$update_task_stderr"
 }
 
+enforce_task_wall_clock_cap() {
+    local task_id="${1:-${TASK_ID:-}}"
+    local cap="${2:-${TASK_WALL_CAP:-$DEFAULT_TASK_WALL_CAP_SEC}}"
+    local now=0
+    local elapsed=0
+
+    [ -n "${TASK_START:-}" ] || return 0
+
+    now=$(date +%s)
+    elapsed=$((now - TASK_START))
+    if [ "$elapsed" -lt "$cap" ]; then
+        return 0
+    fi
+
+    log "❌ Task ${task_id:-unknown} exceeded wall-clock cap (${cap}s), marking blocked"
+    write_state "blocked" "${task_id:-}" "task_wall_cap" "Task ${task_id:-unknown} exceeded wall-clock cap (${cap}s)"
+    exit 1
+}
+
 check_control() {
     while true; do
         if [ -f ralph_control.json ]; then
@@ -3042,6 +3062,7 @@ run_codex() {
     fi
 
     while [ $retry -le $MAX_CODEX_RETRIES ]; do
+        enforce_task_wall_clock_cap "${TASK_ID:-}" "${TASK_WALL_CAP:-$DEFAULT_TASK_WALL_CAP_SEC}"
         : > "$output_file"
         local watchdog_flag
         watchdog_flag="/tmp/ralph_watchdog_${$}_${retry}.flag"
@@ -4558,6 +4579,7 @@ print(task.get('role', 'coder'))
     log "📋 TASK_START task_id=$TASK_ID title=\"$TASK_TITLE\" timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     log "⏱  Timeout: coder=${TASK_TIMEOUT}s lead=${TASK_LEAD_TIMEOUT}s"
     TASK_START_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
+    TASK_WALL_CAP="${RALPH_TASK_WALL_CAP:-$DEFAULT_TASK_WALL_CAP_SEC}"
 
     FIX_RETRY=0
     TASK_DONE=false
@@ -4581,6 +4603,7 @@ print(task.get('role', 'coder'))
     rm -f "$RETRY_TEST_OUTPUT_FILE"
 
     while [ "$FIX_RETRY" -le "$MAX_FIX_RETRIES" ] && [ "$TASK_DONE" = false ]; do
+        enforce_task_wall_clock_cap "$TASK_ID" "$TASK_WALL_CAP"
         CONTROL_STATUS=0
         check_control || CONTROL_STATUS=$?
         if [ $CONTROL_STATUS -eq 1 ]; then

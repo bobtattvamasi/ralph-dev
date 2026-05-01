@@ -318,6 +318,25 @@ def test_run_update_task_strict_blocks_on_persist_failure(tmp_path: Path) -> Non
     )
 
 
+def test_enforce_task_wall_clock_cap_blocks_long_running_task(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+
+    result = run_helper(
+        project_dir,
+        "write_state() { printf '%s|%s|%s|%s\\n' \"$1\" \"$2\" \"$3\" \"$4\" > state_capture.txt; }\n"
+        "TASK_ID='T01'\n"
+        "TASK_START=$(( $(date +%s) - 5 ))\n"
+        "TASK_WALL_CAP=1\n"
+        "enforce_task_wall_clock_cap \"$TASK_ID\" \"$TASK_WALL_CAP\"\n",
+    )
+
+    assert result.returncode == 1
+    assert "Task T01 exceeded wall-clock cap (1s), marking blocked" in (result.stdout + result.stderr)
+    assert (project_dir / "state_capture.txt").read_text(encoding="utf-8").strip() == (
+        "blocked|T01|task_wall_cap|Task T01 exceeded wall-clock cap (1s)"
+    )
+
+
 def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     (project_dir / "ralph_state.json").write_text(
