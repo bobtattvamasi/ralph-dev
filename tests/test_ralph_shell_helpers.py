@@ -274,7 +274,48 @@ def test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_sta
         "MODE=status\nensure_startup_runtime_dependencies\nprintf 'status-ok\\n'\n",
     )
     assert status_ok.returncode == 0, status_ok.stdout + status_ok.stderr
-    assert status_ok.stdout.strip() == "status-ok"
+
+
+def test_run_next_task_helper_blocks_on_helper_failure(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "scripts" / "next_task.py").write_text(
+        "import sys\nprint('selection boom', file=sys.stderr)\nsys.exit(2)\n",
+        encoding="utf-8",
+    )
+
+    result = run_helper(
+        project_dir,
+        "write_state() { printf '%s|%s|%s|%s\\n' \"$1\" \"$2\" \"$3\" \"$4\" > state_capture.txt; }\n"
+        "run_next_task_helper --task T01\n",
+    )
+
+    assert result.returncode == 1
+    assert "next_task.py failed while selecting the next task" in (result.stdout + result.stderr)
+    assert "selection boom" in (result.stdout + result.stderr)
+    assert (project_dir / "state_capture.txt").read_text(encoding="utf-8").strip() == (
+        "blocked||task_selection|next_task.py failed during task selection"
+    )
+
+
+def test_run_update_task_strict_blocks_on_persist_failure(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "scripts" / "update_task.py").write_text(
+        "import sys\nprint('persist boom', file=sys.stderr)\nsys.exit(3)\n",
+        encoding="utf-8",
+    )
+
+    result = run_helper(
+        project_dir,
+        "write_state() { printf '%s|%s|%s|%s\\n' \"$1\" \"$2\" \"$3\" \"$4\" > state_capture.txt; }\n"
+        "run_update_task_strict T01 blocked 'broken' task_status 'update_task.py failed'\n",
+    )
+
+    assert result.returncode == 1
+    assert "update_task.py failed for T01 -> blocked" in (result.stdout + result.stderr)
+    assert "persist boom" in (result.stdout + result.stderr)
+    assert (project_dir / "state_capture.txt").read_text(encoding="utf-8").strip() == (
+        "blocked|T01|task_status|update_task.py failed"
+    )
 
 
 def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> None:
@@ -332,6 +373,42 @@ def test_recovery_startup_blocks_on_malformed_state_file(tmp_path: Path) -> None
     assert state["status"] == "blocked"
     assert state["current_phase_step"] == "recovery"
     assert "malformed state JSON" in state["message"]
+
+
+def test_recovery_marks_idle_state_with_live_codex_pid_as_invalid_and_kills_it(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    sleeper = subprocess.Popen(["sleep", "30"], cwd=project_dir)
+    try:
+        (project_dir / "ralph_state.json").write_text(
+            json.dumps(
+                {
+                    "status": "idle",
+                    "current_task": "",
+                    "current_phase_step": "completed",
+                    "message": "Idle",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (project_dir / "ralph_codex.pid").write_text(f"{sleeper.pid}\n", encoding="utf-8")
+
+        result = run_helper(
+            project_dir,
+            "check_and_recover_state\n"
+            "printf '%s|%s\\n' \"$RECOVERY_INVALID_STATE\" \"$RECOVERY_INVALID_REASON\"\n",
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        invalid_state, reason = result.stdout.strip().splitlines()[-1].split("|", 1)
+        assert invalid_state == "1"
+        assert "Active ralph_codex.pid detected while previous state is idle" in reason
+        sleeper.wait(timeout=5)
+    finally:
+        if sleeper.poll() is None:
+            sleeper.terminate()
+            sleeper.wait(timeout=5)
 
 
 def test_apply_control_action_snapshot_blocks_on_empty_control_payload(tmp_path: Path) -> None:

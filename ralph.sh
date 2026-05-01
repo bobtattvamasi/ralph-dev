@@ -1687,9 +1687,18 @@ clear_control_action() {
 
 apply_timeout_override() {
     local control_data action raw_value
-    control_data=$(read_control_file)
-    action=$(printf '%s\n' "$control_data" | sed -n '1p')
-    raw_value=$(printf '%s\n' "$control_data" | sed -n '2p')
+    if ! control_data=$(read_control_file); then
+        log "❌ ${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to read ralph_control.json}"
+        write_state "blocked" "${TASK_ID:-}" "control_file" "${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to read ralph_control.json}"
+        exit 1
+    fi
+    if ! parse_control_data "apply_timeout_override" "$control_data"; then
+        log "❌ ${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to parse ralph_control.json}"
+        write_state "blocked" "${TASK_ID:-}" "control_file" "${CONTROL_PARSE_FAILURE_MESSAGE:-Failed to parse ralph_control.json}"
+        exit 1
+    fi
+    action="$CONTROL_ACTION"
+    raw_value="$CONTROL_TARGET"
 
     case "$raw_value" in
         ''|*[!0-9]*) return 0 ;;
@@ -2895,6 +2904,11 @@ except OSError as exc:
                 if [ "$RECOVERY_MODE" -eq 1 ]; then
                     log "⚠️ Found stale ralph_codex.pid=$stale_codex_pid, killing process tree"
                     kill_tree "$stale_codex_pid"
+                else
+                    log "❌ Found active ralph_codex.pid=$stale_codex_pid while previous state is '${PREV_STATUS:-unknown}'"
+                    kill_tree "$stale_codex_pid"
+                    RECOVERY_INVALID_STATE=1
+                    [ -z "$RECOVERY_INVALID_REASON" ] && RECOVERY_INVALID_REASON="Active ralph_codex.pid detected while previous state is ${PREV_STATUS:-unknown}"
                 fi
             else
                 log "ℹ️ Removing dead ralph_codex.pid ($stale_codex_pid)"
@@ -2906,9 +2920,16 @@ except OSError as exc:
         case "$stale_codex_pgid" in
             ''|*[!0-9]*) stale_codex_pgid="" ;;
         esac
-        if [ -n "$stale_codex_pgid" ] && [ "$RECOVERY_MODE" -eq 1 ]; then
-            log "⚠️ Found stale ralph_codex.pgid=$stale_codex_pgid, killing process group"
-            kill_process_group "$stale_codex_pgid"
+        if [ -n "$stale_codex_pgid" ]; then
+            if [ "$RECOVERY_MODE" -eq 1 ]; then
+                log "⚠️ Found stale ralph_codex.pgid=$stale_codex_pgid, killing process group"
+                kill_process_group "$stale_codex_pgid"
+            else
+                log "❌ Found active/stale ralph_codex.pgid=$stale_codex_pgid while previous state is '${PREV_STATUS:-unknown}'"
+                kill_process_group "$stale_codex_pgid"
+                RECOVERY_INVALID_STATE=1
+                [ -z "$RECOVERY_INVALID_REASON" ] && RECOVERY_INVALID_REASON="Active ralph_codex.pgid detected while previous state is ${PREV_STATUS:-unknown}"
+            fi
         fi
     fi
 
@@ -4080,7 +4101,7 @@ with path.open("a", encoding="utf-8") as fh:
     fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 PY
     if [ "$codex_status" -eq 0 ]; then
-        python3 "$RALPH_DIR/scripts/update_task.py" "$task_id" done >/dev/null 2>&1 || true
+        run_update_task_strict "$task_id" done "" "benchmark" "Failed to persist benchmark task status"
     fi
     rm -f "$coder_output"
     return "$codex_status"
