@@ -73,6 +73,7 @@ def build_prompt_runner_script() -> Path:
         raise RuntimeError("cannot find main entrypoint in ralph.sh") from exc
 
     runner_body = "\n".join(shell_lines[:cutoff]) + "\n" + """
+trap - EXIT INT TERM
 TASK_ID="${1:-T01}"
 TASK_ROLE="coder"
 TASK_JSON=$(python3 - "$TASK_ID" <<'PY'
@@ -118,8 +119,6 @@ PROMPT_PAYLOAD=$(build_coder_prompt_with_budget \
     "$CODER_PROMPT_MEMORY_RECENT" \
     "" \
     "" \
-    "" \
-    "0" \
     "" \
     "$CODER_PROMPT_BUDGET" \
     "${RALPH_CODER_PROMPT_MAX_CHARS:-40000}")
