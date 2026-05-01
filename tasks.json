@@ -3414,7 +3414,7 @@
     {
       "id": "R16-04",
       "phase": "R16",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Bot /projects + /switch commands",
       "description": "Extend ralph_bot.py to read projects.json, list projects with status/progress, and switch active project context with /switch <name> so later commands operate on that project.",
       "target_files": [
@@ -3429,7 +3429,7 @@
       "priority": "high",
       "complexity": "moderate",
       "role": "coder",
-      "completed_at": null,
+      "completed_at": "2026-05-01T07:33:36.692062+00:00",
       "revision_notes": "R16-04 failed after 2 retries"
     },
     {
@@ -3780,7 +3780,7 @@
     {
       "id": "R20-04",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Fast test gate for auto mode",
       "description": "Add project config key test_cmd_fast. Auto mode uses fast gate. Full suite only on explicit verify. Fall back to test_cmd if test_cmd_fast not set.",
       "target_files": [
@@ -3792,7 +3792,8 @@
       ],
       "priority": "critical",
       "complexity": "complex",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-05-01T07:31:04.956717+00:00"
     },
     {
       "id": "R20-05",
@@ -3887,6 +3888,138 @@
       "priority": "medium",
       "complexity": "simple",
       "role": "coder"
+    },
+    {
+      "id": "R20-12",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Overnight run summary",
+      "description": "Add a compact grep-friendly summary at the end of auto mode so an unattended overnight run reports how many tasks were completed, failed, blocked, or skipped, and why.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh",
+        "tests/test_ralph_shell_helpers.py"
+      ],
+      "acceptance_criteria": [
+        "At the end of auto mode, Ralph prints one summary line: AUTO_RUN_SUMMARY done=<n> failed=<n> blocked=<n> skipped=<n> duration=<sec>",
+        "For each failed, blocked, or skipped task, Ralph prints one grep-friendly line: AUTO_TASK_RESULT <task_id> status=<status> reason=<short_reason>",
+        "Summary is printed on normal auto completion.",
+        "Summary is printed when auto exits because a task is blocked or wall-clock cap is exceeded, where feasible.",
+        "Summary does not change task execution, retry, commit, or selection behavior.",
+        "task mode and phase mode behavior remain unchanged.",
+        "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    },
+    {
+      "id": "R20-13",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Task hygiene checker for unattended auto",
+      "description": "Add a report-only checker that scans tasks.json for tasks that are unsafe for unattended auto mode because of bootstrap risk, missing test target files, previous retry failures, or broad/complex scope.",
+      "target_files": [
+        "scripts/check_task_hygiene.py",
+        "tests/test_task_hygiene.py"
+      ],
+      "acceptance_criteria": [
+        "scripts/check_task_hygiene.py reads tasks.json and reports unsafe pending tasks without modifying files.",
+        "The checker emits grep-friendly lines: TASK_HYGIENE_WARN <task_id> <code> <short_reason>.",
+        "The checker warns when a task title or description suggests bootstrap, kickoff, init, generation, or new CLI mode work.",
+        "The checker warns when acceptance criteria imply test coverage but target_files contains no tests/ path.",
+        "The checker warns when revision_notes mention failed retries.",
+        "The checker warns when complexity is complex.",
+        "Default mode exits 0 so it can be used as a report.",
+        "--fail-on-warn exits 1 if warnings are found.",
+        "Focused tests cover an R17-01-like unsafe task."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    },
+    {
+      "id": "R20-14",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Task decomposition planner",
+      "description": "Add a report-only script that analyzes one unsafe or oversized task and proposes smaller child tasks with narrower target_files and acceptance criteria suitable for unattended execution.",
+      "target_files": [
+        "scripts/decompose_task.py",
+        "tests/test_decompose_task.py"
+      ],
+      "acceptance_criteria": [
+        "scripts/decompose_task.py <task_id> reads tasks.json and prints a JSON proposal with child tasks.",
+        "The script does not modify tasks.json by default.",
+        "The proposal includes parent_id, child task ids, titles, target_files, acceptance_criteria, priority, complexity, and rationale.",
+        "The script detects when original target_files are too narrow for acceptance criteria and proposes test or helper child tasks.",
+        "The script supports --apply to append proposed child tasks only when explicitly requested.",
+        "The script is deterministic for the same input task.",
+        "Focused tests cover decomposition of an R17-01-like kickoff task."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    },
+    {
+      "id": "R20-15",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Auto mode skips unsafe tasks",
+      "description": "Teach auto mode to skip tasks that are unsafe for unattended execution and continue to the next safe pending task instead of burning retries and wall-clock cap on structurally bad tasks.",
+      "target_files": [
+        "scripts/next_task.py",
+        "scripts/ralph_common.py",
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh",
+        "tests/test_ralph_shell_helpers.py"
+      ],
+      "acceptance_criteria": [
+        "auto mode can skip unsafe pending tasks and continue to the next safe pending task.",
+        "Unsafe reasons include bootstrap/kickoff/init/generation task, previous failed retries, complex scope, or missing test target for test-implying acceptance criteria.",
+        "When a task is skipped, Ralph logs: TASK_SKIPPED_UNSAFE <task_id> <reason>.",
+        "If no safe pending task exists, auto mode exits with a clear AUTO_RUN_SUMMARY instead of launching a risky task.",
+        "task mode with an explicit task id can still run an unsafe task manually.",
+        "phase mode behavior remains unchanged unless already using the same auto-selection helper.",
+        "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+      ],
+      "priority": "critical",
+      "complexity": "complex",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    },
+    {
+      "id": "R20-16",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Overnight-safe test profile",
+      "description": "Add a dedicated fast verification profile for unattended auto mode so Ralph can run a small but meaningful smoke/critical subset instead of relying on a hand-written ad hoc test_cmd_fast.",
+      "target_files": [
+        "pyproject.toml",
+        ".ralph/project.json",
+        "tests/test_ralph_shell_helpers.py",
+        "tests/test_bot_commands.py"
+      ],
+      "acceptance_criteria": [
+        "Define a documented overnight/smoke test profile for Ralph's own repo.",
+        "test_cmd_fast in .ralph/project.json uses the dedicated profile or explicit focused test subset.",
+        "The selected fast profile covers shell helpers, bot command parsing, and core auto-mode guard behavior.",
+        "The fast profile avoids full integration tests by default.",
+        "The fast profile can be run in under 2 minutes on the current machine.",
+        "Existing full test command remains available for explicit verify/full checks."
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
     },
     {
       "id": "R22-01",
