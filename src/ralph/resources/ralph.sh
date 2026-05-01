@@ -55,6 +55,68 @@ set -- ${POSITIONAL_ARGS[@]+"${POSITIONAL_ARGS[@]}"}
 MODE="${1:-status}"
 TARGET="${2:-}"
 EXTRA="${3:-}"
+KICKOFF_DESCRIPTION=""
+
+if [ "$MODE" = "kickoff" ] && [ "$#" -ge 3 ]; then
+    shift 2
+    KICKOFF_DESCRIPTION="$*"
+fi
+
+expand_user_path() {
+    local candidate="${1:-}"
+
+    case "$candidate" in
+        "~")
+            printf '%s\n' "$HOME"
+            ;;
+        "~/"*)
+            printf '%s\n' "$HOME/${candidate#~/}"
+            ;;
+        *)
+            printf '%s\n' "$candidate"
+            ;;
+    esac
+}
+
+kickoff_project() {
+    local raw_target="${1:-}"
+    local description="${2:-}"
+    local init_script="$RALPH_DIR/ralph-init.sh"
+    local kickoff_dir=""
+    local project_name=""
+
+    if [ -z "$raw_target" ] || [ -z "$description" ]; then
+        echo "Usage: ralph.sh kickoff <path> <description>"
+        return 1
+    fi
+
+    if [ ! -f "$init_script" ]; then
+        echo "❌ Missing init script: $init_script"
+        return 1
+    fi
+
+    kickoff_dir="$(expand_user_path "$raw_target")"
+    mkdir -p "$kickoff_dir"
+    kickoff_dir="$(cd "$kickoff_dir" && pwd)"
+    project_name="$(basename "$kickoff_dir")"
+
+    (
+        cd "$kickoff_dir"
+        export RALPH_KICKOFF_DESCRIPTION="$description"
+        export PROJECT_DESCRIPTION="$description"
+        bash "$init_script" "$project_name"
+        mkdir -p ".ralph"
+        printf '%s\n' "$description" > ".ralph/kickoff_description.txt"
+    )
+
+    echo "🚀 Kickoff complete: $kickoff_dir"
+    echo "   Description saved to: $kickoff_dir/.ralph/kickoff_description.txt"
+}
+
+if [ "$MODE" = "kickoff" ]; then
+    kickoff_project "$TARGET" "$KICKOFF_DESCRIPTION"
+    exit $?
+fi
 
 PROJECT_DIR=""
 if [ -n "$PROJECT_ARG" ]; then
@@ -4511,7 +4573,7 @@ case "$MODE" in
         NEXT_ARGS=""
         ;;
     *)
-        echo "Usage: ralph.sh {task|handoff|phase|auto|benchmark|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
+        echo "Usage: ralph.sh {kickoff|task|handoff|phase|auto|benchmark|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
         exit 1
         ;;
 esac
