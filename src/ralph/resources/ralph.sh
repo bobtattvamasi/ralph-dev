@@ -78,6 +78,52 @@ expand_user_path() {
     esac
 }
 
+append_kickoff_brief_if_missing() {
+    local file_path="${1:-}"
+    local heading="${2:-}"
+    local marker="${3:-}"
+    local description="${4:-}"
+
+    [ -n "$file_path" ] || return 0
+    [ -n "$heading" ] || return 0
+    [ -n "$marker" ] || return 0
+    [ -n "$description" ] || return 0
+    [ -f "$file_path" ] || return 0
+
+    if grep -Fq "$marker" "$file_path"; then
+        return 0
+    fi
+
+    {
+        printf '\n%s\n' "$heading"
+        printf '%s\n' "$marker"
+        printf '%s\n' "$description"
+    } >> "$file_path"
+}
+
+seed_kickoff_context() {
+    local project_dir="${1:-}"
+    local description="${2:-}"
+
+    [ -n "$project_dir" ] || return 0
+    [ -n "$description" ] || return 0
+
+    mkdir -p "$project_dir/.ralph"
+    printf '%s\n' "$description" > "$project_dir/.ralph/kickoff_description.txt"
+
+    append_kickoff_brief_if_missing \
+        "$project_dir/.ralph/memory/core.md" \
+        "## Kickoff Brief" \
+        "<!-- ralph-kickoff-brief -->" \
+        "$description"
+
+    append_kickoff_brief_if_missing \
+        "$project_dir/ARCHITECTURE.md" \
+        "## Kickoff Brief" \
+        "<!-- ralph-kickoff-brief -->" \
+        "$description"
+}
+
 kickoff_project() {
     local raw_target="${1:-}"
     local description="${2:-}"
@@ -105,8 +151,7 @@ kickoff_project() {
         export RALPH_KICKOFF_DESCRIPTION="$description"
         export PROJECT_DESCRIPTION="$description"
         bash "$init_script" "$project_name"
-        mkdir -p ".ralph"
-        printf '%s\n' "$description" > ".ralph/kickoff_description.txt"
+        seed_kickoff_context "$kickoff_dir" "$description"
     )
 
     echo "🚀 Kickoff complete: $kickoff_dir"
