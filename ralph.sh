@@ -560,10 +560,47 @@ print(test_cmd.strip())
 PY
 }
 
+load_project_fast_test_command() {
+    python3 - "$PROJECT_CONFIG_FILE" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+if not config_path.exists():
+    raise SystemExit(0)
+
+try:
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(0)
+
+if not isinstance(payload, dict):
+    raise SystemExit(0)
+
+test_cmd_fast = payload.get("test_cmd_fast", "")
+if not isinstance(test_cmd_fast, str) or not test_cmd_fast.strip():
+    raise SystemExit(0)
+
+print(test_cmd_fast.strip())
+PY
+}
+
 PROJECT_TEST_CMD="$(load_project_test_command)"
+PROJECT_TEST_CMD_FAST="$(load_project_fast_test_command || true)"
+
+current_project_test_command() {
+    if [ "${MODE:-}" = "auto" ] && [ -n "${PROJECT_TEST_CMD_FAST:-}" ]; then
+        printf '%s' "$PROJECT_TEST_CMD_FAST"
+        return 0
+    fi
+    printf '%s' "$PROJECT_TEST_CMD"
+}
 
 run_project_test_command() {
-    bash -lc "$PROJECT_TEST_CMD"
+    bash -lc "$(current_project_test_command)"
 }
 
 validate_modified_shell_scripts() {
@@ -4002,8 +4039,8 @@ run_pre_task_check() {
     if should_run_full_pre_task_suite; then
         check_mode="full"
         timeout_sec="$DEFAULT_PRETASK_FULL_TIMEOUT_SEC"
-        PRETASK_CHECK_SCOPE="$PROJECT_TEST_CMD"
-        PRETASK_HEAL_DESCRIPTION="Before starting the task queue, the configured test command is failing: $PROJECT_TEST_CMD. Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features."
+        PRETASK_CHECK_SCOPE="$(current_project_test_command)"
+        PRETASK_HEAL_DESCRIPTION="Before starting the task queue, the configured test command is failing: $(current_project_test_command). Find the root cause and fix it so all tests pass. Do NOT change tasks.json or progress.md. Do NOT add new features."
     else
         PRETASK_CHECK_SCOPE="fast Python validation"
         PRETASK_HEAL_DESCRIPTION="Before starting the task queue, fast Python validation is failing. Fix Python syntax errors and unresolved imports without changing tasks.json or progress.md. Do NOT add new features."

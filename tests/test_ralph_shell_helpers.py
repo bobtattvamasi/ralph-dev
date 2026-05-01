@@ -103,6 +103,16 @@ def write_tool_shim(path: Path) -> None:
     path.chmod(0o755)
 
 
+def write_project_test_commands(project_dir: Path, test_cmd: str, test_cmd_fast: str | None = None) -> None:
+    payload: dict[str, str] = {"test_cmd": test_cmd}
+    if test_cmd_fast is not None:
+        payload["test_cmd_fast"] = test_cmd_fast
+    (project_dir / ".ralph" / "project.json").write_text(
+        json.dumps(payload, indent=2),
+        encoding="utf-8",
+    )
+
+
 def test_handoff_candidate_paths_include_packaged_and_test_evidence(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     (project_dir / "scripts" / "ralph_bot.py").write_text(
@@ -274,6 +284,38 @@ def test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_sta
         "MODE=status\nensure_startup_runtime_dependencies\nprintf 'status-ok\\n'\n",
     )
     assert status_ok.returncode == 0, status_ok.stdout + status_ok.stderr
+
+
+def test_auto_mode_prefers_project_fast_test_command_but_task_mode_uses_full_command(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    write_project_test_commands(
+        project_dir,
+        "python3 -c \"from pathlib import Path; Path('full.log').write_text('full\\n', encoding='utf-8')\"",
+        "python3 -c \"from pathlib import Path; Path('fast.log').write_text('fast\\n', encoding='utf-8')\"",
+    )
+
+    auto_result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "PROJECT_TEST_CMD=\"$(load_project_test_command)\"\n"
+        "PROJECT_TEST_CMD_FAST=\"$(load_project_fast_test_command || true)\"\n"
+        "run_project_test_command\n",
+    )
+    assert auto_result.returncode == 0, auto_result.stdout + auto_result.stderr
+    assert (project_dir / "fast.log").read_text(encoding="utf-8").splitlines() == ["fast"]
+    assert not (project_dir / "full.log").exists()
+
+    (project_dir / "fast.log").unlink(missing_ok=True)
+    task_result = run_helper(
+        project_dir,
+        "MODE=task\n"
+        "PROJECT_TEST_CMD=\"$(load_project_test_command)\"\n"
+        "PROJECT_TEST_CMD_FAST=\"$(load_project_fast_test_command || true)\"\n"
+        "run_project_test_command\n",
+    )
+    assert task_result.returncode == 0, task_result.stdout + task_result.stderr
+    assert (project_dir / "full.log").read_text(encoding="utf-8").splitlines() == ["full"]
+    assert not (project_dir / "fast.log").exists()
 
 
 def test_run_next_task_helper_blocks_on_helper_failure(tmp_path: Path) -> None:
