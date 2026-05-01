@@ -101,6 +101,37 @@ append_kickoff_brief_if_missing() {
     } >> "$file_path"
 }
 
+prepare_kickoff_init_runtime() {
+    local description="${1:-}"
+    local runtime_dir=""
+
+    [ -n "$description" ] || return 1
+
+    runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/ralph-kickoff.XXXXXX")"
+    mkdir -p "$runtime_dir"
+
+    cp "$RALPH_DIR/ralph-init.sh" "$runtime_dir/ralph-init.sh"
+    cp -R "$RALPH_DIR/templates" "$runtime_dir/templates"
+
+    if [ -f "$RALPH_DIR/.env.example" ]; then
+        cp "$RALPH_DIR/.env.example" "$runtime_dir/.env.example"
+    fi
+
+    append_kickoff_brief_if_missing \
+        "$runtime_dir/templates/ARCHITECTURE.md.template" \
+        "## Kickoff Brief" \
+        "<!-- ralph-kickoff-brief -->" \
+        "$description"
+
+    append_kickoff_brief_if_missing \
+        "$runtime_dir/templates/memory/core.md.template" \
+        "## Kickoff Brief" \
+        "<!-- ralph-kickoff-brief -->" \
+        "$description"
+
+    printf '%s\n' "$runtime_dir"
+}
+
 seed_kickoff_context() {
     local project_dir="${1:-}"
     local description="${2:-}"
@@ -128,6 +159,7 @@ kickoff_project() {
     local raw_target="${1:-}"
     local description="${2:-}"
     local init_script="$RALPH_DIR/ralph-init.sh"
+    local kickoff_runtime_dir=""
     local kickoff_dir=""
     local project_name=""
 
@@ -145,12 +177,19 @@ kickoff_project() {
     mkdir -p "$kickoff_dir"
     kickoff_dir="$(cd "$kickoff_dir" && pwd)"
     project_name="$(basename "$kickoff_dir")"
+    kickoff_runtime_dir="$(prepare_kickoff_init_runtime "$description")"
+
+    if [ ! -f "$kickoff_runtime_dir/ralph-init.sh" ]; then
+        echo "❌ Failed to prepare kickoff runtime"
+        return 1
+    fi
 
     (
+        trap 'rm -rf "$kickoff_runtime_dir"' EXIT
         cd "$kickoff_dir"
         export RALPH_KICKOFF_DESCRIPTION="$description"
         export PROJECT_DESCRIPTION="$description"
-        bash "$init_script" "$project_name"
+        bash "$kickoff_runtime_dir/ralph-init.sh" "$project_name"
         seed_kickoff_context "$kickoff_dir" "$description"
     )
 

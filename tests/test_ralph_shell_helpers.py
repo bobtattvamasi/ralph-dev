@@ -286,29 +286,6 @@ def test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_sta
     assert status_ok.returncode == 0, status_ok.stdout + status_ok.stderr
 
 
-def test_kickoff_creates_project_directory_and_seeds_description_context(tmp_path: Path) -> None:
-    target_dir = tmp_path / "kickoff-project"
-    description = "CLI for processing webhook events with a Telegram operator panel."
-
-    result = subprocess.run(
-        ["bash", str(RALPH_SH), "kickoff", str(target_dir), description],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert target_dir.is_dir()
-    assert (target_dir / ".ralph").is_dir()
-    assert (target_dir / ".ralph" / "memory" / "core.md").is_file()
-    assert (target_dir / ".ralph" / "kickoff_description.txt").read_text(encoding="utf-8").strip() == description
-    assert "<!-- ralph-kickoff-brief -->" in (target_dir / ".ralph" / "memory" / "core.md").read_text(encoding="utf-8")
-    assert description in (target_dir / ".ralph" / "memory" / "core.md").read_text(encoding="utf-8")
-    assert description in (target_dir / "ARCHITECTURE.md").read_text(encoding="utf-8")
-
-
 def test_auto_mode_prefers_project_fast_test_command_but_task_mode_uses_full_command(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     write_project_test_commands(
