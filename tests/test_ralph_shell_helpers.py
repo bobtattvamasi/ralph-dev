@@ -365,6 +365,8 @@ def test_enforce_task_wall_clock_cap_blocks_long_running_task(tmp_path: Path) ->
 
     result = run_helper(
         project_dir,
+        "MODE=auto\n"
+        "init_auto_run_summary\n"
         "write_state() { printf '%s|%s|%s|%s\\n' \"$1\" \"$2\" \"$3\" \"$4\" > state_capture.txt; }\n"
         "TASK_ID='T01'\n"
         "TASK_START=$(( $(date +%s) - 5 ))\n"
@@ -374,9 +376,34 @@ def test_enforce_task_wall_clock_cap_blocks_long_running_task(tmp_path: Path) ->
 
     assert result.returncode == 1
     assert "Task T01 exceeded wall-clock cap (1s), marking blocked" in (result.stdout + result.stderr)
+    assert "AUTO_RUN_SUMMARY done=0 failed=0 blocked=1 skipped=0" in result.stdout
+    assert "AUTO_TASK_RESULT T01 status=blocked reason=Task T01 exceeded wall-clock cap (1s)" in result.stdout
     assert (project_dir / "state_capture.txt").read_text(encoding="utf-8").strip() == (
         "blocked|T01|task_wall_cap|Task T01 exceeded wall-clock cap (1s)"
     )
+
+
+def test_auto_run_summary_tracks_done_failed_blocked_and_skipped_tasks(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "init_auto_run_summary\n"
+        "AUTO_SUMMARY_START_TS=$(( $(date +%s) - 3 ))\n"
+        "auto_record_task_result 'T01' done 'approved'\n"
+        "auto_record_task_result 'T02' failed 'Final git commit failed after approval'\n"
+        "auto_record_task_result 'T03' blocked 'Missing required asset from handoff queue'\n"
+        "auto_record_task_result 'T04' skipped 'Skipped by user via Telegram'\n"
+        "print_auto_run_summary\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0] == "AUTO_RUN_SUMMARY done=1 failed=1 blocked=1 skipped=1 duration=3"
+    assert "AUTO_TASK_RESULT T02 status=failed reason=Final git commit failed after approval" in lines
+    assert "AUTO_TASK_RESULT T03 status=blocked reason=Missing required asset from handoff queue" in lines
+    assert "AUTO_TASK_RESULT T04 status=skipped reason=Skipped by user via Telegram" in lines
 
 
 def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> None:

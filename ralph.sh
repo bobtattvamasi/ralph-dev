@@ -625,6 +625,7 @@ cleanup() {
     fi
     rm -f "/tmp/ralph_coder_$$.txt"
     log "🧹 Cleanup complete"
+    print_auto_run_summary
 }
 handle_interrupt() {
     log "⛔ Interrupt signal received, stopping Ralph..."
@@ -667,6 +668,110 @@ QUEUE_EXIT_LOG="🎉 All tasks complete!"
 FINAL_EXIT_CODE=0
 REASON=""
 PROJECT_CONFIG_FILE="$PROJECT_DIR/.ralph/project.json"
+AUTO_SUMMARY_ENABLED=0
+AUTO_SUMMARY_START_TS=0
+AUTO_SUMMARY_DONE=0
+AUTO_SUMMARY_FAILED=0
+AUTO_SUMMARY_BLOCKED=0
+AUTO_SUMMARY_SKIPPED=0
+AUTO_SUMMARY_RESULTS_FILE=""
+AUTO_SUMMARY_PRINTED=0
+
+sanitize_auto_summary_reason() {
+    local raw_reason="${1:-}"
+
+    RALPH_AUTO_SUMMARY_REASON="$raw_reason" python3 - <<'PY'
+import os
+import re
+
+reason = os.environ.get("RALPH_AUTO_SUMMARY_REASON", "")
+reason = re.sub(r"\s+", " ", reason).strip()
+if not reason:
+    reason = "unspecified"
+if len(reason) > 160:
+    reason = reason[:157].rstrip() + "..."
+print(reason)
+PY
+}
+
+init_auto_run_summary() {
+    [ "${MODE:-}" = "auto" ] || return 0
+    [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 0 ] || return 0
+
+    AUTO_SUMMARY_ENABLED=1
+    AUTO_SUMMARY_START_TS=$(date +%s)
+    AUTO_SUMMARY_DONE=0
+    AUTO_SUMMARY_FAILED=0
+    AUTO_SUMMARY_BLOCKED=0
+    AUTO_SUMMARY_SKIPPED=0
+    AUTO_SUMMARY_PRINTED=0
+    AUTO_SUMMARY_RESULTS_FILE="${TMPDIR:-/tmp}/ralph_auto_summary_$$.log"
+    : > "$AUTO_SUMMARY_RESULTS_FILE"
+}
+
+auto_record_task_result() {
+    local task_id="${1:-}"
+    local raw_status="${2:-}"
+    local raw_reason="${3:-}"
+    local status=""
+    local short_reason=""
+
+    [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 1 ] || return 0
+    [ -n "$task_id" ] || return 0
+
+    case "$raw_status" in
+        done|verified_done|approved)
+            status="done"
+            AUTO_SUMMARY_DONE=$((AUTO_SUMMARY_DONE + 1))
+            ;;
+        failed)
+            status="failed"
+            AUTO_SUMMARY_FAILED=$((AUTO_SUMMARY_FAILED + 1))
+            ;;
+        blocked)
+            status="blocked"
+            AUTO_SUMMARY_BLOCKED=$((AUTO_SUMMARY_BLOCKED + 1))
+            ;;
+        skipped)
+            status="skipped"
+            AUTO_SUMMARY_SKIPPED=$((AUTO_SUMMARY_SKIPPED + 1))
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    if [ "$status" = "done" ]; then
+        return 0
+    fi
+
+    short_reason=$(sanitize_auto_summary_reason "$raw_reason")
+    printf 'AUTO_TASK_RESULT %s status=%s reason=%s\n' "$task_id" "$status" "$short_reason" >> "$AUTO_SUMMARY_RESULTS_FILE"
+}
+
+print_auto_run_summary() {
+    local duration=0
+
+    [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 1 ] || return 0
+    [ "${AUTO_SUMMARY_PRINTED:-0}" -eq 0 ] || return 0
+
+    AUTO_SUMMARY_PRINTED=1
+    if [ "${AUTO_SUMMARY_START_TS:-0}" -gt 0 ] 2>/dev/null; then
+        duration=$(( $(date +%s) - AUTO_SUMMARY_START_TS ))
+    fi
+
+    printf 'AUTO_RUN_SUMMARY done=%s failed=%s blocked=%s skipped=%s duration=%s\n' \
+        "$AUTO_SUMMARY_DONE" \
+        "$AUTO_SUMMARY_FAILED" \
+        "$AUTO_SUMMARY_BLOCKED" \
+        "$AUTO_SUMMARY_SKIPPED" \
+        "$duration"
+
+    if [ -n "${AUTO_SUMMARY_RESULTS_FILE:-}" ] && [ -f "$AUTO_SUMMARY_RESULTS_FILE" ]; then
+        cat "$AUTO_SUMMARY_RESULTS_FILE"
+        rm -f "$AUTO_SUMMARY_RESULTS_FILE"
+    fi
+}
 
 load_project_test_command() {
     python3 - "$PROJECT_CONFIG_FILE" <<'PY'
@@ -1918,6 +2023,7 @@ run_next_task_helper() {
         fi
         rm -f "$next_task_stderr"
         write_state "blocked" "" "task_selection" "next_task.py failed during task selection"
+        print_auto_run_summary
         exit 1
     fi
 
@@ -1978,6 +2084,8 @@ enforce_task_wall_clock_cap() {
 
     log "❌ Task ${task_id:-unknown} exceeded wall-clock cap (${cap}s), marking blocked"
     write_state "blocked" "${task_id:-}" "task_wall_cap" "Task ${task_id:-unknown} exceeded wall-clock cap (${cap}s)"
+    auto_record_task_result "${task_id:-}" "blocked" "Task ${task_id:-unknown} exceeded wall-clock cap (${cap}s)"
+    print_auto_run_summary
     exit 1
 }
 
@@ -2062,6 +2170,7 @@ skip_current_task() {
     local reason="${1:-Skipped by user via Telegram}"
     log "⏭ Skip signal received for $TASK_ID: $reason"
     run_update_task_strict "$TASK_ID" skipped "$reason" "skip_task" "Failed to persist skipped task status"
+    auto_record_task_result "$TASK_ID" "skipped" "$reason"
     write_state "running" "$TASK_ID" "skipped" "$reason"
     notify "⏭ $TASK_ID skipped: $reason"
     clear_control_action
@@ -2072,6 +2181,7 @@ defer_blocked_task() {
     log "⚠️ Task $TASK_ID blocked: $reason — skipping, continuing queue"
     notify "⚠️ $TASK_ID blocked (auto-skipped): $reason"
     run_update_task_strict "$TASK_ID" blocked "$reason" "blocked_task" "Failed to persist blocked task status"
+    auto_record_task_result "$TASK_ID" "blocked" "$reason"
     write_state "running" "$TASK_ID" "blocked" "$reason"
     TASK_BLOCKED=true
     TASK_DONE=true
@@ -4655,6 +4765,7 @@ case "$MODE" in
         ;;
     auto)
         NEXT_ARGS=""
+        init_auto_run_summary
         ;;
     *)
         echo "Usage: ralph.sh {kickoff|task|handoff|phase|auto|benchmark|redo|status|audit|audit-last|trust-report|re-audit-last} [target]"
@@ -5336,6 +5447,8 @@ except Exception:
                     FINAL_COMMIT_STDERR="$(mktemp "${TMPDIR:-/tmp}/ralph_final_commit_stderr.XXXXXX")" || {
                         log "❌ Failed to allocate temp file for final git commit stderr capture"
                         write_state "blocked" "$TASK_ID" "git_commit" "Final git commit failed after approval"
+                        auto_record_task_result "$TASK_ID" "failed" "Final git commit failed after approval"
+                        print_auto_run_summary
                         exit 1
                     }
                     if ! git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>"$FINAL_COMMIT_STDERR"; then
@@ -5347,6 +5460,8 @@ except Exception:
                         fi
                         rm -f "$FINAL_COMMIT_STDERR"
                         write_state "blocked" "$TASK_ID" "git_commit" "Final git commit failed after approval"
+                        auto_record_task_result "$TASK_ID" "failed" "Final git commit failed after approval"
+                        print_auto_run_summary
                         exit 1
                     fi
                     rm -f "$FINAL_COMMIT_STDERR"
@@ -5382,6 +5497,7 @@ except Exception:
                     log "╚═══════════════════════════════════════════╝"
                     log "💰 Task $TASK_ID cost: ~$(format_tokens "$TASK_TOKENS") tokens (~\$$(estimate_cost "$TASK_TOKENS") at \$3/1M input)"
                     SESSION_TASKS=$((SESSION_TASKS + 1))
+                    auto_record_task_result "$TASK_ID" "done" "approved"
                 fi
                 ;;
 
