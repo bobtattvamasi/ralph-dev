@@ -1735,33 +1735,7 @@ PY
 ensure_metrics_schema
 
 validate_requested_task() {
-    python3 - "$TARGET" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-task_id = sys.argv[1]
-data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
-tasks = data.get("tasks", [])
-completed_statuses = {"done", "verified_done"}
-
-task = next((item for item in tasks if item.get("id") == task_id), None)
-if task is None:
-    print(f"❌ Requested task not found: {task_id}")
-    raise SystemExit(1)
-
-status = str(task.get("status", ""))
-if status != "pending":
-    print(f"❌ Requested task {task_id} is not runnable: status={status}")
-    raise SystemExit(1)
-
-unmet = [dep for dep in task.get("dependencies", []) if next((t for t in tasks if t.get("id") == dep and t.get("status") in completed_statuses), None) is None]
-if unmet:
-    print(f"❌ Requested task {task_id} is not runnable: unmet dependencies: {', '.join(unmet)}")
-    raise SystemExit(1)
-
-print(f"🎯 Requested task {task_id} is runnable and will be executed directly")
-PY
+    python3 "$RALPH_DIR/scripts/state_service.py" --project "$PROJECT_DIR" validate-requested "$TARGET"
 }
 
 log_deadlock_reason() {
@@ -4448,19 +4422,7 @@ run_pre_task_check() {
 }
 
 benchmark_select_simple_tasks() {
-    python3 - <<'PY'
-import json
-from pathlib import Path
-
-data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
-selected = [
-    task["id"]
-    for task in data.get("tasks", [])
-    if task.get("status") == "pending" and task.get("complexity") == "simple"
-][:3]
-for task_id in selected:
-    print(task_id)
-PY
+    python3 "$RALPH_DIR/scripts/state_service.py" --project "$PROJECT_DIR" select-simple-pending
 }
 
 copy_repo_for_benchmark() {
@@ -4736,26 +4698,7 @@ PY
 # ─── Status ───
 print_task_progress_report() {
     echo "=== Task Progress ==="
-    python3 - <<'PY' 2>/dev/null || echo "task progress unavailable"
-import json
-from pathlib import Path
-
-data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
-tasks = data["tasks"]
-done = sum(1 for task in tasks if task["status"] in {"done", "verified_done"})
-total = len(tasks)
-print(f"  Total: {done}/{total} tasks done")
-for phase in sorted({str(task["phase"]) for task in tasks}):
-    phase_tasks = [task for task in tasks if str(task["phase"]) == phase]
-    phase_done = sum(1 for task in phase_tasks if task["status"] in {"done", "verified_done"})
-    print(f"  Phase {phase}: {phase_done}/{len(phase_tasks)}")
-print()
-pending = [task for task in tasks if task["status"] == "pending"]
-if pending:
-    print("Next pending:")
-    for task in pending[:5]:
-        print(f"  {task['id']} [{task['priority']}] {task['title']}")
-PY
+    python3 "$RALPH_DIR/scripts/state_service.py" --project "$PROJECT_DIR" print-progress 2>/dev/null || echo "task progress unavailable"
 }
 
 print_status_report() {
