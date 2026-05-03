@@ -888,8 +888,19 @@ PY
 PROJECT_TEST_CMD="$(load_project_test_command)"
 PROJECT_TEST_CMD_FAST="$(load_project_fast_test_command || true)"
 
+should_use_fast_project_test_gate() {
+    case "${MODE:-}" in
+        auto|phase)
+            [ -n "${PROJECT_TEST_CMD_FAST:-}" ]
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 current_project_test_command() {
-    if [ "${MODE:-}" = "auto" ] && [ -n "${PROJECT_TEST_CMD_FAST:-}" ]; then
+    if should_use_fast_project_test_gate; then
         printf '%s' "$PROJECT_TEST_CMD_FAST"
         return 0
     fi
@@ -897,7 +908,7 @@ current_project_test_command() {
 }
 
 current_project_test_timeout_sec() {
-    if [ "${MODE:-}" = "auto" ] && [ -n "${PROJECT_TEST_CMD_FAST:-}" ]; then
+    if should_use_fast_project_test_gate; then
         printf '%s' "${RALPH_TESTER_FAST_TIMEOUT_SEC:-$DEFAULT_TESTER_FAST_TIMEOUT_SEC}"
         return 0
     fi
@@ -4385,7 +4396,7 @@ PY
 }
 
 should_run_full_pre_task_suite() {
-    [ "$MODE" = "auto" ] || [ "${RALPH_PRETASK_FULL_TEST:-0}" = "1" ]
+    [ "${RALPH_PRETASK_FULL_TEST:-0}" = "1" ]
 }
 
 run_fast_python_validation() {

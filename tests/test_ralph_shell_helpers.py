@@ -289,7 +289,7 @@ def test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_sta
 
 
 @pytest.mark.overnight_smoke
-def test_auto_mode_prefers_project_fast_test_command_but_task_mode_uses_full_command(tmp_path: Path) -> None:
+def test_auto_and_phase_modes_prefer_project_fast_test_command_but_task_mode_uses_full_command(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     write_project_test_commands(
         project_dir,
@@ -305,6 +305,18 @@ def test_auto_mode_prefers_project_fast_test_command_but_task_mode_uses_full_com
         "run_project_test_command\n",
     )
     assert auto_result.returncode == 0, auto_result.stdout + auto_result.stderr
+    assert (project_dir / "fast.log").read_text(encoding="utf-8").splitlines() == ["fast"]
+    assert not (project_dir / "full.log").exists()
+
+    (project_dir / "fast.log").unlink(missing_ok=True)
+    phase_result = run_helper(
+        project_dir,
+        "MODE=phase\n"
+        "PROJECT_TEST_CMD=\"$(load_project_test_command)\"\n"
+        "PROJECT_TEST_CMD_FAST=\"$(load_project_fast_test_command || true)\"\n"
+        "run_project_test_command\n",
+    )
+    assert phase_result.returncode == 0, phase_result.stdout + phase_result.stderr
     assert (project_dir / "fast.log").read_text(encoding="utf-8").splitlines() == ["fast"]
     assert not (project_dir / "full.log").exists()
 
@@ -383,6 +395,36 @@ def test_tester_timeout_logs_reason_and_structured_report(tmp_path: Path) -> Non
     report = json.loads(report_line[len("REPORT="):])
     assert report["exit_code"] == 124
     assert report["timed_out"] is True
+
+
+def test_phase_mode_tester_uses_fast_command_and_timeout(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    write_project_test_commands(
+        project_dir,
+        "python3 -c \"print('full-ok')\"",
+        "python3 -c \"print('phase-fast-ok')\"",
+    )
+
+    result = run_helper(
+        project_dir,
+        "MODE=phase\n"
+        "PROJECT_TEST_CMD=\"$(load_project_test_command)\"\n"
+        "PROJECT_TEST_CMD_FAST=\"$(load_project_fast_test_command || true)\"\n"
+        "printf 'CMD=%s\\nTIMEOUT=%s\\n' \"$(current_project_test_command)\" \"$(current_project_test_timeout_sec)\"\n"
+        "TESTER_STATUS=0\n"
+        "run_tester_phase T01 HEAD HEAD || TESTER_STATUS=$?\n"
+        "printf 'STATUS=%s\\nREPORT=%s\\n' \"$TESTER_STATUS\" \"$TESTER_REPORT\"\n",
+        env={"RALPH_TESTER_FAST_TIMEOUT_SEC": "7", "RALPH_TESTER_FULL_TIMEOUT_SEC": "33"},
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "CMD=python3 -c \"print('phase-fast-ok')\"" in result.stdout
+    assert "TIMEOUT=7" in result.stdout
+    assert "TESTER_START T01 command=python3 -c \"print('phase-fast-ok')\"" in combined
+    report_line = next(line for line in result.stdout.splitlines() if line.startswith("REPORT="))
+    report = json.loads(report_line[len("REPORT="):])
+    assert report["command"] == "python3 -c \"print('phase-fast-ok')\""
 
 
 def test_run_next_task_helper_blocks_on_helper_failure(tmp_path: Path) -> None:
