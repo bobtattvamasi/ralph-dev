@@ -139,3 +139,31 @@ def test_checker_supports_task_id_and_include_non_pending(tmp_path: Path) -> Non
         "TASK_HYGIENE_WARN T01 BOOTSTRAP_FEATURE bootstrap/kickoff/init/generation style task is risky for unattended auto",
         "TASK_HYGIENE_WARN T01 MISSING_TEST_TARGET acceptance implies test coverage but target_files has no tests/ path",
     ]
+
+
+def test_checker_reports_missing_test_target_for_implicit_behavioral_verification(tmp_path: Path) -> None:
+    project_dir = make_project(tmp_path)
+    write_tasks(
+        project_dir,
+        [
+            {
+                "id": "R20-05",
+                "status": "pending",
+                "title": "Safe auto-commit — scope to task files only",
+                "description": "Replace git add -A with scoped staging.",
+                "target_files": ["scripts/auto_commit.sh"],
+                "acceptance_criteria": [
+                    "Create dirty worktree with unrelated files. Run auto-commit. Must refuse to commit unrelated changes."
+                ],
+                "priority": "high",
+                "complexity": "moderate",
+            }
+        ],
+    )
+
+    result = run_checker(project_dir, "--task-id", "R20-05")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        "TASK_HYGIENE_WARN R20-05 MISSING_TEST_TARGET acceptance implies test coverage but target_files has no tests/ path",
+    ]

@@ -492,6 +492,175 @@ def test_auto_run_summary_preserves_tester_timeout_reason(tmp_path: Path) -> Non
     assert "AUTO_TASK_RESULT T01 status=blocked reason=tester_timeout" in lines
 
 
+def test_scope_contract_invalid_blocks_auto_task_without_consuming_retry(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    shutil.copy2(REPO_ROOT / "scripts" / "update_task.py", project_dir / "scripts" / "update_task.py")
+    (project_dir / "scripts" / "ralph_notify.py").write_text("print('ok')\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "TASK_ID='T01'\n"
+        "FIX_RETRY=0\n"
+        "TASK_BLOCKED=false\n"
+        "TASK_DONE=false\n"
+        "init_auto_run_summary\n"
+        "defer_scope_contract_invalid_task 'tests/test_ralph_shell_helpers.py'\n"
+        "print_auto_run_summary\n"
+        "printf 'FIX_RETRY=%s\\nTASK_BLOCKED=%s\\nTASK_DONE=%s\\n' \"$FIX_RETRY\" \"$TASK_BLOCKED\" \"$TASK_DONE\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "TASK_CONTRACT_INVALID T01 tests/test_ralph_shell_helpers.py" in combined
+    assert "AUTO_TASK_RESULT T01 status=blocked reason=scope_contract_invalid" in result.stdout
+    assert "FIX_RETRY=0" in result.stdout
+    assert "TASK_BLOCKED=true" in result.stdout
+    assert "TASK_DONE=true" in result.stdout
+    task = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    assert task["status"] == "blocked"
+    assert task["revision_notes"] == (
+        "scope_contract_invalid: auto-reverted out-of-scope files: tests/test_ralph_shell_helpers.py"
+    )
+
+
+def test_scope_contract_repair_suggestion_marks_missing_test_target(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    shutil.copy2(REPO_ROOT / "scripts" / "update_task.py", project_dir / "scripts" / "update_task.py")
+    (project_dir / "scripts" / "ralph_notify.py").write_text("print('ok')\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "TASK_ID='T01'\n"
+        "init_auto_run_summary\n"
+        "defer_scope_contract_invalid_task $'tests/test_mutator_scripts.py\\nfoo/bar.py'\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert (
+        "TASK_CONTRACT_REPAIR_SUGGESTION T01 reason=missing_test_target "
+        "add_target_files=tests/test_mutator_scripts.py,foo/bar.py"
+    ) in combined
+
+
+def test_scope_contract_repair_suggestion_marks_missing_config_target(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    shutil.copy2(REPO_ROOT / "scripts" / "update_task.py", project_dir / "scripts" / "update_task.py")
+    (project_dir / "scripts" / "ralph_notify.py").write_text("print('ok')\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "TASK_ID='T01'\n"
+        "init_auto_run_summary\n"
+        "defer_scope_contract_invalid_task $'.ralph/project.json\\npyproject.toml'\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert (
+        "TASK_CONTRACT_REPAIR_SUGGESTION T01 reason=missing_config_target "
+        "add_target_files=.ralph/project.json,pyproject.toml"
+    ) in combined
+
+
+def test_auto_apply_scope_contract_repair_adds_safe_test_target_and_commits(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+
+    result = run_helper(
+        project_dir,
+        "TASK_ID='T01'\n"
+        "TASK_CONTRACT_REPAIR_ATTEMPTED=0\n"
+        "STATUS=0\n"
+        "auto_apply_scope_contract_repair 'tests/test_ralph_shell_helpers.py' || STATUS=$?\n"
+        "printf 'STATUS=%s\\n' \"$STATUS\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "STATUS=0" in result.stdout
+    assert (
+        "TASK_CONTRACT_REPAIR_APPLIED T01 reason=missing_test_target "
+        "add_target_files=tests/test_ralph_shell_helpers.py"
+    ) in combined
+    task = json.loads((project_dir / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    assert task["target_files"] == ["scripts/ralph_bot.py", "tests/test_ralph_shell_helpers.py"]
+    commit_subject = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert commit_subject == "chore: repair target_files for T01"
+
+
+def test_auto_apply_scope_contract_repair_allows_known_config_path(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+
+    result = run_helper(
+        project_dir,
+        "TASK_ID='T01'\n"
+        "STATUS=0\n"
+        "auto_apply_scope_contract_repair '.ralph/project.json' || STATUS=$?\n"
+        "printf 'STATUS=%s\\n' \"$STATUS\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "STATUS=0" in result.stdout
+    assert (
+        "TASK_CONTRACT_REPAIR_APPLIED T01 reason=missing_config_target "
+        "add_target_files=.ralph/project.json"
+    ) in combined
+
+
+def test_auto_apply_scope_contract_repair_refuses_unsafe_source_path(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+
+    original_tasks = (project_dir / "tasks.json").read_text(encoding="utf-8")
+    original_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    result = run_helper(
+        project_dir,
+        "TASK_ID='T01'\n"
+        "STATUS=0\n"
+        "auto_apply_scope_contract_repair 'src/app.py' || STATUS=$?\n"
+        "printf 'STATUS=%s\\n' \"$STATUS\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "STATUS=1" in result.stdout
+    assert "TASK_CONTRACT_REPAIR_APPLIED" not in combined
+    assert (project_dir / "tasks.json").read_text(encoding="utf-8") == original_tasks
+    current_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert current_commit == original_commit
+
+
 def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     (project_dir / "ralph_state.json").write_text(

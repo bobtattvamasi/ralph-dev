@@ -41,6 +41,19 @@ TASK_HYGIENE_TEST_IMPLYING_PATTERNS = (
     r"\btest\b",
     r"\btests\b",
     r"\bcoverage\b",
+    r"\bcreate dirty worktree\b",
+    r"\brun [a-z0-9_.-]+\b",
+    r"\bmust refuse\b",
+    r"\bmust fail\b",
+    r"\bmust skip\b",
+    r"\bverify\b",
+    r"\bshould block\b",
+    r"\bexits?\b",
+    r"\bconfig/profile behavior\b",
+    r"\bcommand responds\b",
+    r"\bshows\b",
+    r"\bprints\b",
+    r"\blogs\b",
 )
 TASK_HYGIENE_RETRY_PATTERNS = (
     r"failed after retries",
@@ -548,6 +561,61 @@ def unsafe_task_reason(task: dict[str, Any]) -> str:
         return ""
     code, _ = warnings[0]
     return code
+
+
+SCOPE_CONTRACT_CONFIG_PATTERNS = {
+    ".ralph/project.json",
+    "pyproject.toml",
+    "package.json",
+    "tsconfig.json",
+    "pnpm-workspace.yaml",
+}
+SCOPE_CONTRACT_AUTO_REPAIR_CONFIG_ALLOWLIST = {
+    ".ralph/project.json",
+    "pyproject.toml",
+}
+
+
+def scope_contract_repair_payload(paths: list[str]) -> dict[str, str]:
+    normalized_paths: list[str] = []
+    seen: set[str] = set()
+
+    for raw_path in paths:
+        raw_value = str(raw_path or "").strip().replace("\\", "/")
+        if raw_value.startswith(".ralph/"):
+            path = raw_value
+        else:
+            path = normalize_path(raw_path)
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        normalized_paths.append(path)
+
+    reason = "missing_target_file"
+    if any(path.startswith("tests/") for path in normalized_paths):
+        reason = "missing_test_target"
+    elif any(path in SCOPE_CONTRACT_CONFIG_PATTERNS or path.endswith(".toml") for path in normalized_paths):
+        reason = "missing_config_target"
+
+    return {
+        "reason": reason,
+        "add_target_files": ",".join(normalized_paths),
+    }
+
+
+def scope_contract_auto_repair_payload(paths: list[str]) -> dict[str, Any]:
+    repair = scope_contract_repair_payload(paths)
+    target_paths = [item for item in repair["add_target_files"].split(",") if item]
+    allowed = bool(target_paths) and len(target_paths) <= 2 and all(
+        item.startswith("tests/") or item in SCOPE_CONTRACT_AUTO_REPAIR_CONFIG_ALLOWLIST
+        for item in target_paths
+    )
+    return {
+        "reason": repair["reason"],
+        "add_target_files": repair["add_target_files"],
+        "allowed": allowed,
+        "count": len(target_paths),
+    }
 
 
 def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = None) -> dict[str, Any]:

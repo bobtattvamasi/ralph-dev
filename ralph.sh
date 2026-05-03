@@ -2323,6 +2323,150 @@ defer_blocked_task() {
     TASK_DONE=true
 }
 
+defer_scope_contract_invalid_task() {
+    local reverted_paths="${1:-}"
+    local detail_reason=""
+    local repair_payload=""
+    local repair_reason=""
+    local repair_targets=""
+
+    detail_reason="scope_contract_invalid: auto-reverted out-of-scope files: $reverted_paths"
+    log "TASK_CONTRACT_INVALID $TASK_ID $reverted_paths"
+    repair_payload=$(REVERTED_PATHS="$reverted_paths" python3 - <<'PY'
+import json
+import os
+
+try:
+    from scripts.ralph_common import scope_contract_repair_payload
+except ImportError:
+    from ralph_common import scope_contract_repair_payload
+
+paths = [line.strip() for line in os.environ.get("REVERTED_PATHS", "").splitlines() if line.strip()]
+print(json.dumps(scope_contract_repair_payload(paths)))
+PY
+)
+    repair_reason=$(printf '%s' "$repair_payload" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("reason",""))' 2>/dev/null || echo "")
+    repair_targets=$(printf '%s' "$repair_payload" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("add_target_files",""))' 2>/dev/null || echo "")
+    if [ -n "$repair_targets" ]; then
+        log "TASK_CONTRACT_REPAIR_SUGGESTION $TASK_ID reason=$repair_reason add_target_files=$repair_targets"
+    fi
+    notify "⚠️ $TASK_ID blocked (invalid task contract): $reverted_paths"
+    run_update_task_strict "$TASK_ID" blocked "$detail_reason" "scope_contract" "Failed to persist scope contract invalid task status"
+    auto_record_task_result "$TASK_ID" "blocked" "scope_contract_invalid"
+    write_state "running" "$TASK_ID" "blocked" "$detail_reason"
+    TASK_BLOCKED=true
+    TASK_DONE=true
+}
+
+auto_apply_scope_contract_repair() {
+    local reverted_paths="${1:-}"
+    local repair_payload=""
+    local repair_allowed=""
+    local repair_reason=""
+    local repair_targets=""
+    local repair_count=""
+    local apply_output=""
+    local applied_targets=""
+    local commit_stderr=""
+
+    repair_payload=$(REVERTED_PATHS="$reverted_paths" python3 - <<'PY'
+import json
+import os
+
+try:
+    from scripts.ralph_common import scope_contract_auto_repair_payload
+except ImportError:
+    from ralph_common import scope_contract_auto_repair_payload
+
+paths = [line.strip() for line in os.environ.get("REVERTED_PATHS", "").splitlines() if line.strip()]
+print(json.dumps(scope_contract_auto_repair_payload(paths)))
+PY
+) || return 1
+    repair_allowed=$(printf '%s' "$repair_payload" | python3 -c 'import json,sys; print("true" if json.load(sys.stdin).get("allowed") else "false")' 2>/dev/null || echo "false")
+    repair_reason=$(printf '%s' "$repair_payload" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("reason",""))' 2>/dev/null || echo "")
+    repair_targets=$(printf '%s' "$repair_payload" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("add_target_files",""))' 2>/dev/null || echo "")
+    repair_count=$(printf '%s' "$repair_payload" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("count",0))' 2>/dev/null || echo "0")
+
+    if [ "$repair_allowed" != "true" ] || [ -z "$repair_targets" ] || [ "${repair_count:-0}" -gt 2 ] 2>/dev/null; then
+        return 1
+    fi
+
+    apply_output=$(TASK_ID="$TASK_ID" REPAIR_TARGETS="$repair_targets" PROJECT_DIR="$PROJECT_DIR" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+try:
+    from scripts.ralph_common import mutate_tasks_data
+except ImportError:
+    from ralph_common import mutate_tasks_data
+
+task_id = os.environ["TASK_ID"]
+project_dir = Path(os.environ["PROJECT_DIR"])
+targets = [item.strip() for item in os.environ.get("REPAIR_TARGETS", "").split(",") if item.strip()]
+result = {"status": "", "applied": [], "already_present": []}
+
+def apply(data):
+    for task in data.get("tasks", []):
+        if task.get("id") != task_id:
+            continue
+        status = str(task.get("status", "")).strip()
+        if status not in {"pending", "running", "blocked"}:
+            raise ValueError(f"task {task_id} status {status} is not eligible for auto repair")
+        result["status"] = status
+        target_files = [str(item).strip() for item in (task.get("target_files") or []) if str(item).strip()]
+        for target in targets:
+            if target in target_files:
+                result["already_present"].append(target)
+                continue
+            target_files.append(target)
+            result["applied"].append(target)
+        task["target_files"] = target_files
+        return
+    raise LookupError(task_id)
+
+mutate_tasks_data(project_dir, apply)
+print(json.dumps(result))
+PY
+) || {
+        log "❌ Failed to auto-apply target_files repair for $TASK_ID"
+        write_state "blocked" "$TASK_ID" "scope_contract" "Failed to auto-apply scope contract repair"
+        auto_record_task_result "$TASK_ID" "blocked" "scope_contract_invalid"
+        print_auto_run_summary
+        exit 1
+    }
+
+    applied_targets=$(printf '%s' "$apply_output" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin).get("applied", [])))' 2>/dev/null || echo "")
+    if [ -z "$applied_targets" ]; then
+        return 1
+    fi
+
+    log "TASK_CONTRACT_REPAIR_APPLIED $TASK_ID reason=$repair_reason add_target_files=$applied_targets"
+    git add -- tasks.json
+    commit_stderr="$(mktemp "${TMPDIR:-/tmp}/ralph_scope_repair_commit_stderr.XXXXXX")" || {
+        log "❌ Failed to allocate temp file for scope repair commit stderr capture"
+        write_state "blocked" "$TASK_ID" "scope_contract" "Scope contract repair commit failed"
+        auto_record_task_result "$TASK_ID" "blocked" "scope_contract_invalid"
+        print_auto_run_summary
+        exit 1
+    }
+    if ! git commit -m "chore: repair target_files for $TASK_ID" 2>"$commit_stderr"; then
+        log "❌ Scope contract repair commit failed for $TASK_ID"
+        if [ -s "$commit_stderr" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && log "❌ git commit: $line"
+            done < "$commit_stderr"
+        fi
+        rm -f "$commit_stderr"
+        write_state "blocked" "$TASK_ID" "scope_contract" "Scope contract repair commit failed"
+        auto_record_task_result "$TASK_ID" "blocked" "scope_contract_invalid"
+        print_auto_run_summary
+        exit 1
+    fi
+    rm -f "$commit_stderr"
+    return 0
+}
+
 wait_for_required_assets() {
     local poll_interval="${RALPH_ASSET_POLL_INTERVAL:-5}"
     local announced_wait=0
@@ -4888,6 +5032,7 @@ print(task.get('role', 'coder'))
     TASK_BLOCKED=false
     TASK_ALERTED=false
     AUDIT_WRITTEN=false
+    TASK_CONTRACT_REPAIR_ATTEMPTED=0
     FIX_INSTRUCTIONS=""
     TESTER_PHASE_REASON=""
     TASK_TOKENS=0
@@ -5182,6 +5327,17 @@ print("\n".join(data), end="")
             SCOPE_ANOMALY=$(detect_scope_anomaly "$ACTUAL_CHANGED_FILES")
             if [ -n "$SCOPE_ANOMALY_REVERTED" ] && [ -f "$RALPH_DIR/scripts/ralph_notify.py" ]; then
                 python3 "$RALPH_DIR/scripts/ralph_notify.py" "Scope anomaly in task $TASK_ID: auto-reverted out-of-scope files: $SCOPE_ANOMALY_REVERTED" >/dev/null 2>&1 || true
+            fi
+            if [ -n "$SCOPE_ANOMALY_REVERTED" ] && [ "${MODE:-}" = "auto" ]; then
+                if [ "${TASK_CONTRACT_REPAIR_ATTEMPTED:-0}" -eq 0 ] && auto_apply_scope_contract_repair "$SCOPE_ANOMALY_REVERTED"; then
+                    TASK_CONTRACT_REPAIR_ATTEMPTED=1
+                    TASK_JSON=$(run_next_task_helper --task "$TASK_ID")
+                    export TASK_JSON
+                    log "🔁 Restarting $TASK_ID after safe target_files repair"
+                    continue
+                fi
+                defer_scope_contract_invalid_task "$SCOPE_ANOMALY_REVERTED"
+                break
             fi
         fi
 
