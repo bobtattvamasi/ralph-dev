@@ -60,10 +60,38 @@ PY
     exit 1
 }
 
+is_path_in_scope() {
+    local candidate="${1:-}"
+    [ -n "$candidate" ] || return 1
+
+    while IFS= read -r scope_path; do
+        [ -n "$scope_path" ] || continue
+        if [ "$candidate" = "$scope_path" ]; then
+            return 0
+        fi
+    done < "$TASK_SCOPE_FILE"
+
+    return 1
+}
+
+while IFS= read -r status_line; do
+    [ -n "$status_line" ] || continue
+    if [[ "$status_line" != \?\?\ * ]]; then
+        continue
+    fi
+
+    untracked_path="${status_line#?? }"
+    if ! is_path_in_scope "$untracked_path"; then
+        echo "Refusing auto-commit: unrelated untracked file detected: $untracked_path" >&2
+        echo "Only current task files may be committed." >&2
+        exit 1
+    fi
+done < <(git status --porcelain)
+
 while IFS= read -r scope_path; do
     [ -n "$scope_path" ] || continue
     if [ -e "$scope_path" ] || git ls-files --error-unmatch -- "$scope_path" >/dev/null 2>&1; then
-        git add -A -- "$scope_path"
+        git add -- "$scope_path"
     fi
 done < "$TASK_SCOPE_FILE"
 
@@ -84,9 +112,10 @@ cat > "$PROMPT_FILE" <<EOF
 Проанализируй этот diff. Напиши короткое summary изменений для человека. Затем сгенерируй commit message в формате Conventional Commits.
 
 Верни ТОЛЬКО JSON-объект такого вида:
-{"summary":"...","commit_message":"type(scope): short message"}
+{"decision":"approve","summary":"...","commit_message":"type(scope): short message"}
 
 Требования:
+- decision: всегда "approve"
 - summary: 2-4 коротких пункта или 1 короткий абзац, понятный человеку
 - commit_message: одна строка в формате Conventional Commits
 - без markdown
@@ -107,30 +136,23 @@ if [ $CODEX_EXIT -ne 0 ]; then
     exit $CODEX_EXIT
 fi
 
-PARSED_JSON="$(python3 -c "
-import json, re, sys
-from pathlib import Path
-text = Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace').strip()
-try:
-    data = json.loads(text)
-except Exception:
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if not match:
-        raise SystemExit(1)
-    data = json.loads(match.group(0))
-summary = str(data.get('summary', '')).strip()
-commit_message = str(data.get('commit_message', '')).strip()
-if not summary or not commit_message:
-    raise SystemExit(1)
-print(json.dumps({'summary': summary, 'commit_message': commit_message}, ensure_ascii=False))
-" "$RESPONSE_FILE" 2>/dev/null)" || {
+PARSED_JSON="$(python3 "$PROJECT_DIR/scripts/extract_json.py" < "$RESPONSE_FILE" 2>/dev/null)" || {
     echo "Failed to parse codex response"
     cat "$RESPONSE_FILE"
     exit 1
 }
 
-SUMMARY="$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary'])" "$PARSED_JSON")"
-COMMIT_MESSAGE="$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['commit_message'])" "$PARSED_JSON")"
+SUMMARY="$(python3 -c "import json,sys; value=json.loads(sys.argv[1]).get('summary', ''); text=str(value).strip(); sys.exit(1) if not text else None; print(text)" "$PARSED_JSON" 2>/dev/null)" || {
+    echo "Parsed response is missing summary"
+    cat "$RESPONSE_FILE"
+    exit 1
+}
+
+COMMIT_MESSAGE="$(python3 -c "import json,sys; value=json.loads(sys.argv[1]).get('commit_message', ''); text=str(value).strip(); sys.exit(1) if not text else None; print(text)" "$PARSED_JSON" 2>/dev/null)" || {
+    echo "Parsed response is missing commit_message"
+    cat "$RESPONSE_FILE"
+    exit 1
+}
 
 TIMESTAMP="$(date -u '+%Y-%m-%d %H:%M UTC')"
 {
