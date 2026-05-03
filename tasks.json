@@ -3892,7 +3892,7 @@
     {
       "id": "R20-12",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Overnight run summary",
       "description": "Add a compact grep-friendly summary at the end of auto mode so an unattended overnight run reports how many tasks were completed, failed, blocked, or skipped, and why.",
       "target_files": [
@@ -3913,7 +3913,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-03T04:54:21.079553+00:00"
     },
     {
       "id": "R20-13",
@@ -4251,6 +4252,31 @@
         "docs/TODO_TARGET_F06.md"
       ],
       "completed_at": "2026-04-28T15:52:00+07:00"
+    },
+    {
+      "id": "R20-12A",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Bound post-coder test gate in task wall-clock budget",
+      "description": "Prevent long post-coder test gates from consuming the whole task wall-clock cap and blocking otherwise valid small tasks without a precise reason.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh",
+        "tests/test_ralph_shell_helpers.py"
+      ],
+      "acceptance_criteria": [
+        "Post-coder test gate logs the exact command being run.",
+        "Post-coder test gate has a separate timeout or uses existing pretask fast/full timeout policy.",
+        "If test gate times out, Ralph records reason=test_gate_timeout instead of generic task_wall_cap.",
+        "Task wall-clock cap check happens before starting lead review and reports which phase consumed the time.",
+        "Auto summary includes failed or blocked task result with reason=test_gate_timeout when this happens.",
+        "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
     }
   ]
 }
