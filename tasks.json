@@ -3820,7 +3820,7 @@
     {
       "id": "R20-06",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Reduce bot command surface to reliable core",
       "description": "Mark /status /tasks /auto /stop /pause /resume /log /tail /diff as primary. Move everything else to secondary/hidden. Update /help.",
       "target_files": [
@@ -3835,7 +3835,8 @@
       "role": "coder",
       "depends_on": [
         "R20-02"
-      ]
+      ],
+      "completed_at": "2026-05-03T11:33:35.996346+00:00"
     },
     {
       "id": "R20-07",
