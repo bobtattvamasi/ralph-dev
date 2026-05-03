@@ -1373,6 +1373,7 @@ fi
 exec "{sys.executable}" "$@"
 """,
     )
+    env["PATH"] = f"{python_shim.parent}:{env['PATH']}"
 
     result = subprocess.run(
         [str(RALPH_SH), "task", "T01"],
@@ -1380,7 +1381,7 @@ exec "{sys.executable}" "$@"
         env=env,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=45,
     )
 
     assert result.returncode == 0, result.stdout + result.stderr

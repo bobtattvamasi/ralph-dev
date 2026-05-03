@@ -2521,7 +2521,7 @@ PY
         print_auto_run_summary
         exit 1
     }
-    if ! git commit -m "chore: repair target_files for $TASK_ID" 2>"$commit_stderr"; then
+    if ! run_ralph_git_commit "chore: repair target_files for $TASK_ID" 2>"$commit_stderr"; then
         log "❌ Scope contract repair commit failed for $TASK_ID"
         if [ -s "$commit_stderr" ]; then
             while IFS= read -r line; do
@@ -2538,22 +2538,54 @@ PY
     return 0
 }
 
-recent_wip_commit_exists_for_task() {
+recent_task_candidate_commit_exists() {
     local task_id="${1:-}"
     local depth="${2:-5}"
     [ -n "$task_id" ] || return 1
-    git log -n "$depth" --pretty=%s 2>/dev/null | grep -Fx "wip($task_id): coder changes" >/dev/null 2>&1
+    git log -n "$depth" --pretty=%s 2>/dev/null | grep -Eq "^wip\($task_id\): (coder changes|handoff candidate)$" >/dev/null 2>&1
 }
 
 working_tree_clean_for_final_commit() {
-    git diff --quiet --ignore-submodules -- 2>/dev/null && git diff --cached --quiet --ignore-submodules -- 2>/dev/null
+    local changed_paths=""
+    local path=""
+
+    changed_paths=$(collect_changed_paths)
+    [ -n "$changed_paths" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if handoff_is_runtime_owned_path "$path"; then
+            continue
+        fi
+        if [ ! -e "$path" ] && ! git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+            continue
+        fi
+        if [ -e "$path" ] && [ ! -r "$path" ]; then
+            continue
+        fi
+        return 1
+    done <<< "$changed_paths"
+
+    return 0
+}
+
+review_target_already_contains_task_changes() {
+    local base_hash="${REVIEW_BASE_HASH:-}"
+    local target_hash="${REVIEW_TARGET_HASH:-}"
+
+    [ -n "$base_hash" ] || return 1
+    [ -n "$target_hash" ] || return 1
+    git rev-parse --verify "$base_hash^{commit}" >/dev/null 2>&1 || return 1
+    git rev-parse --verify "$target_hash^{commit}" >/dev/null 2>&1 || return 1
+    git diff --quiet --ignore-submodules "$base_hash" "$target_hash" -- 2>/dev/null && return 1
+    return 0
 }
 
 classify_final_commit_failure() {
     local task_id="${1:-}"
 
     if working_tree_clean_for_final_commit; then
-        if recent_wip_commit_exists_for_task "$task_id" 5; then
+        if recent_task_candidate_commit_exists "$task_id" 5 || review_target_already_contains_task_changes; then
             printf 'already_committed\n'
             return 0
         fi
@@ -4047,6 +4079,20 @@ stage_changed_paths() {
     done <<< "$changed_paths"
 }
 
+run_ralph_git_commit() {
+    local message="${1:-}"
+
+    [ -n "$message" ] || return 1
+
+    GIT_EDITOR=true \
+    GIT_TERMINAL_PROMPT=0 \
+    GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-Ralph Runtime}" \
+    GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-ralph@dev}" \
+    GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-Ralph Runtime}" \
+    GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-ralph@dev}" \
+    git commit -m "$message"
+}
+
 task_scoped_diff_between_refs() {
     local base_hash="$1"
     local target_hash="$2"
@@ -4297,7 +4343,7 @@ run_coder_agent() {
 
     if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
         stage_changed_paths
-        git commit -m "wip(${TASK_ID}): coder changes" 2>/dev/null || true
+        run_ralph_git_commit "wip(${TASK_ID}): coder changes" 2>/dev/null || true
     fi
 
     PRE_HASH="$pre_hash"
@@ -5214,7 +5260,7 @@ print(task.get('role', 'coder'))
                     defer_blocked_task "$REASON"
                     break
                 fi
-                git commit -m "wip($TASK_ID): handoff candidate" 2>/dev/null || true
+                run_ralph_git_commit "wip($TASK_ID): handoff candidate" 2>/dev/null || true
                 SKIP_CODER_STAGE=1
                 ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=1
                 REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
@@ -5308,7 +5354,7 @@ print(task.get('role', 'coder'))
             if [ -n "$(git diff --name-only 2>/dev/null)" ] || [ -n "$(git diff --cached --name-only 2>/dev/null)" ]; then
                 stage_changed_paths
                 if [ -n "$(task_scoped_cached_name_only_from_ref "HEAD")" ]; then
-                    git commit -m "wip($TASK_ID): coder changes" 2>/dev/null || true
+                    run_ralph_git_commit "wip($TASK_ID): coder changes" 2>/dev/null || true
                     ATTEMPT_PRODUCED_TASK_SCOPED_CHANGES=1
                     REVIEW_TARGET_HASH=$(git rev-parse HEAD 2>/dev/null || echo "HEAD")
                 else
@@ -5713,7 +5759,7 @@ except Exception:
                         print_auto_run_summary
                         exit 1
                     }
-                    if ! git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>"$FINAL_COMMIT_STDERR"; then
+                    if ! run_ralph_git_commit "feat($TASK_ID): $TASK_TITLE [ralph]" 2>"$FINAL_COMMIT_STDERR"; then
                         FINAL_COMMIT_FAILURE_CLASS=$(classify_final_commit_failure "$TASK_ID")
                         if [ "$FINAL_COMMIT_FAILURE_CLASS" = "already_committed" ]; then
                             log "FINAL_COMMIT_NOOP_ALREADY_COMMITTED $TASK_ID"
