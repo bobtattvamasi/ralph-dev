@@ -74,19 +74,14 @@ is_path_in_scope() {
     return 1
 }
 
-while IFS= read -r status_line; do
-    [ -n "$status_line" ] || continue
-    if [[ "$status_line" != \?\?\ * ]]; then
-        continue
-    fi
-
-    untracked_path="${status_line#?? }"
+while IFS= read -r untracked_path; do
+    [ -n "$untracked_path" ] || continue
     if ! is_path_in_scope "$untracked_path"; then
         echo "Refusing auto-commit: unrelated untracked file detected: $untracked_path" >&2
         echo "Only current task files may be committed." >&2
         exit 1
     fi
-done < <(git status --porcelain)
+done < <(git ls-files --others --exclude-standard)
 
 while IFS= read -r scope_path; do
     [ -n "$scope_path" ] || continue
