@@ -21,6 +21,8 @@ COMPLETED_STATUSES = {"done", "verified_done"}
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 TASK_HYGIENE_WARNING_ORDER = (
     "BOOTSTRAP_FEATURE",
+    "EXTERNAL_SERVICE",
+    "MEMORY_SYSTEM_CHANGE",
     "MISSING_TEST_TARGET",
     "PREVIOUS_RETRY_FAILURE",
     "COMPLEX_TASK",
@@ -60,6 +62,23 @@ TASK_HYGIENE_RETRY_PATTERNS = (
     r"failed after \d+ retries",
     r"\bretries\b",
     r"\bretry\b",
+)
+TASK_HYGIENE_EXTERNAL_SERVICE_PATTERNS = (
+    r"\bqdrant\b",
+    r"\bdocker\b",
+    r"\bembedded\b",
+    r"\blocal instance\b",
+    r"\bexternal service\b",
+    r"\bservice container\b",
+)
+TASK_HYGIENE_MEMORY_SYSTEM_PATTERNS = (
+    r"\bmemory_service\b",
+    r"\bmemory service\b",
+    r"\bsemantic retrieval\b",
+    r"\bsemantic search\b",
+    r"\brecent\.md\b",
+    r"\.ralph/memory\b",
+    r"\bmemory path replacement\b",
 )
 BOOKKEEPING_EXACT = {
     "tasks.json",
@@ -430,13 +449,30 @@ def completed_task_ids(tasks: list[dict[str, Any]]) -> set[str]:
     return {str(task.get("id")) for task in tasks if task.get("status") in COMPLETED_STATUSES}
 
 
+def task_dependencies(task: dict[str, Any]) -> list[str]:
+    dependencies: list[str] = []
+    seen: set[str] = set()
+
+    for key in ("dependencies", "depends_on"):
+        raw = task.get(key) or []
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            value = str(item or "").strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            dependencies.append(value)
+    return dependencies
+
+
 def runnable_reason(task: dict[str, Any], tasks: list[dict[str, Any]]) -> tuple[bool, str]:
     status = str(task.get("status", ""))
     if status != "pending":
         return False, f"status={status}"
 
     done_ids = completed_task_ids(tasks)
-    unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
+    unmet = [dep for dep in task_dependencies(task) if dep not in done_ids]
     if unmet:
         return False, "unmet dependencies: " + ", ".join(unmet)
     return True, "pending and dependencies satisfied"
@@ -453,7 +489,7 @@ def pick_next_task(
         task
         for task in tasks
         if task.get("status") == "pending"
-        and all(dep in done_ids for dep in task.get("dependencies", []))
+        and all(dep in done_ids for dep in task_dependencies(task))
     ]
     if task_id:
         return next((task for task in candidates if task.get("id") == task_id), None)
@@ -525,6 +561,22 @@ def warn_previous_retry_failure(task: dict[str, Any]) -> str | None:
     return None
 
 
+def warn_external_service(task: dict[str, Any]) -> str | None:
+    text = task_hygiene_title_description_text(task) + " " + task_hygiene_acceptance_text(task)
+    for pattern in TASK_HYGIENE_EXTERNAL_SERVICE_PATTERNS:
+        if re.search(pattern, text):
+            return "task depends on external or containerized service runtime"
+    return None
+
+
+def warn_memory_system_change(task: dict[str, Any]) -> str | None:
+    text = task_hygiene_title_description_text(task) + " " + task_hygiene_acceptance_text(task)
+    for pattern in TASK_HYGIENE_MEMORY_SYSTEM_PATTERNS:
+        if re.search(pattern, text):
+            return "task changes memory retrieval or .ralph/memory behavior"
+    return None
+
+
 def warn_complex_task(task: dict[str, Any]) -> str | None:
     if task_hygiene_normalize_text(task.get("complexity")) == "complex":
         return "complex task is risky for unattended auto"
@@ -543,6 +595,8 @@ def warn_broad_scope(task: dict[str, Any]) -> str | None:
 def task_hygiene_warnings(task: dict[str, Any]) -> list[tuple[str, str]]:
     checks = {
         "BOOTSTRAP_FEATURE": warn_bootstrap_feature(task),
+        "EXTERNAL_SERVICE": warn_external_service(task),
+        "MEMORY_SYSTEM_CHANGE": warn_memory_system_change(task),
         "MISSING_TEST_TARGET": warn_missing_test_target(task),
         "PREVIOUS_RETRY_FAILURE": warn_previous_retry_failure(task),
         "COMPLEX_TASK": warn_complex_task(task),
@@ -626,7 +680,7 @@ def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = Non
     pending = [task for task in unresolved if task.get("status") == "pending"]
     blocked_pending = []
     for task in pending:
-        unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
+        unmet = [dep for dep in task_dependencies(task) if dep not in done_ids]
         if unmet:
             blocked_pending.append(
                 {

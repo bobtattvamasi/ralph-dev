@@ -107,6 +107,54 @@ def test_next_task_auto_safe_returns_null_when_only_unsafe_pending_and_explicit_
     assert json.loads(explicit.stdout)["id"] == "R17-01"
 
 
+def test_next_task_auto_safe_respects_depends_on_blocked_dependency(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    write_task_file(
+        project_dir,
+        [
+            {
+                "id": "R22-01",
+                "phase": "R22",
+                "status": "blocked",
+                "title": "state_service.py",
+                "description": "Blocked prerequisite",
+                "target_files": ["scripts/state_service.py"],
+                "acceptance_criteria": ["State service works"],
+                "priority": "high",
+                "complexity": "moderate",
+            },
+            {
+                "id": "R22-04",
+                "phase": "R22",
+                "status": "pending",
+                "title": "Qdrant memory",
+                "description": "Semantic retrieval task that depends on state service",
+                "target_files": ["scripts/memory_service.py", "ralph.sh", "tests/test_memory_service.py"],
+                "acceptance_criteria": ["Memory service behavior is covered"],
+                "priority": "medium",
+                "complexity": "moderate",
+                "depends_on": ["R22-01"],
+            },
+        ],
+    )
+
+    auto_safe = run_next_task(project_dir, "--auto-safe")
+    explain = run_next_task(project_dir, "--auto-safe", "--explain")
+
+    assert auto_safe.returncode == 0, auto_safe.stdout + auto_safe.stderr
+    assert auto_safe.stdout.strip() == "null"
+    explained = json.loads(explain.stdout)
+    assert explained["reason"] == "blocked_dependencies"
+    assert explained["blocked_pending"] == [
+        {
+            "id": "R22-04",
+            "title": "Qdrant memory",
+            "unmet_dependencies": ["R22-01"],
+        }
+    ]
+
+
 def test_run_next_task_helper_supports_auto_safe_selection_and_skip_logging(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     (project_dir / "scripts" / "next_task.py").write_text(
