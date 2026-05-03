@@ -1,5 +1,11 @@
 # Recent Task History
 
+### R22-03: Fast test gate — pytest -x -q вместо make test в auto mode
+- Files: Makefile,ralph.sh,tests/test_ralph_shell_helpers.py
+- Result: approved
+- Notes: 
+- Time: 2026-05-03T17:14:53Z
+
 ### R19-02: Bash syntax gate before test run
 - Files: ralph.sh,src/ralph/resources/ralph.sh
 - Result: approved
@@ -23,9 +29,3 @@
 - Result: approved
 - Notes: 
 - Time: 2026-03-31T05:52:15Z
-
-### OPS-10: Fail-fast: block retry if coder output is identical to prior attempt
-- Files: tests/test_integration.py
-- Result: approved
-- Notes: 
-- Time: 2026-03-30T10:02:50Z

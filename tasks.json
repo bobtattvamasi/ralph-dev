@@ -4088,7 +4088,7 @@
       "id": "R22-03",
       "phase": "R22",
       "priority": "medium",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Fast test gate — pytest -x -q вместо make test в auto mode",
       "description": "В auto/phase режиме запускать только fast subset тестов. Full make test только при explicit verify.",
       "target_files": [
@@ -4103,7 +4103,8 @@
       ],
       "depends_on": [
         "R20-04"
-      ]
+      ],
+      "completed_at": "2026-05-03T17:14:53.691850+00:00"
     },
     {
       "id": "R22-04",
@@ -4435,6 +4436,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-03T16:54:45.270631+00:00"
-    }
+    },
+    {
+  "id": "R20-22",
+  "phase": "R20",
+  "status": "pending",
+  "title": "Clean or own runtime bookkeeping diffs after auto task completion",
+  "description": "After auto runs, runtime-owned files such as progress.md and .ralph/memory/recent.md must either be intentionally committed by runtime or restored, so the working tree is clean before the next task.",
+  "target_files": [
+    "ralph.sh",
+    "src/ralph/resources/ralph.sh",
+    "tests/test_ralph_shell_helpers.py"
+  ],
+  "acceptance_criteria": [
+    "Successful task completion does not leave progress.md dirty unless runtime explicitly owns and commits it.",
+    "Successful task completion does not leave .ralph/memory/recent.md dirty unless runtime explicitly owns and commits it.",
+    "Before selecting the next task, auto mode checks for runtime-owned dirty files and cleans or records them deterministically.",
+    "If unrelated dirty files remain, auto blocks with a clear reason instead of continuing.",
+    "Focused tests cover dirty runtime bookkeeping after successful task completion.",
+    "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+  ],
+  "priority": "critical",
+  "complexity": "moderate",
+  "role": "coder",
+  "scope_too_wide": false,
+  "selection_warnings": []
+}
   ]
 }

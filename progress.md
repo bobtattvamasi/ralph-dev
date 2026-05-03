@@ -102,3 +102,4 @@
 - **T01** (2026-03-31 16:22 UTC): First note
 - **T02** (2026-03-31 16:22 UTC): Second note
 - **R19-02** (2026-04-10 17:49 UTC): R19-02 is acceptable as implemented: modified `.sh` files are syntax-checked before `make test`, syntax failure short-circuits the test run, and the reported out-of-scope files are bookkeeping/audit artifacts rather than missing product work for this task.
+- **R22-03** (2026-05-03 17:14 UTC): Scope stayed within ralph.sh, Makefile, and tests/test_ralph_shell_helpers.py. Fast-path behavior is covered for auto, phase, and tester timeout selection; provided smoke suite passed in 1.86s.
