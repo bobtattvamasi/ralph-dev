@@ -74,6 +74,22 @@ is_path_in_scope() {
     return 1
 }
 
+ensure_only_scoped_paths() {
+    local label="${1:-changes}"
+    local path=""
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if ! is_path_in_scope "$path"; then
+            echo "Refusing auto-commit: unrelated $label detected: $path" >&2
+            echo "Only current task files may be committed." >&2
+            exit 1
+        fi
+    done
+}
+
+ensure_only_scoped_paths "staged change" < <(git diff --cached --name-only)
+ensure_only_scoped_paths "tracked change" < <(git diff --name-only)
 while IFS= read -r untracked_path; do
     [ -n "$untracked_path" ] || continue
     if ! is_path_in_scope "$untracked_path"; then
