@@ -1843,6 +1843,44 @@ persist_task_success_state() {
     write_state "$FINAL_STATE_STATUS" "" "$FINAL_STATE_STEP" "$FINAL_STATE_MESSAGE"
 }
 
+validate_lead_review_json() {
+    local service_output=""
+
+    service_output=$(python3 "$RALPH_DIR/scripts/review_service.py" validate-shell --review-json "${REVIEW_JSON:-}" 2>/dev/null) || service_output=""
+    if [ -n "$service_output" ]; then
+        eval "$service_output"
+        return 0
+    fi
+
+    REVIEW_JSON='{"decision":"fix","fix_instructions":"Tech Lead review JSON could not be parsed safely.","issues":[]}'
+    return 0
+}
+
+parse_lead_review_json() {
+    local service_output=""
+
+    service_output=$(python3 "$RALPH_DIR/scripts/review_service.py" parse-shell --review-file "${REVIEW_FILE:-}" --lead-output "${LEAD_OUTPUT:-}" 2>/dev/null) || service_output=""
+    if [ -n "$service_output" ]; then
+        eval "$service_output"
+    else
+        REVIEW_SERVICE_STATUS='skip'
+        REVIEW_JSON_SOURCE='service_error'
+        REVIEW_SERVICE_REASON='Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback.'
+        REVIEW_JSON='{}'
+    fi
+
+    case "${REVIEW_SERVICE_STATUS:-skip}" in
+        ok)
+            return 0
+            ;;
+        *)
+            REVIEW_JSON_SOURCE='unparsed_fail_closed'
+            REVIEW_JSON='{"decision":"fix","fix_instructions":"Tech Lead review JSON could not be parsed safely.","issues":[]}'
+            return 0
+            ;;
+    esac
+}
+
 sanitize_fix_instructions() {
     local raw_fix="${1:-}"
     local sanitized_output=""
@@ -5270,19 +5308,12 @@ Do not ask the coder to update tasks.json, progress.md, final commits, final sta
             log "⏱️ Tech Lead took ${LEAD_DURATION}s"
             log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "lead" "$LEAD_DURATION"
             REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
-            eval "$(
-                python3 "$RALPH_DIR/scripts/review_service.py" parse-shell --review-file "$REVIEW_FILE" --lead-output "$LEAD_OUTPUT" 2>/dev/null || cat <<'EOF'
-REVIEW_SERVICE_STATUS='skip'
-REVIEW_JSON_SOURCE='service_error'
-REVIEW_SERVICE_REASON='Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback.'
-REVIEW_JSON='{}'
-EOF
-            )"
+            parse_lead_review_json
             log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
             log "🔍 DEBUG: Parsed review JSON: $(echo "$REVIEW_JSON" | head -c 200)"
             log "🔍 DEBUG: Parsed review source: ${REVIEW_JSON_SOURCE:-unknown}"
 
-            case "${REVIEW_SERVICE_STATUS:-skip}" in
+            case "${REVIEW_SERVICE_STATUS:-ok}" in
                 skip)
                     REASON="${REVIEW_SERVICE_REASON:-Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback.}"
                     log "⚠️ $REASON"

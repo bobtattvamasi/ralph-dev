@@ -18,6 +18,7 @@ except ImportError:
 
 VALID_DECISIONS = {"approve", "fix", "alert", "done"}
 DEFAULT_SKIP_REASON = "Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback."
+FAIL_CLOSED_REASON = "Tech Lead review JSON could not be parsed safely."
 
 
 def read_text(path: str | None) -> str:
@@ -87,6 +88,32 @@ def normalize_review(review: dict[str, Any]) -> tuple[dict[str, Any] | None, str
     normalized["decision"] = decision
     normalized["issues"] = normalize_issues(review.get("issues"))
     return normalized, None
+
+
+def fail_closed_review(reason: str) -> dict[str, Any]:
+    return {
+        "decision": "fix",
+        "fix_instructions": reason,
+        "issues": [],
+    }
+
+
+def validate_review_text(review_text: str) -> dict[str, Any]:
+    candidate = try_load(review_text)
+    if candidate is None:
+        nested = nested_raw_review_text(review_text)
+        if nested:
+            candidate = try_load(nested)
+    if candidate is None:
+        candidate = extract_review(review_text)
+    if candidate is None:
+        return fail_closed_review(FAIL_CLOSED_REASON)
+
+    normalized, error = normalize_review(candidate)
+    if normalized is None:
+        return fail_closed_review(error or FAIL_CLOSED_REASON)
+
+    return normalized
 
 
 def parse_review_inputs(review_text: str, lead_output_text: str) -> dict[str, Any]:
@@ -159,6 +186,10 @@ def shell_assignments(result: dict[str, Any]) -> str:
     return "\n".join(f"{key}={shlex.quote(value)}" for key, value in assignments.items())
 
 
+def review_shell_assignment(review: dict[str, Any]) -> str:
+    return f"REVIEW_JSON={shlex.quote(json.dumps(review, ensure_ascii=False))}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -168,19 +199,27 @@ def build_parser() -> argparse.ArgumentParser:
         subparser.add_argument("--review-file", default=None)
         subparser.add_argument("--lead-output", default=None)
 
+    validate_parser = subparsers.add_parser("validate-shell")
+    validate_parser.add_argument("--review-json", default=None)
+
     return parser
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    result = parse_review_inputs(read_text(args.review_file), read_text(args.lead_output))
 
     if args.command == "parse":
+        result = parse_review_inputs(read_text(args.review_file), read_text(args.lead_output))
         print(json.dumps(result, ensure_ascii=False))
         return 0
     if args.command == "parse-shell":
+        result = parse_review_inputs(read_text(args.review_file), read_text(args.lead_output))
         print(shell_assignments(result))
+        return 0
+    if args.command == "validate-shell":
+        review_text = args.review_json if args.review_json is not None else sys.stdin.read()
+        print(review_shell_assignment(validate_review_text(review_text)))
         return 0
 
     parser.error(f"unknown command: {args.command}")
