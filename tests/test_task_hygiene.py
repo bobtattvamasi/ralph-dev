@@ -167,3 +167,34 @@ def test_checker_reports_missing_test_target_for_implicit_behavioral_verificatio
     assert result.stdout.splitlines() == [
         "TASK_HYGIENE_WARN R20-05 MISSING_TEST_TARGET acceptance implies test coverage but target_files has no tests/ path",
     ]
+
+
+def test_checker_reports_external_service_and_memory_system_change_for_r22_04_like_task(tmp_path: Path) -> None:
+    project_dir = make_project(tmp_path)
+    write_tasks(
+        project_dir,
+        [
+            {
+                "id": "R22-04",
+                "status": "pending",
+                "title": "Qdrant memory — semantic retrieval instead of recent.md",
+                "description": "Replace .ralph/memory/recent.md with Qdrant local instance through a memory service.",
+                "target_files": ["scripts/memory_service.py", "ralph.sh", "tests/test_memory_service.py"],
+                "acceptance_criteria": [
+                    "Qdrant starts locally through Docker or embedded mode.",
+                    "Semantic retrieval returns top-5 similar tasks.",
+                    "Fallback to recent.md if the external service is unavailable.",
+                ],
+                "priority": "medium",
+                "complexity": "moderate",
+            }
+        ],
+    )
+
+    result = run_checker(project_dir, "--task-id", "R22-04")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        "TASK_HYGIENE_WARN R22-04 EXTERNAL_SERVICE task depends on external or containerized service runtime",
+        "TASK_HYGIENE_WARN R22-04 MEMORY_SYSTEM_CHANGE task changes memory retrieval or .ralph/memory behavior",
+    ]
