@@ -4383,7 +4383,7 @@
     {
       "id": "R20-18",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Treat already-committed approved WIP as successful finalization",
       "description": "If Lead approves and verification passes, but final git commit has nothing to commit because coder changes are already committed as wip(<task_id>), Ralph should finalize the task instead of failing.",
       "target_files": [
@@ -4405,7 +4405,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-03T15:40:32.923307+00:00"
     }
   ]
 }
