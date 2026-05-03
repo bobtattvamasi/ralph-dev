@@ -318,6 +318,70 @@ def test_auto_mode_prefers_project_fast_test_command_but_task_mode_uses_full_com
     assert not (project_dir / "fast.log").exists()
 
 
+def test_tester_phase_logs_start_done_and_structured_report(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    write_project_test_commands(
+        project_dir,
+        "python3 -c \"print('full-ok')\"",
+        "python3 -c \"print('fast-ok')\"",
+    )
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "PROJECT_TEST_CMD=\"$(load_project_test_command)\"\n"
+        "PROJECT_TEST_CMD_FAST=\"$(load_project_fast_test_command || true)\"\n"
+        "TESTER_STATUS=0\n"
+        "run_tester_phase T01 HEAD HEAD || TESTER_STATUS=$?\n"
+        "printf 'STATUS=%s\\nREPORT=%s\\n' \"$TESTER_STATUS\" \"$TESTER_REPORT\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "TESTER_START T01 command=python3 -c \"print('fast-ok')\"" in combined
+    assert "TESTER_DONE T01 exit_code=0 duration=" in combined
+    assert "STATUS=0" in result.stdout
+    report_line = next(line for line in result.stdout.splitlines() if line.startswith("REPORT="))
+    report = json.loads(report_line[len("REPORT="):])
+    assert report["task_id"] == "T01"
+    assert report["command"] == "python3 -c \"print('fast-ok')\""
+    assert report["exit_code"] == 0
+    assert report["timed_out"] is False
+    assert "fast-ok" in report["combined_output_tail"]
+
+
+def test_tester_timeout_logs_reason_and_structured_report(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    write_project_test_commands(
+        project_dir,
+        "python3 -c \"import time; time.sleep(2)\"",
+        "python3 -c \"import time; time.sleep(2)\"",
+    )
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "PROJECT_TEST_CMD=\"$(load_project_test_command)\"\n"
+        "PROJECT_TEST_CMD_FAST=\"$(load_project_fast_test_command || true)\"\n"
+        "TESTER_STATUS=0\n"
+        "run_tester_phase T01 HEAD HEAD || TESTER_STATUS=$?\n"
+        "printf 'STATUS=%s\\nREASON=%s\\nTIMED_OUT=%s\\nREPORT=%s\\n' \"$TESTER_STATUS\" \"$TESTER_REASON\" \"$TESTER_TIMED_OUT\" \"$TESTER_REPORT\"\n",
+        env={"RALPH_TESTER_FAST_TIMEOUT_SEC": "1"},
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "TESTER_TIMEOUT T01 timeout=1s command=python3 -c \"import time; time.sleep(2)\"" in combined
+    assert "TESTER_DONE T01 exit_code=124 duration=" in combined
+    assert "STATUS=124" in result.stdout
+    assert "REASON=tester_timeout" in result.stdout
+    assert "TIMED_OUT=true" in result.stdout
+    report_line = next(line for line in result.stdout.splitlines() if line.startswith("REPORT="))
+    report = json.loads(report_line[len("REPORT="):])
+    assert report["exit_code"] == 124
+    assert report["timed_out"] is True
+
+
 def test_run_next_task_helper_blocks_on_helper_failure(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     (project_dir / "scripts" / "next_task.py").write_text(
@@ -404,6 +468,23 @@ def test_auto_run_summary_tracks_done_failed_blocked_and_skipped_tasks(tmp_path:
     assert "AUTO_TASK_RESULT T02 status=failed reason=Final git commit failed after approval" in lines
     assert "AUTO_TASK_RESULT T03 status=blocked reason=Missing required asset from handoff queue" in lines
     assert "AUTO_TASK_RESULT T04 status=skipped reason=Skipped by user via Telegram" in lines
+
+
+def test_auto_run_summary_preserves_tester_timeout_reason(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "init_auto_run_summary\n"
+        "auto_record_task_result 'T01' blocked 'tester_timeout'\n"
+        "print_auto_run_summary\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0].startswith("AUTO_RUN_SUMMARY done=0 failed=0 blocked=1 skipped=0 duration=")
+    assert "AUTO_TASK_RESULT T01 status=blocked reason=tester_timeout" in lines
 
 
 def test_recovery_startup_resets_stale_running_state_to_idle(tmp_path: Path) -> None:

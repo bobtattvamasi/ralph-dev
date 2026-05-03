@@ -642,6 +642,8 @@ DEFAULT_CODER_TIMEOUT_SEC="${RALPH_DEFAULT_CODER_TIMEOUT_SEC:-900}"
 DEFAULT_LEAD_TIMEOUT_SEC="${RALPH_DEFAULT_LEAD_TIMEOUT_SEC:-300}"
 DEFAULT_PRETASK_FAST_TIMEOUT_SEC="${RALPH_DEFAULT_PRETASK_FAST_TIMEOUT_SEC:-30}"
 DEFAULT_PRETASK_FULL_TIMEOUT_SEC="${RALPH_DEFAULT_PRETASK_FULL_TIMEOUT_SEC:-180}"
+DEFAULT_TESTER_FAST_TIMEOUT_SEC="${RALPH_DEFAULT_TESTER_FAST_TIMEOUT_SEC:-180}"
+DEFAULT_TESTER_FULL_TIMEOUT_SEC="${RALPH_DEFAULT_TESTER_FULL_TIMEOUT_SEC:-1200}"
 DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_CODER_TIMEOUT_SEC:-$DEFAULT_CODER_TIMEOUT_SEC}"
 DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC="${RALPH_DEFAULT_SELF_HEAL_LEAD_TIMEOUT_SEC:-120}"
 DEFAULT_CODEX_RETRY_DELAYS="${RALPH_DEFAULT_CODEX_RETRY_DELAYS:-60 120 300}"
@@ -850,8 +852,98 @@ current_project_test_command() {
     printf '%s' "$PROJECT_TEST_CMD"
 }
 
+current_project_test_timeout_sec() {
+    if [ "${MODE:-}" = "auto" ] && [ -n "${PROJECT_TEST_CMD_FAST:-}" ]; then
+        printf '%s' "${RALPH_TESTER_FAST_TIMEOUT_SEC:-$DEFAULT_TESTER_FAST_TIMEOUT_SEC}"
+        return 0
+    fi
+    printf '%s' "${RALPH_TESTER_FULL_TIMEOUT_SEC:-$DEFAULT_TESTER_FULL_TIMEOUT_SEC}"
+}
+
 run_project_test_command() {
     bash -lc "$(current_project_test_command)"
+}
+
+run_tester_phase() {
+    local task_id="$1"
+    local base_hash="$2"
+    local target_hash="$3"
+    local tester_output_file=""
+    local tester_status=0
+    local tester_started_at=0
+    local shell_syntax_output=""
+
+    TESTER_COMMAND="$(current_project_test_command)"
+    TESTER_TIMEOUT_SEC="$(current_project_test_timeout_sec)"
+    TESTER_EXIT_CODE=0
+    TESTER_DURATION=0
+    TESTER_TIMED_OUT=false
+    TESTER_REASON=""
+    TESTER_REPORT="{}"
+    TEST_OUTPUT=""
+
+    tester_started_at=$(date +%s)
+    write_state "running" "$task_id" "tester" "Tester running..."
+    log "🧪 TESTER_START $task_id command=$TESTER_COMMAND"
+
+    if ! shell_syntax_output=$(validate_modified_shell_scripts "$base_hash" "$target_hash"); then
+        TESTER_COMMAND="bash -n modified shell scripts"
+        TESTER_TIMEOUT_SEC=0
+        TESTER_EXIT_CODE=1
+        TEST_OUTPUT="$shell_syntax_output"
+        TESTER_REASON="tester_failed"
+    else
+        tester_output_file="$(mktemp "${TMPDIR:-/tmp}/ralph_tester_output.XXXXXX")" || {
+            log "❌ Failed to allocate temp file for tester phase output"
+            write_state "blocked" "$task_id" "tester" "Failed to allocate tester phase output file"
+            exit 1
+        }
+        if gtimeout --foreground --kill-after=10 "$TESTER_TIMEOUT_SEC" bash -lc "$TESTER_COMMAND" >"$tester_output_file" 2>&1; then
+            tester_status=0
+        else
+            tester_status=$?
+        fi
+        TESTER_EXIT_CODE="$tester_status"
+        TEST_OUTPUT="$(tail -40 "$tester_output_file" 2>/dev/null || true)"
+        rm -f "$tester_output_file"
+        if [ "$TESTER_EXIT_CODE" -eq 124 ]; then
+            TESTER_TIMED_OUT=true
+            TESTER_REASON="tester_timeout"
+            log "🧪 TESTER_TIMEOUT $task_id timeout=${TESTER_TIMEOUT_SEC}s command=$TESTER_COMMAND"
+        elif [ "$TESTER_EXIT_CODE" -ne 0 ]; then
+            TESTER_REASON="tester_failed"
+        fi
+    fi
+
+    TESTER_DURATION=$(( $(date +%s) - tester_started_at ))
+    log "🧪 TESTER_DONE $task_id exit_code=$TESTER_EXIT_CODE duration=$TESTER_DURATION"
+    [ -n "$TEST_OUTPUT" ] || TEST_OUTPUT="(no tester output captured)"
+    TESTER_REPORT="$(TESTER_TASK_ID="$task_id" \
+        TESTER_COMMAND="$TESTER_COMMAND" \
+        TESTER_EXIT_CODE="$TESTER_EXIT_CODE" \
+        TESTER_DURATION="$TESTER_DURATION" \
+        TESTER_TIMED_OUT="$TESTER_TIMED_OUT" \
+        TEST_OUTPUT="$TEST_OUTPUT" \
+        python3 - <<'PY'
+import json
+import os
+
+print(
+    json.dumps(
+        {
+            "task_id": os.environ.get("TESTER_TASK_ID", ""),
+            "command": os.environ.get("TESTER_COMMAND", ""),
+            "exit_code": int(os.environ.get("TESTER_EXIT_CODE", "0") or "0"),
+            "duration_sec": int(os.environ.get("TESTER_DURATION", "0") or "0"),
+            "timed_out": os.environ.get("TESTER_TIMED_OUT", "false").strip().lower() == "true",
+            "combined_output_tail": os.environ.get("TEST_OUTPUT", ""),
+        },
+        ensure_ascii=False,
+    )
+)
+PY
+)"
+    return "${TESTER_EXIT_CODE:-0}"
 }
 
 validate_modified_shell_scripts() {
@@ -4882,6 +4974,7 @@ print(task.get('role', 'coder'))
     TASK_ALERTED=false
     AUDIT_WRITTEN=false
     FIX_INSTRUCTIONS=""
+    TESTER_PHASE_REASON=""
     TASK_TOKENS=0
     DIFF_SNAPSHOT_FILE="/tmp/ralph_diff_${TASK_ID}.txt"
     DIFF_SUMMARY_FILE="/tmp/ralph_diff_summary_${TASK_ID}.txt"
@@ -5134,18 +5227,14 @@ print(task.get('role', 'coder'))
         else
             GIT_DIFF=$(git diff "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" -- ':!ralph_state.json' ':!ralph_control.json' ':!ralph_alerts.log' 2>/dev/null | head -500 || echo "diff error")
         fi
-        # R19-02: bash syntax gate before expensive test suite
-        SHELL_SYNTAX_OUTPUT=""
-        if ! SHELL_SYNTAX_OUTPUT=$(validate_modified_shell_scripts "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}"); then
-            log "🛑 Bash syntax validation failed in modified .sh files; skipping test suite"
-            TEST_OUTPUT="$SHELL_SYNTAX_OUTPUT"
-            TEST_DURATION=0
-        else
-            TEST_START=$(date +%s)
-            TEST_OUTPUT=$(run_project_test_command 2>&1 | tail -40 || echo "tests failed")
-            TEST_DURATION=$(( $(date +%s) - TEST_START ))
-            log "⏱️ Test gate took ${TEST_DURATION}s"
+        TESTER_PHASE_REASON=""
+        TESTER_STATUS=0
+        run_tester_phase "$TASK_ID" "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" || TESTER_STATUS=$?
+        TEST_DURATION="${TESTER_DURATION:-0}"
+        if [ -n "${TESTER_REASON:-}" ]; then
+            TESTER_PHASE_REASON="$TESTER_REASON"
         fi
+        log "⏱️ Test gate took ${TEST_DURATION}s"
         log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "test" "$TEST_DURATION"
         RETRY_TEST_OUTPUT=$(summarize_retry_test_output "$TEST_OUTPUT")
         if [ -n "$RETRY_TEST_OUTPUT" ]; then
@@ -5256,6 +5345,11 @@ $GIT_DIFF
 \`\`\`
 
 Previous diff snapshot: ${DIFF_SNAPSHOT_BYTES:-0} bytes
+
+## Tester Report
+\`\`\`json
+$TESTER_REPORT
+\`\`\`
 
 ## Tests
 \`\`\`
@@ -5632,7 +5726,7 @@ except Exception:
     fi
 
     if [ "$TASK_DONE" = false ]; then
-        REASON="$TASK_ID failed after $MAX_FIX_RETRIES retries"
+        REASON="${TESTER_PHASE_REASON:-$TASK_ID failed after $MAX_FIX_RETRIES retries}"
         TASK_DURATION=$(( $(date +%s) - TASK_START ))
         FINAL_RUNTIME_SUCCESS="false"
         FINAL_AUDIT_STATUS="failed"
