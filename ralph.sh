@@ -3690,104 +3690,6 @@ alert_human() {
     osascript -e "display notification \"$reason\" with title \"Ralph Alert\"" 2>/dev/null || true
 }
 
-validate_lead_review_json() {
-    REVIEW_JSON=$(echo "$REVIEW_JSON" | python3 -c "
-import json, sys
-text = sys.stdin.read().strip() or '{}'
-try:
-    d = json.loads(text)
-except Exception:
-    d = {}
-task_id = str(d.get('task_id', '')).strip()
-summary = str(d.get('summary', '')).strip().lower()
-if task_id == 'TASK-ID' or summary == 'one line summary':
-    d = {
-        'decision': 'fix',
-        'quality_score': '?',
-        'issues': ['Tech Lead returned placeholder/template JSON.'],
-        'fix_instructions': 'Tech Lead output contained placeholder/template JSON and could not be trusted safely.',
-    }
-decision = d.get('decision', '')
-if decision == 'done':
-    d['decision'] = 'approve'
-elif decision not in ('approve', 'fix', 'alert'):
-    d = {
-        'decision': 'fix',
-        'quality_score': '?',
-        'issues': ['Tech Lead output could not be parsed safely.'],
-        'fix_instructions': 'Tech Lead output could not be parsed safely.',
-    }
-issues = d.get('issues')
-if isinstance(issues, list):
-    d['issues'] = [str(item).strip() for item in issues if str(item).strip()]
-elif issues in (None, ''):
-    d['issues'] = []
-else:
-    d['issues'] = [str(issues).strip()]
-print(json.dumps(d, ensure_ascii=False))
-")
-}
-
-parse_lead_review_json() {
-    local review_file_json=""
-    local lead_output_json=""
-    local review_file_decision=""
-    local lead_output_decision=""
-    REVIEW_JSON='{}'
-    REVIEW_JSON_SOURCE="none"
-    local fail_closed_json='{"decision":"fix","quality_score":"?","issues":["Tech Lead output could not be parsed safely."],"fix_instructions":"Tech Lead output could not be parsed safely."}'
-    local mismatch_fail_closed_json='{"decision":"alert","quality_score":"?","issues":["Tech Lead output was ambiguous: authoritative review file and stdout disagreed."],"alert_reason":"Tech Lead output was ambiguous: authoritative review file and stdout disagreed.","fix_instructions":"Tech Lead output was ambiguous: authoritative review file and stdout disagreed. Return one final JSON review only.","progress_note":"Trust layer fail-closed on review mismatch"}'
-
-    if [ -s "$REVIEW_FILE" ]; then
-        review_file_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$REVIEW_FILE" 2>/dev/null || true)
-    fi
-
-    if [ -s "$LEAD_OUTPUT" ]; then
-        lead_output_json=$(python3 "$RALPH_DIR/scripts/extract_json.py" < "$LEAD_OUTPUT" 2>/dev/null || true)
-    fi
-
-    if [ -n "$review_file_json" ] && [ "$review_file_json" != "{}" ]; then
-        REVIEW_JSON="$review_file_json"
-        REVIEW_JSON_SOURCE="review_file"
-    fi
-
-    if [ -n "$lead_output_json" ] && [ "$lead_output_json" != "{}" ]; then
-        if [ "$REVIEW_JSON_SOURCE" = "review_file" ]; then
-            review_file_decision=$(echo "$review_file_json" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(str(d.get('decision', '')).strip())
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
-            lead_output_decision=$(echo "$lead_output_json" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(str(d.get('decision', '')).strip())
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
-            if [ -n "$review_file_decision" ] && [ -n "$lead_output_decision" ] && [ "$review_file_decision" != "$lead_output_decision" ]; then
-                REVIEW_JSON="$mismatch_fail_closed_json"
-                REVIEW_JSON_SOURCE="mismatch_fail_closed"
-                return
-            fi
-        elif [ "$REVIEW_JSON" = "{}" ]; then
-            REVIEW_JSON="$lead_output_json"
-            REVIEW_JSON_SOURCE="lead_output"
-            return
-        fi
-    fi
-
-    if [ -z "$REVIEW_JSON" ] || [ "$REVIEW_JSON" = "{}" ]; then
-        REVIEW_JSON="$fail_closed_json"
-        REVIEW_JSON_SOURCE="unparsed_fail_closed"
-        return
-    fi
-}
-
 collect_preclosure_changed_files_json() {
     AUTO_REVERTED_OUT_OF_SCOPE_PATHS="${AUTO_REVERTED_OUT_OF_SCOPE_PATHS:-}" python3 - "${REVIEW_BASE_HASH:-$PRE_HASH}" "${REVIEW_TARGET_HASH:-HEAD}" <<'PY'
 import json
@@ -5368,15 +5270,21 @@ Do not ask the coder to update tasks.json, progress.md, final commits, final sta
             log "⏱️ Tech Lead took ${LEAD_DURATION}s"
             log_phase_timing "$TASK_ID" "$CURRENT_ATTEMPT" "$MODE" "lead" "$LEAD_DURATION"
             REVIEW=$(cat "$REVIEW_FILE" 2>/dev/null || echo '{"decision":"alert","alert_reason":"No output"}')
-            parse_lead_review_json
-            validate_lead_review_json
+            eval "$(
+                python3 "$RALPH_DIR/scripts/review_service.py" parse-shell --review-file "$REVIEW_FILE" --lead-output "$LEAD_OUTPUT" 2>/dev/null || cat <<'EOF'
+REVIEW_SERVICE_STATUS='skip'
+REVIEW_JSON_SOURCE='service_error'
+REVIEW_SERVICE_REASON='Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback.'
+REVIEW_JSON='{}'
+EOF
+            )"
             log "🔍 DEBUG: Review first 200 chars: $(echo "$REVIEW" | head -c 200)"
             log "🔍 DEBUG: Parsed review JSON: $(echo "$REVIEW_JSON" | head -c 200)"
             log "🔍 DEBUG: Parsed review source: ${REVIEW_JSON_SOURCE:-unknown}"
 
-            case "${REVIEW_JSON_SOURCE:-unknown}" in
-                review_file_malformed|lead_output_malformed|unparsed_fail_closed|unparsed_skipped)
-                    REASON="Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback."
+            case "${REVIEW_SERVICE_STATUS:-skip}" in
+                skip)
+                    REASON="${REVIEW_SERVICE_REASON:-Tech Lead review JSON malformed or missing; skipped to avoid spurious fix fallback.}"
                     log "⚠️ $REASON"
                     skip_current_task "$REASON"
                     TASK_DONE=true
