@@ -3841,7 +3841,7 @@
     {
       "id": "R20-07",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "One-line task failure summary in logs",
       "description": "After each task, emit TASK_DONE or TASK_FAIL with task_id, reason, retry_count, lead_decision, quality_score, duration. Grep-friendly.",
       "target_files": [
@@ -3856,7 +3856,9 @@
       "role": "coder",
       "depends_on": [
         "R20-03"
-      ]
+      ],
+      "completed_at": "2026-05-03T16:06:49.059723+00:00",
+      "revision_notes": "Verified: runtime emits TASK_DONE/TASK_FAIL lines and focused summary tests cover the overnight reporting layer."
     },
     {
       "id": "R20-08",
@@ -4410,28 +4412,28 @@
       "completed_at": "2026-05-03T15:40:32.923307+00:00"
     },
     {
-  "id": "R20-21",
-  "phase": "R20",
-  "status": "pending",
-  "title": "Include unsafe skips and deadlock reason in auto summary",
-  "description": "When auto-safe skips unsafe tasks or exits due to dependency deadlock, AUTO_RUN_SUMMARY should include skipped count and AUTO_TASK_RESULT lines for deadlock/skipped reasons.",
-  "target_files": [
-    "ralph.sh",
-    "src/ralph/resources/ralph.sh",
-    "tests/test_ralph_shell_helpers.py"
-  ],
-  "acceptance_criteria": [
-    "TASK_SKIPPED_UNSAFE increments skipped count or emits AUTO_TASK_RESULT status=skipped.",
-    "Dependency deadlock emits AUTO_TASK_RESULT status=blocked reason=dependency_deadlock for affected tasks.",
-    "AUTO_RUN_SUMMARY is non-zero/informative when auto exits without running a task due to unsafe skips or deadlock.",
-    "Focused tests cover no-safe-task deadlock summary.",
-    "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
-  ],
-  "priority": "high",
-  "complexity": "simple",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R20-21",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Include unsafe skips and deadlock reason in auto summary",
+      "description": "When auto-safe skips unsafe tasks or exits due to dependency deadlock, AUTO_RUN_SUMMARY should include skipped count and AUTO_TASK_RESULT lines for deadlock/skipped reasons.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh",
+        "tests/test_ralph_shell_helpers.py"
+      ],
+      "acceptance_criteria": [
+        "TASK_SKIPPED_UNSAFE increments skipped count or emits AUTO_TASK_RESULT status=skipped.",
+        "Dependency deadlock emits AUTO_TASK_RESULT status=blocked reason=dependency_deadlock for affected tasks.",
+        "AUTO_RUN_SUMMARY is non-zero/informative when auto exits without running a task due to unsafe skips or deadlock.",
+        "Focused tests cover no-safe-task deadlock summary.",
+        "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    }
   ]
 }
