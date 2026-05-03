@@ -755,7 +755,9 @@ print_auto_run_summary() {
     local duration=0
 
     [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 1 ] || return 0
-    [ "${AUTO_SUMMARY_PRINTED:-0}" -ne 0 ] && return 0
+    if [ "${AUTO_SUMMARY_PRINTED:-0}" -ne 0 ]; then
+        return 0
+    fi
 
     AUTO_SUMMARY_PRINTED=1
     if [ "${AUTO_SUMMARY_START_TS:-0}" -gt 0 ] 2>/dev/null; then
