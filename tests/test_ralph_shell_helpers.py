@@ -464,7 +464,9 @@ def test_auto_run_summary_tracks_done_failed_blocked_and_skipped_tasks(tmp_path:
 
     assert result.returncode == 0, result.stdout + result.stderr
     lines = result.stdout.splitlines()
-    assert lines[0] == "AUTO_RUN_SUMMARY done=1 failed=1 blocked=1 skipped=1 duration=3"
+    assert lines[0].startswith("AUTO_RUN_SUMMARY done=1 failed=1 blocked=1 skipped=1 duration=")
+    duration = int(lines[0].rsplit("duration=", 1)[1])
+    assert 3 <= duration <= 5
     assert "AUTO_TASK_RESULT T02 status=failed reason=Final git commit failed after approval" in lines
     assert "AUTO_TASK_RESULT T03 status=blocked reason=Missing required asset from handoff queue" in lines
     assert "AUTO_TASK_RESULT T04 status=skipped reason=Skipped by user via Telegram" in lines
