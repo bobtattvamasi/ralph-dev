@@ -107,6 +107,10 @@ def validate_review_text(review_text: str) -> dict[str, Any]:
     if candidate is None:
         candidate = extract_review(review_text)
     if candidate is None:
+        nested = nested_raw_review_text(review_text)
+        if nested:
+            candidate = extract_review(nested)
+    if candidate is None:
         return fail_closed_review(FAIL_CLOSED_REASON)
 
     normalized, error = normalize_review(candidate)
