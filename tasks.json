@@ -4414,7 +4414,7 @@
     {
       "id": "R20-21",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Include unsafe skips and deadlock reason in auto summary",
       "description": "When auto-safe skips unsafe tasks or exits due to dependency deadlock, AUTO_RUN_SUMMARY should include skipped count and AUTO_TASK_RESULT lines for deadlock/skipped reasons.",
       "target_files": [
@@ -4433,7 +4433,8 @@
       "complexity": "simple",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-03T16:54:45.270631+00:00"
     }
   ]
 }
