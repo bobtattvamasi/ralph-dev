@@ -708,7 +708,19 @@ init_auto_run_summary() {
     AUTO_SUMMARY_SKIPPED=0
     AUTO_SUMMARY_PRINTED=0
     AUTO_SUMMARY_RESULTS_FILE="${TMPDIR:-/tmp}/ralph_auto_summary_$$.log"
+    AUTO_SUMMARY_KEYS_FILE="${TMPDIR:-/tmp}/ralph_auto_summary_keys_$$.log"
     : > "$AUTO_SUMMARY_RESULTS_FILE"
+    : > "$AUTO_SUMMARY_KEYS_FILE"
+}
+
+auto_task_result_already_recorded() {
+    local task_id="${1:-}"
+    local status="${2:-}"
+    local short_reason="${3:-}"
+
+    [ -n "${AUTO_SUMMARY_KEYS_FILE:-}" ] || return 1
+    [ -f "$AUTO_SUMMARY_KEYS_FILE" ] || return 1
+    grep -Fqx "${task_id}|${status}|${short_reason}" "$AUTO_SUMMARY_KEYS_FILE" >/dev/null 2>&1
 }
 
 auto_record_task_result() {
@@ -721,38 +733,54 @@ auto_record_task_result() {
     [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 1 ] || return 0
     [ -n "$task_id" ] || return 0
 
+    short_reason=$(sanitize_auto_summary_reason "$raw_reason")
+
     case "$raw_status" in
         done|verified_done|approved)
             status="done"
-            AUTO_SUMMARY_DONE=$((AUTO_SUMMARY_DONE + 1))
             ;;
         failed)
             status="failed"
-            AUTO_SUMMARY_FAILED=$((AUTO_SUMMARY_FAILED + 1))
             ;;
         blocked)
             status="blocked"
-            AUTO_SUMMARY_BLOCKED=$((AUTO_SUMMARY_BLOCKED + 1))
             ;;
         skipped)
             status="skipped"
-            AUTO_SUMMARY_SKIPPED=$((AUTO_SUMMARY_SKIPPED + 1))
             ;;
         *)
             return 0
             ;;
     esac
 
-    if [ "$status" = "done" ]; then
+    if auto_task_result_already_recorded "$task_id" "$status" "$short_reason"; then
         return 0
     fi
 
-    short_reason=$(sanitize_auto_summary_reason "$raw_reason")
-    printf 'AUTO_TASK_RESULT %s status=%s reason=%s\n' "$task_id" "$status" "$short_reason" >> "$AUTO_SUMMARY_RESULTS_FILE"
+    case "$status" in
+        done)
+            AUTO_SUMMARY_DONE=$((AUTO_SUMMARY_DONE + 1))
+            ;;
+        failed)
+            AUTO_SUMMARY_FAILED=$((AUTO_SUMMARY_FAILED + 1))
+            ;;
+        blocked)
+            AUTO_SUMMARY_BLOCKED=$((AUTO_SUMMARY_BLOCKED + 1))
+            ;;
+        skipped)
+            AUTO_SUMMARY_SKIPPED=$((AUTO_SUMMARY_SKIPPED + 1))
+            ;;
+    esac
+
+    printf '%s|%s|%s\n' "$task_id" "$status" "$short_reason" >> "$AUTO_SUMMARY_KEYS_FILE"
+    if [ "$status" != "done" ]; then
+        printf 'AUTO_TASK_RESULT %s status=%s reason=%s\n' "$task_id" "$status" "$short_reason" >> "$AUTO_SUMMARY_RESULTS_FILE"
+    fi
 }
 
 print_auto_run_summary() {
     local duration=0
+    local done_count failed_count blocked_count skipped_count
 
     [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 1 ] || return 0
     if [ "${AUTO_SUMMARY_PRINTED:-0}" -ne 0 ]; then
@@ -764,16 +792,30 @@ print_auto_run_summary() {
         duration=$(( $(date +%s) - AUTO_SUMMARY_START_TS ))
     fi
 
+    done_count="${AUTO_SUMMARY_DONE:-0}"
+    failed_count="${AUTO_SUMMARY_FAILED:-0}"
+    blocked_count="${AUTO_SUMMARY_BLOCKED:-0}"
+    skipped_count="${AUTO_SUMMARY_SKIPPED:-0}"
+    if [ -n "${AUTO_SUMMARY_KEYS_FILE:-}" ] && [ -f "$AUTO_SUMMARY_KEYS_FILE" ]; then
+        done_count=$(awk -F'|' '$2=="done"{c++} END{print c+0}' "$AUTO_SUMMARY_KEYS_FILE")
+        failed_count=$(awk -F'|' '$2=="failed"{c++} END{print c+0}' "$AUTO_SUMMARY_KEYS_FILE")
+        blocked_count=$(awk -F'|' '$2=="blocked"{c++} END{print c+0}' "$AUTO_SUMMARY_KEYS_FILE")
+        skipped_count=$(awk -F'|' '$2=="skipped"{c++} END{print c+0}' "$AUTO_SUMMARY_KEYS_FILE")
+    fi
+
     printf 'AUTO_RUN_SUMMARY done=%s failed=%s blocked=%s skipped=%s duration=%s\n' \
-        "$AUTO_SUMMARY_DONE" \
-        "$AUTO_SUMMARY_FAILED" \
-        "$AUTO_SUMMARY_BLOCKED" \
-        "$AUTO_SUMMARY_SKIPPED" \
+        "$done_count" \
+        "$failed_count" \
+        "$blocked_count" \
+        "$skipped_count" \
         "$duration"
 
     if [ -n "${AUTO_SUMMARY_RESULTS_FILE:-}" ] && [ -f "$AUTO_SUMMARY_RESULTS_FILE" ]; then
         cat "$AUTO_SUMMARY_RESULTS_FILE"
         rm -f "$AUTO_SUMMARY_RESULTS_FILE"
+    fi
+    if [ -n "${AUTO_SUMMARY_KEYS_FILE:-}" ] && [ -f "$AUTO_SUMMARY_KEYS_FILE" ]; then
+        rm -f "$AUTO_SUMMARY_KEYS_FILE"
     fi
 }
 
@@ -1797,6 +1839,14 @@ set_queue_exit_state() {
     reason=$(printf '%s' "$explain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('reason',''))" 2>/dev/null || echo "")
     if [ "$reason" = "blocked_dependencies" ]; then
         ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(item['id'] for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
+        if [ "${MODE:-}" = "auto" ] && [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 1 ]; then
+            while IFS= read -r blocked_id; do
+                [ -n "$blocked_id" ] || continue
+                auto_record_task_result "$blocked_id" "blocked" "dependency_deadlock"
+            done <<EOF
+$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print('\n'.join(item['id'] for item in data.get('blocked_pending', [])))" 2>/dev/null || true)
+EOF
+        fi
         FINAL_STATE_STEP="deadlocked"
         FINAL_STATE_MESSAGE="$prefix deadlocked: pending tasks remain blocked by dependencies"
         [ -n "$ids" ] && FINAL_STATE_MESSAGE="$FINAL_STATE_MESSAGE: $ids"
@@ -2159,7 +2209,17 @@ run_next_task_helper() {
         while IFS= read -r line; do
             [ -z "$line" ] && continue
             case "$line" in
-                TASK_SKIPPED_UNSAFE\ *|WARNING:\ *)
+                TASK_SKIPPED_UNSAFE\ *)
+                    if [ "${MODE:-}" = "auto" ] && [ "${AUTO_SUMMARY_ENABLED:-0}" -eq 1 ]; then
+                        local skipped_task_id=""
+                        local skipped_reason=""
+                        skipped_task_id=$(printf '%s\n' "$line" | awk '{print $2}')
+                        skipped_reason=$(printf '%s\n' "$line" | awk '{print $3}')
+                        [ -n "$skipped_task_id" ] && [ -n "$skipped_reason" ] && auto_record_task_result "$skipped_task_id" "skipped" "$skipped_reason"
+                    fi
+                    log "$line" >&2
+                    ;;
+                WARNING:\ *)
                     log "$line" >&2
                     ;;
                 *)

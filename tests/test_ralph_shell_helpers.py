@@ -492,6 +492,61 @@ def test_auto_run_summary_preserves_tester_timeout_reason(tmp_path: Path) -> Non
     assert "AUTO_TASK_RESULT T01 status=blocked reason=tester_timeout" in lines
 
 
+def test_auto_run_summary_records_skipped_unsafe_tasks_from_next_task_helper(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "scripts" / "next_task.py").write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "print('TASK_SKIPPED_UNSAFE T01 BOOTSTRAP_FEATURE', file=sys.stderr)\n"
+        "print('null')\n",
+        encoding="utf-8",
+    )
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "init_auto_run_summary\n"
+        "TASK_JSON=$(run_next_task_helper --auto-safe)\n"
+        "print_auto_run_summary\n"
+        "printf 'TASK_JSON=%s\\n' \"$TASK_JSON\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "TASK_SKIPPED_UNSAFE T01 BOOTSTRAP_FEATURE" in combined
+    assert "AUTO_RUN_SUMMARY done=0 failed=0 blocked=0 skipped=1" in result.stdout
+    assert "AUTO_TASK_RESULT T01 status=skipped reason=BOOTSTRAP_FEATURE" in result.stdout
+    assert "TASK_JSON=null" in result.stdout
+
+
+def test_auto_run_summary_records_dependency_deadlock_when_no_runnable_tasks_remain(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    (project_dir / "scripts" / "next_task.py").write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        "import sys\n"
+        "if '--explain' in sys.argv:\n"
+        "    print(json.dumps({'reason': 'blocked_dependencies', 'blocked_pending': [{'id': 'R20-07', 'title': 'Summary task', 'unmet_dependencies': ['R20-03']}, {'id': 'R20-10', 'title': 'Skip unsafe features', 'unmet_dependencies': ['R20-03']}]}))\n"
+        "else:\n"
+        "    print('null')\n",
+        encoding="utf-8",
+    )
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "init_auto_run_summary\n"
+        "set_queue_exit_state\n"
+        "print_auto_run_summary\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "AUTO_RUN_SUMMARY done=0 failed=0 blocked=2 skipped=0" in result.stdout
+    assert "AUTO_TASK_RESULT R20-07 status=blocked reason=dependency_deadlock" in result.stdout
+    assert "AUTO_TASK_RESULT R20-10 status=blocked reason=dependency_deadlock" in result.stdout
+
+
 def test_final_commit_noop_already_committed_detected_as_successful_finalization(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     init_git_repo(project_dir)
