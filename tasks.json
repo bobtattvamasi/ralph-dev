@@ -3824,7 +3824,8 @@
       "title": "Reduce bot command surface to reliable core",
       "description": "Mark /status /tasks /auto /stop /pause /resume /log /tail /diff as primary. Move everything else to secondary/hidden. Update /help.",
       "target_files": [
-        "scripts/ralph_bot.py"
+        "scripts/ralph_bot.py",
+        "tests/test_bot_commands.py"
       ],
       "acceptance_criteria": [
         "/help shows only 9 core commands. All 9 respond correctly. Secondary commands still work if called directly."
@@ -3843,7 +3844,8 @@
       "title": "One-line task failure summary in logs",
       "description": "After each task, emit TASK_DONE or TASK_FAIL with task_id, reason, retry_count, lead_decision, quality_score, duration. Grep-friendly.",
       "target_files": [
-        "ralph.sh"
+        "ralph.sh",
+        "tests/test_ralph_shell_helpers.py"
       ],
       "acceptance_criteria": [
         "After 5 tasks, rg TASK_(DONE|FAIL) logs/ralph_*.log returns complete night summary."
@@ -3878,7 +3880,7 @@
     {
       "id": "R20-09",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Explicit gtimeout/timeout check on startup",
       "description": "At ralph.sh startup, check for gtimeout or timeout. If neither found, exit with clear error. Do not proceed to task queue.",
       "target_files": [
@@ -3890,7 +3892,9 @@
       ],
       "priority": "medium",
       "complexity": "simple",
-      "role": "coder"
+      "role": "coder",
+      "completed_at": "2026-05-03T00:00:00+00:00",
+      "revision_notes": "Implemented startup dependency preflight for codex/gtimeout/git/python3 and covered by test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_status."
     },
     {
       "id": "R20-12",
