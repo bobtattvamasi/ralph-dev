@@ -4381,31 +4381,31 @@
       "rationale": "Acceptance implies focused tests, so test work should be explicit instead of hidden as out-of-scope diff."
     },
     {
-  "id": "R20-18",
-  "phase": "R20",
-  "status": "pending",
-  "title": "Treat already-committed approved WIP as successful finalization",
-  "description": "If Lead approves and verification passes, but final git commit has nothing to commit because coder changes are already committed as wip(<task_id>), Ralph should finalize the task instead of failing.",
-  "target_files": [
-    "ralph.sh",
-    "src/ralph/resources/ralph.sh",
-    "tests/test_ralph_shell_helpers.py"
-  ],
-  "acceptance_criteria": [
-    "When final git commit after approval finds nothing to commit, Ralph checks whether HEAD or recent commits contain wip(<task_id>): coder changes.",
-    "If approved target files are already committed in a recent wip(<task_id>) commit, Ralph treats finalization as successful.",
-    "Ralph marks the task verified_done/done according to current successful path.",
-    "Ralph logs FINAL_COMMIT_NOOP_ALREADY_COMMITTED <task_id>.",
-    "If no matching wip commit exists and no changes exist, Ralph blocks with reason=final_commit_noop_without_changes.",
-    "If changes still exist but git commit fails, Ralph preserves the diff and blocks with reason=final_commit_failed.",
-    "AUTO_RUN_SUMMARY includes the correct final reason.",
-    "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
-  ],
-  "priority": "critical",
-  "complexity": "moderate",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R20-18",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Treat already-committed approved WIP as successful finalization",
+      "description": "If Lead approves and verification passes, but final git commit has nothing to commit because coder changes are already committed as wip(<task_id>), Ralph should finalize the task instead of failing.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh",
+        "tests/test_ralph_shell_helpers.py"
+      ],
+      "acceptance_criteria": [
+        "When final git commit after approval finds nothing to commit, Ralph checks whether HEAD or recent commits contain wip(<task_id>): coder changes.",
+        "If approved target files are already committed in a recent wip(<task_id>) commit, Ralph treats finalization as successful.",
+        "Ralph marks the task verified_done/done according to current successful path.",
+        "Ralph logs FINAL_COMMIT_NOOP_ALREADY_COMMITTED <task_id>.",
+        "If no matching wip commit exists and no changes exist, Ralph blocks with reason=final_commit_noop_without_changes.",
+        "If changes still exist but git commit fails, Ralph preserves the diff and blocks with reason=final_commit_failed.",
+        "AUTO_RUN_SUMMARY includes the correct final reason.",
+        "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    }
   ]
 }
