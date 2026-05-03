@@ -17,6 +17,9 @@ ralph = "ralph.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "overnight_smoke: fast unattended verification profile for Ralph's own repo; covers shell helpers, bot command parsing, and core auto-mode guards without full integration tests",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

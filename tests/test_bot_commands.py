@@ -520,6 +520,7 @@ async def test_handle_update_routes_tasks_with_trust_aware_counts(bot_env: dict[
 
 
 @pytest.mark.asyncio
+@pytest.mark.overnight_smoke
 async def test_handle_update_routes_help(bot_env: dict[str, object]) -> None:
     await bot.handle_update({"message": {"text": "/help"}})
 
@@ -541,6 +542,7 @@ async def test_handle_update_routes_timeout(bot_env: dict[str, object]) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.overnight_smoke
 async def test_handle_update_routes_ask(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
     ask_mock = AsyncMock()
     monkeypatch.setattr(bot, "cmd_ask", ask_mock)
@@ -838,6 +840,7 @@ async def test_cmd_stop_force_kills_tracked_process_groups_and_is_idempotent(
 
 
 @pytest.mark.asyncio
+@pytest.mark.overnight_smoke
 async def test_cmd_start_auto_rejects_when_state_running(bot_env: dict[str, object]) -> None:
     bot.STATE_FILE.write_text(
         json.dumps(
@@ -861,6 +864,7 @@ async def test_cmd_start_auto_rejects_when_state_running(bot_env: dict[str, obje
 
 
 @pytest.mark.asyncio
+@pytest.mark.overnight_smoke
 async def test_cmd_start_auto_rejects_when_pid_file_is_alive(
     bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -879,6 +883,7 @@ async def test_cmd_start_auto_rejects_when_pid_file_is_alive(
 
 
 @pytest.mark.asyncio
+@pytest.mark.overnight_smoke
 async def test_cmd_start_auto_ignores_stale_pid_file(
     bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -909,6 +914,7 @@ def test_read_state_returns_idle_for_broken_json(bot_env: dict[str, object]) -> 
     assert state["current_task"] is None
 
 
+@pytest.mark.overnight_smoke
 def test_reset_stale_state_resets_running_state_when_no_tracked_process_is_alive(
     bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:

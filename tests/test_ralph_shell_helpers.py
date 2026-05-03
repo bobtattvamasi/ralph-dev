@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RALPH_SH = REPO_ROOT / "ralph.sh"
@@ -286,6 +288,7 @@ def test_startup_dependency_preflight_fails_fast_for_missing_tools_and_skips_sta
     assert status_ok.returncode == 0, status_ok.stdout + status_ok.stderr
 
 
+@pytest.mark.overnight_smoke
 def test_auto_mode_prefers_project_fast_test_command_but_task_mode_uses_full_command(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     write_project_test_commands(
