@@ -157,6 +157,18 @@ HOT_RELOAD_EXPORTS = [
     "handle_update",
 ]
 
+PRIMARY_COMMAND_HELP_LINES = (
+    "/status — current state",
+    "/tasks [phase] — task list",
+    "/auto — run all",
+    "/stop — stop after current task; use `/stop now` to kill immediately",
+    "/pause — pause before next step",
+    "/resume — resume after pause",
+    "/log [N] — last N lines from ralph execution log",
+    "/tail [N] — last N lines of live codex output",
+    "/diff — last commit changes",
+)
+
 
 def configure_module_runtime(module: ModuleType) -> None:
     """Inject current runtime state into a freshly loaded hot-reload module."""
@@ -2144,40 +2156,12 @@ async def cmd_reload() -> None:
 async def cmd_help() -> None:
     """Send help text."""
     set_send_context("/help")
+    help_lines = "\n".join(PRIMARY_COMMAND_HELP_LINES)
     await safe_send(
         "🤖 <b>Ralph Bot</b>\n\n"
-        "/status — current state\n"
-        "/projects — list registered projects\n"
-        "/switch <name> — switch active project context\n"
-        "/tasks [phase] — task list\n"
-        "/plan — phase summary and next pending tasks\n"
-        "/article [new] — get today's article or generate a new one\n"
-        "/add [phase] [title] — add a pending task\n"
-        "/rm [task_id] — remove a task\n"
-        "/pause — pause before next step\n"
-        "/resume — resume after pause\n"
-        "/start TASK_ID — run one task\n"
-        "/phase NUM — run phase\n"
-        "/auto — run all\n"
-        "/stop — stop after current task\n"
-        "/stop now — kill immediately\n"
-        "/exit — force kill immediately\n"
-        "/done [task_id] — mark task done\n"
-        "/redo [task_id] [notes] — redo task\n"
-        "/timeout [seconds] — set timeout override\n"
-        "/comment text — instruction for next task\n"
-        "/log [N] — last N lines from ralph execution log\n"
-        "/progress — phase progress bars\n"
-        "/tail [N] — last N lines of live codex output\n"
-        "/audit &lt;task_id&gt; — latest trust audit summary\n"
-        "/audit_last [N] — latest audit summaries\n"
-        "/trust_report — trust summary across audit artifacts\n"
-        "/ask &lt;question&gt; — bounded operator question entrypoint\n"
-        "/cost — token usage & cost estimate\n"
-        "/stats — aggregated task metrics from metrics.csv\n"
-        "/limits — today's spend vs cost limit\n"
-        "/diff — last commit changes\n"
-        "/reload — hot-reload bot handlers\n"
+        "<b>Primary commands</b>\n"
+        f"{help_lines}\n\n"
+        "Other operator commands remain available if called directly.\n"
     )
 
 
