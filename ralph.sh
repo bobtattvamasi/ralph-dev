@@ -2572,12 +2572,30 @@ working_tree_clean_for_final_commit() {
 review_target_already_contains_task_changes() {
     local base_hash="${REVIEW_BASE_HASH:-}"
     local target_hash="${REVIEW_TARGET_HASH:-}"
+    local candidate_paths=""
+    local path=""
 
     [ -n "$base_hash" ] || return 1
     [ -n "$target_hash" ] || return 1
     git rev-parse --verify "$base_hash^{commit}" >/dev/null 2>&1 || return 1
     git rev-parse --verify "$target_hash^{commit}" >/dev/null 2>&1 || return 1
-    git diff --quiet --ignore-submodules "$base_hash" "$target_hash" -- 2>/dev/null && return 1
+
+    if [ -n "${TASK_JSON:-}" ]; then
+        candidate_paths=$(handoff_candidate_paths "$TASK_JSON")
+    fi
+
+    if [ -n "$candidate_paths" ]; then
+        set --
+        while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            set -- "$@" "$path"
+        done <<< "$candidate_paths"
+        [ "$#" -gt 0 ] || return 1
+        git diff --quiet --ignore-submodules "$base_hash" "$target_hash" -- "$@" 2>/dev/null && return 1
+        return 0
+    fi
+
+    [ -n "$(task_scoped_diff_between_refs "$base_hash" "$target_hash")" ] || return 1
     return 0
 }
 

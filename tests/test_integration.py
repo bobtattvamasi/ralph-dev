@@ -1615,6 +1615,113 @@ def test_ralph_handoff_mode_closes_from_repo_backed_candidate_state_without_code
     assert state["current_phase_step"] == "completed"
 
 
+def test_review_target_already_contains_task_changes_is_scoped_to_task_paths(tmp_path: Path) -> None:
+    project_dir, env = create_test_project(tmp_path)
+    base_hash = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        .stdout.strip()
+    )
+
+    (project_dir / "ARCHITECTURE.md").write_text("# Architecture\nUnrelated change\n", encoding="utf-8")
+    commit_repo_changes(project_dir, "docs: unrelated change", "ARCHITECTURE.md")
+    unrelated_hash = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        .stdout.strip()
+    )
+
+    scoped_false = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            f"""
+source "{RALPH_SH}"
+TASK_JSON="$(python3 - <<'PY'
+import json
+from pathlib import Path
+data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
+print(json.dumps(data["tasks"][0]))
+PY
+)"
+REVIEW_BASE_HASH="{base_hash}"
+REVIEW_TARGET_HASH="{unrelated_hash}"
+if review_target_already_contains_task_changes; then
+  echo true
+else
+  echo false
+fi
+""",
+        ],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert scoped_false.returncode == 0, scoped_false.stdout + scoped_false.stderr
+    assert scoped_false.stdout.strip() == "false"
+
+    (project_dir / "src" / "generated_by_codex.ts").write_text(
+        "export const generatedByCodex = true;\n",
+        encoding="utf-8",
+    )
+    commit_repo_changes(project_dir, "feat: task-scoped change", "src/generated_by_codex.ts")
+    scoped_hash = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        .stdout.strip()
+    )
+
+    scoped_true = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            f"""
+source "{RALPH_SH}"
+TASK_JSON="$(python3 - <<'PY'
+import json
+from pathlib import Path
+data = json.loads(Path("tasks.json").read_text(encoding="utf-8"))
+print(json.dumps(data["tasks"][0]))
+PY
+)"
+REVIEW_BASE_HASH="{unrelated_hash}"
+REVIEW_TARGET_HASH="{scoped_hash}"
+if review_target_already_contains_task_changes; then
+  echo true
+else
+  echo false
+fi
+""",
+        ],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert scoped_true.returncode == 0, scoped_true.stdout + scoped_true.stderr
+    assert scoped_true.stdout.strip() == "true"
+
+
 def test_ralph_handoff_mode_can_use_earlier_repo_backed_candidate_commit_even_with_unrelated_later_commit(tmp_path: Path) -> None:
     project_dir, env = create_test_project(tmp_path)
     tasks = load_tasks(project_dir)
