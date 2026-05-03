@@ -4256,7 +4256,7 @@
     {
       "id": "R20-12A",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Bound post-coder test gate in task wall-clock budget",
       "description": "Prevent long post-coder test gates from consuming the whole task wall-clock cap and blocking otherwise valid small tasks without a precise reason.",
       "target_files": [
@@ -4276,7 +4276,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-03T05:03:50.524617+00:00"
     }
   ]
 }
