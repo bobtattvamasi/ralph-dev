@@ -3798,11 +3798,12 @@
     {
       "id": "R20-05",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Safe auto-commit — scope to task files only",
       "description": "Replace git add -A with scoped staging. Fail fast if untracked unrelated files detected. Use extract_json.py instead of inline grep.",
       "target_files": [
-        "scripts/auto_commit.sh"
+        "scripts/auto_commit.sh",
+        "tests/test_mutator_scripts.py"
       ],
       "acceptance_criteria": [
         "Create dirty worktree with unrelated files. Run auto-commit. Must refuse to commit unrelated changes."
@@ -3812,7 +3813,9 @@
       "role": "coder",
       "depends_on": [
         "R20-01"
-      ]
+      ],
+      "completed_at": null,
+      "revision_notes": "Verified by audit: scoped auto_commit behavior and unrelated dirty worktree refusal are already implemented and covered by tests/test_mutator_scripts.py."
     },
     {
       "id": "R20-06",
@@ -4002,7 +4005,7 @@
     {
       "id": "R20-16",
       "phase": "R20",
-      "status": "pending",
+      "status": "blocked",
       "title": "Overnight-safe test profile",
       "description": "Add a dedicated fast verification profile for unattended auto mode so Ralph can run a small but meaningful smoke/critical subset instead of relying on a hand-written ad hoc test_cmd_fast.",
       "target_files": [
@@ -4023,13 +4026,15 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": null,
+      "revision_notes": "R20-16 failed after 2 retries"
     },
     {
       "id": "R22-01",
       "phase": "R22",
       "priority": "high",
-      "status": "pending",
+      "status": "blocked",
       "title": "state_service.py — транзакционный R/W tasks.json",
       "description": "Заменить все прямые записи в tasks.json из bash на Python сервис с file lock и atomic write. Strangler: сначала только read path.",
       "target_files": [
@@ -4046,13 +4051,15 @@
         "R20-03",
         "R20-04",
         "R20-05"
-      ]
+      ],
+      "completed_at": null,
+      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
     },
     {
       "id": "R22-02",
       "phase": "R22",
       "priority": "high",
-      "status": "pending",
+      "status": "blocked",
       "title": "review_service.py — единый парсер lead review JSON",
       "description": "Вынести логику парсинга lead review из ralph.sh в отдельный Python модуль. Один authoritative source, deterministic fallback.",
       "target_files": [
@@ -4066,7 +4073,9 @@
       ],
       "depends_on": [
         "R20-03"
-      ]
+      ],
+      "completed_at": null,
+      "revision_notes": "tester_failed"
     },
     {
       "id": "R22-03",
