@@ -3919,7 +3919,7 @@
     {
       "id": "R20-13",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Task hygiene checker for unattended auto",
       "description": "Add a report-only checker that scans tasks.json for tasks that are unsafe for unattended auto mode because of bootstrap risk, missing test target files, previous retry failures, or broad/complex scope.",
       "target_files": [
@@ -3941,7 +3941,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-03T06:42:52.706276+00:00"
     },
     {
       "id": "R20-14",
