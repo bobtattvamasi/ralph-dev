@@ -3761,7 +3761,7 @@
     {
       "id": "R20-03",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Harden Lead JSON parsing — single authoritative source",
       "description": "Always prefer review file. Simplify extraction to: decision, quality_score, issues. Fallback on malformed JSON = skip (not fix). Test against archived lead outputs.",
       "target_files": [
@@ -3774,8 +3774,8 @@
       "priority": "critical",
       "complexity": "moderate",
       "role": "coder",
-      "completed_at": null,
-      "revision_notes": "Reopened: review_service.py is integrated in ralph.sh, but acceptance still needs replay proof against archived .ralph/audit outputs; narrow remaining scope to review_service replay coverage."
+      "completed_at": "2026-05-03T16:54:32.833565+00:00",
+      "revision_notes": "Verified: review_service replay proof covers archived lead outputs and avoids spurious fix fallback on well-formed reviews."
     },
     {
       "id": "R20-04",
