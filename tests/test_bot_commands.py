@@ -252,6 +252,12 @@ async def test_cmd_hidden_sends_secondary_command_list(bot_env: dict[str, object
     assert "/projects" in message
     assert "/article" in message
     assert "/reload" in message
+    assert "/switch &lt;project&gt;" in message
+    assert "/start &lt;task_id&gt;" in message
+    assert "/audit &lt;task_id&gt;" in message
+    assert "/ask &lt;question&gt;" in message
+    assert "/switch <project>" not in message
+    assert "/start <task_id>" not in message
     assert "/status" not in message
 
 
