@@ -4091,7 +4091,8 @@
       "description": "В auto/phase режиме запускать только fast subset тестов. Full make test только при explicit verify.",
       "target_files": [
         "ralph.sh",
-        "Makefile"
+        "Makefile",
+        "tests/test_ralph_shell_helpers.py"
       ],
       "acceptance_criteria": [
         "auto mode использует test_cmd_fast если задан",
@@ -4407,6 +4408,30 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-03T15:40:32.923307+00:00"
-    }
+    },
+    {
+  "id": "R20-21",
+  "phase": "R20",
+  "status": "pending",
+  "title": "Include unsafe skips and deadlock reason in auto summary",
+  "description": "When auto-safe skips unsafe tasks or exits due to dependency deadlock, AUTO_RUN_SUMMARY should include skipped count and AUTO_TASK_RESULT lines for deadlock/skipped reasons.",
+  "target_files": [
+    "ralph.sh",
+    "src/ralph/resources/ralph.sh",
+    "tests/test_ralph_shell_helpers.py"
+  ],
+  "acceptance_criteria": [
+    "TASK_SKIPPED_UNSAFE increments skipped count or emits AUTO_TASK_RESULT status=skipped.",
+    "Dependency deadlock emits AUTO_TASK_RESULT status=blocked reason=dependency_deadlock for affected tasks.",
+    "AUTO_RUN_SUMMARY is non-zero/informative when auto exits without running a task due to unsafe skips or deadlock.",
+    "Focused tests cover no-safe-task deadlock summary.",
+    "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+  ],
+  "priority": "high",
+  "complexity": "simple",
+  "role": "coder",
+  "scope_too_wide": false,
+  "selection_warnings": []
+}
   ]
 }
