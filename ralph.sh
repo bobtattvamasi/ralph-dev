@@ -1767,11 +1767,19 @@ log_deadlock_reason() {
     if [ "$MODE" = "phase" ]; then
         explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --phase "$TARGET" --explain 2>/dev/null || echo '{}')
         prefix="Phase $TARGET"
+    elif [ "$MODE" = "auto" ]; then
+        explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --auto-safe --explain 2>/dev/null || echo '{}')
+        prefix="Auto"
     else
         explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --explain 2>/dev/null || echo '{}')
         prefix="Auto"
     fi
     reason=$(printf '%s' "$explain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('reason',''))" 2>/dev/null || echo "")
+    if [ "$reason" = "unsafe_pending" ]; then
+        ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(f\"{item['id']}({item.get('reason','')})\" for item in data.get('unsafe_pending', [])))" 2>/dev/null || true)
+        [ -n "$ids" ] && log "⚠️ $prefix unsafe pending tasks skipped for unattended mode: $ids"
+        return 0
+    fi
     if [ "$reason" != "blocked_dependencies" ] && [ "$reason" != "blocked_statuses" ]; then
         return 1
     fi
@@ -1798,6 +1806,11 @@ set_queue_exit_state() {
         prefix="Phase $TARGET"
         FINAL_STATE_MESSAGE="$prefix complete"
         QUEUE_EXIT_LOG="🎉 $prefix complete!"
+    elif [ "$MODE" = "auto" ]; then
+        explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --auto-safe --explain 2>/dev/null || echo '{}')
+        prefix="Auto"
+        FINAL_STATE_MESSAGE="All tasks complete"
+        QUEUE_EXIT_LOG="🎉 All tasks complete!"
     else
         explain_json=$(python3 "$RALPH_DIR/scripts/next_task.py" --explain 2>/dev/null || echo '{}')
         prefix="Auto"
@@ -1827,6 +1840,15 @@ set_queue_exit_state() {
             QUEUE_EXIT_LOG="⚠️ No runnable tasks remain in $prefix; unresolved tasks are blocked by status."
         else
             QUEUE_EXIT_LOG="⚠️ No runnable tasks remain; unresolved tasks are blocked by status."
+        fi
+    elif [ "$reason" = "unsafe_pending" ]; then
+        ids=$(printf '%s' "$explain_json" | python3 -c "import json,sys; data=json.load(sys.stdin); print(', '.join(f\"{item['id']}({item.get('reason','')})\" for item in data.get('unsafe_pending', [])))" 2>/dev/null || true)
+        FINAL_STATE_MESSAGE="No unattended-safe pending tasks remain"
+        FINAL_NOTIFY_MESSAGE="⚠️ Auto stopped: only unsafe pending tasks remain. Run /status for details."
+        if [ -n "$ids" ]; then
+            QUEUE_EXIT_LOG="⚠️ No unattended-safe pending tasks remain; skipped unsafe tasks: $ids"
+        else
+            QUEUE_EXIT_LOG="⚠️ No unattended-safe pending tasks remain."
         fi
     fi
 }
@@ -2121,7 +2143,15 @@ run_next_task_helper() {
 
     if [ -s "$next_task_stderr" ]; then
         while IFS= read -r line; do
-            [ -n "$line" ] && log "⚠️ next_task.py: $line"
+            [ -z "$line" ] && continue
+            case "$line" in
+                TASK_SKIPPED_UNSAFE\ *|WARNING:\ *)
+                    log "$line" >&2
+                    ;;
+                *)
+                    log "⚠️ next_task.py: $line" >&2
+                    ;;
+            esac
         done < "$next_task_stderr"
     fi
     rm -f "$next_task_stderr"
@@ -4856,7 +4886,7 @@ case "$MODE" in
         NEXT_ARGS="--phase $TARGET"
         ;;
     auto)
-        NEXT_ARGS=""
+        NEXT_ARGS="--auto-safe"
         init_auto_run_summary
         ;;
     *)

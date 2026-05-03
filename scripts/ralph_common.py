@@ -19,6 +19,35 @@ from typing import Any, Callable
 DEFAULT_CONTROL_ACTION = "continue"
 COMPLETED_STATUSES = {"done", "verified_done"}
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+TASK_HYGIENE_WARNING_ORDER = (
+    "BOOTSTRAP_FEATURE",
+    "MISSING_TEST_TARGET",
+    "PREVIOUS_RETRY_FAILURE",
+    "COMPLEX_TASK",
+    "BROAD_SCOPE",
+)
+TASK_HYGIENE_BOOTSTRAP_PATTERNS = (
+    r"\bbootstrap\b",
+    r"\bkickoff\b",
+    r"\bscaffold\b",
+    r"\binit\b",
+    r"\bgeneration\b",
+    r"\bgenerate\b",
+    r"\bnew cli mode\b",
+    r"\bnew cli\b",
+    r"\bnew command\b",
+)
+TASK_HYGIENE_TEST_IMPLYING_PATTERNS = (
+    r"\btest\b",
+    r"\btests\b",
+    r"\bcoverage\b",
+)
+TASK_HYGIENE_RETRY_PATTERNS = (
+    r"failed after retries",
+    r"failed after \d+ retries",
+    r"\bretries\b",
+    r"\bretry\b",
+)
 BOOKKEEPING_EXACT = {
     "tasks.json",
     "progress.md",
@@ -421,6 +450,104 @@ def pick_next_task(
         return None
     candidates.sort(key=lambda task: PRIORITY_ORDER.get(str(task.get("priority", "low")), 9))
     return candidates[0]
+
+
+def task_hygiene_normalize_text(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def task_hygiene_title_description_text(task: dict[str, Any]) -> str:
+    return " ".join(
+        filter(
+            None,
+            (
+                task_hygiene_normalize_text(task.get("title")),
+                task_hygiene_normalize_text(task.get("description")),
+            ),
+        )
+    )
+
+
+def task_hygiene_acceptance_text(task: dict[str, Any]) -> str:
+    criteria = task.get("acceptance_criteria") or []
+    if not isinstance(criteria, list):
+        return task_hygiene_normalize_text(criteria)
+    return " ".join(task_hygiene_normalize_text(item) for item in criteria if task_hygiene_normalize_text(item))
+
+
+def task_has_test_target(task: dict[str, Any]) -> bool:
+    items = task.get("target_files") or []
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        value = str(item or "").strip().replace("\\", "/")
+        if value.startswith("tests/") or "/tests/" in value:
+            return True
+    return False
+
+
+def warn_bootstrap_feature(task: dict[str, Any]) -> str | None:
+    text = task_hygiene_title_description_text(task)
+    for pattern in TASK_HYGIENE_BOOTSTRAP_PATTERNS:
+        if re.search(pattern, text):
+            return "bootstrap/kickoff/init/generation style task is risky for unattended auto"
+    return None
+
+
+def warn_missing_test_target(task: dict[str, Any]) -> str | None:
+    if task_has_test_target(task):
+        return None
+    text = task_hygiene_acceptance_text(task)
+    for pattern in TASK_HYGIENE_TEST_IMPLYING_PATTERNS:
+        if re.search(pattern, text):
+            return "acceptance implies test coverage but target_files has no tests/ path"
+    return None
+
+
+def warn_previous_retry_failure(task: dict[str, Any]) -> str | None:
+    notes = task_hygiene_normalize_text(task.get("revision_notes"))
+    for pattern in TASK_HYGIENE_RETRY_PATTERNS:
+        if re.search(pattern, notes):
+            return "revision_notes mention previous retry failure"
+    return None
+
+
+def warn_complex_task(task: dict[str, Any]) -> str | None:
+    if task_hygiene_normalize_text(task.get("complexity")) == "complex":
+        return "complex task is risky for unattended auto"
+    return None
+
+
+def warn_broad_scope(task: dict[str, Any]) -> str | None:
+    if task.get("scope_too_wide") is True:
+        return "task is already marked scope_too_wide"
+    warnings = task.get("selection_warnings") or []
+    if isinstance(warnings, list) and warnings:
+        return "selection_warnings indicate broad or structurally risky scope"
+    return None
+
+
+def task_hygiene_warnings(task: dict[str, Any]) -> list[tuple[str, str]]:
+    checks = {
+        "BOOTSTRAP_FEATURE": warn_bootstrap_feature(task),
+        "MISSING_TEST_TARGET": warn_missing_test_target(task),
+        "PREVIOUS_RETRY_FAILURE": warn_previous_retry_failure(task),
+        "COMPLEX_TASK": warn_complex_task(task),
+        "BROAD_SCOPE": warn_broad_scope(task),
+    }
+    return [(code, checks[code]) for code in TASK_HYGIENE_WARNING_ORDER if checks[code]]
+
+
+def is_task_safe_for_auto(task: dict[str, Any]) -> bool:
+    return not task_hygiene_warnings(task)
+
+
+def unsafe_task_reason(task: dict[str, Any]) -> str:
+    warnings = task_hygiene_warnings(task)
+    if not warnings:
+        return ""
+    code, _ = warnings[0]
+    return code
 
 
 def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = None) -> dict[str, Any]:
