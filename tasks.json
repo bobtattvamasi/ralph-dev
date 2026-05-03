@@ -3761,12 +3761,12 @@
     {
       "id": "R20-03",
       "phase": "R20",
-      "status": "blocked",
+      "status": "pending",
       "title": "Harden Lead JSON parsing — single authoritative source",
       "description": "Always prefer review file. Simplify extraction to: decision, quality_score, issues. Fallback on malformed JSON = skip (not fix). Test against archived lead outputs.",
       "target_files": [
-        "ralph.sh",
-        "scripts/extract_json.py"
+        "scripts/review_service.py",
+        "tests/test_review_service.py"
       ],
       "acceptance_criteria": [
         "Replay 10 archived lead outputs from .ralph/audit/. Parser returns stable decision for each. Zero spurious fix fallbacks on well-formed reviews."
@@ -3775,7 +3775,7 @@
       "complexity": "moderate",
       "role": "coder",
       "completed_at": null,
-      "revision_notes": "R20-03 failed after 2 retries"
+      "revision_notes": "Reopened: review_service.py is integrated in ralph.sh, but acceptance still needs replay proof against archived .ralph/audit outputs; narrow remaining scope to review_service replay coverage."
     },
     {
       "id": "R20-04",
