@@ -2467,6 +2467,33 @@ PY
     return 0
 }
 
+recent_wip_commit_exists_for_task() {
+    local task_id="${1:-}"
+    local depth="${2:-5}"
+    [ -n "$task_id" ] || return 1
+    git log -n "$depth" --pretty=%s 2>/dev/null | grep -Fx "wip($task_id): coder changes" >/dev/null 2>&1
+}
+
+working_tree_clean_for_final_commit() {
+    git diff --quiet --ignore-submodules -- 2>/dev/null && git diff --cached --quiet --ignore-submodules -- 2>/dev/null
+}
+
+classify_final_commit_failure() {
+    local task_id="${1:-}"
+
+    if working_tree_clean_for_final_commit; then
+        if recent_wip_commit_exists_for_task "$task_id" 5; then
+            printf 'already_committed\n'
+            return 0
+        fi
+        printf 'noop_without_changes\n'
+        return 0
+    fi
+
+    printf 'failed\n'
+    return 0
+}
+
 wait_for_required_assets() {
     local poll_interval="${RALPH_ASSET_POLL_INTERVAL:-5}"
     local announced_wait=0
@@ -5616,17 +5643,31 @@ except Exception:
                         exit 1
                     }
                     if ! git commit -m "feat($TASK_ID): $TASK_TITLE [ralph]" 2>"$FINAL_COMMIT_STDERR"; then
-                        log "❌ Final git commit failed after approval for $TASK_ID"
-                        if [ -s "$FINAL_COMMIT_STDERR" ]; then
-                            while IFS= read -r line; do
-                                [ -n "$line" ] && log "❌ git commit: $line"
-                            done < "$FINAL_COMMIT_STDERR"
+                        FINAL_COMMIT_FAILURE_CLASS=$(classify_final_commit_failure "$TASK_ID")
+                        if [ "$FINAL_COMMIT_FAILURE_CLASS" = "already_committed" ]; then
+                            log "FINAL_COMMIT_NOOP_ALREADY_COMMITTED $TASK_ID"
+                            rm -f "$FINAL_COMMIT_STDERR"
+                        elif [ "$FINAL_COMMIT_FAILURE_CLASS" = "noop_without_changes" ]; then
+                            log "FINAL_COMMIT_NOOP_WITHOUT_CHANGES $TASK_ID"
+                            rm -f "$FINAL_COMMIT_STDERR"
+                            write_state "blocked" "$TASK_ID" "git_commit" "final_commit_noop_without_changes"
+                            auto_record_task_result "$TASK_ID" "blocked" "final_commit_noop_without_changes"
+                            print_auto_run_summary
+                            exit 1
+                        else
+                            log "FINAL_COMMIT_FAILED $TASK_ID"
+                            log "❌ Final git commit failed after approval for $TASK_ID"
+                            if [ -s "$FINAL_COMMIT_STDERR" ]; then
+                                while IFS= read -r line; do
+                                    [ -n "$line" ] && log "❌ git commit: $line"
+                                done < "$FINAL_COMMIT_STDERR"
+                            fi
+                            rm -f "$FINAL_COMMIT_STDERR"
+                            write_state "blocked" "$TASK_ID" "git_commit" "final_commit_failed"
+                            auto_record_task_result "$TASK_ID" "blocked" "final_commit_failed"
+                            print_auto_run_summary
+                            exit 1
                         fi
-                        rm -f "$FINAL_COMMIT_STDERR"
-                        write_state "blocked" "$TASK_ID" "git_commit" "Final git commit failed after approval"
-                        auto_record_task_result "$TASK_ID" "failed" "Final git commit failed after approval"
-                        print_auto_run_summary
-                        exit 1
                     fi
                     rm -f "$FINAL_COMMIT_STDERR"
                     run_update_task_strict "$TASK_ID" verified_done "" "task_success" "Failed to persist verified_done task status"

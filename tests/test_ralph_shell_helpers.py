@@ -492,6 +492,78 @@ def test_auto_run_summary_preserves_tester_timeout_reason(tmp_path: Path) -> Non
     assert "AUTO_TASK_RESULT T01 status=blocked reason=tester_timeout" in lines
 
 
+def test_final_commit_noop_already_committed_detected_as_successful_finalization(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "wip(T01): coder changes"],
+        cwd=project_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = run_helper(
+        project_dir,
+        "TASK_ID='T01'\n"
+        "CLASS=$(classify_final_commit_failure \"$TASK_ID\")\n"
+        "if [ \"$CLASS\" = 'already_committed' ]; then log \"FINAL_COMMIT_NOOP_ALREADY_COMMITTED $TASK_ID\"; fi\n"
+        "printf 'CLASS=%s\\n' \"$CLASS\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "CLASS=already_committed" in result.stdout
+    assert "FINAL_COMMIT_NOOP_ALREADY_COMMITTED T01" in combined
+
+
+def test_final_commit_noop_without_matching_wip_blocks_with_specific_reason(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+
+    result = run_helper(
+        project_dir,
+        "MODE=auto\n"
+        "init_auto_run_summary\n"
+        "TASK_ID='T01'\n"
+        "CLASS=$(classify_final_commit_failure \"$TASK_ID\")\n"
+        "if [ \"$CLASS\" = 'noop_without_changes' ]; then\n"
+        "  log \"FINAL_COMMIT_NOOP_WITHOUT_CHANGES $TASK_ID\"\n"
+        "  auto_record_task_result \"$TASK_ID\" blocked 'final_commit_noop_without_changes'\n"
+        "fi\n"
+        "print_auto_run_summary\n"
+        "printf 'CLASS=%s\\n' \"$CLASS\"\n",
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "CLASS=noop_without_changes" in result.stdout
+    assert "FINAL_COMMIT_NOOP_WITHOUT_CHANGES T01" in combined
+    assert "AUTO_TASK_RESULT T01 status=blocked reason=final_commit_noop_without_changes" in result.stdout
+
+
+def test_final_commit_failure_with_remaining_changes_stays_blocking(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+    (project_dir / "AGENTS.md").write_text("# AGENTS\nchanged\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "TASK_ID='T01'\n"
+        "CLASS=$(classify_final_commit_failure \"$TASK_ID\")\n"
+        "printf 'CLASS=%s\\n' \"$CLASS\"\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CLASS=failed" in result.stdout
+
+
 def test_scope_contract_invalid_blocks_auto_task_without_consuming_retry(tmp_path: Path) -> None:
     project_dir = build_shell_fixture(tmp_path)
     shutil.copy2(REPO_ROOT / "scripts" / "update_task.py", project_dir / "scripts" / "update_task.py")
