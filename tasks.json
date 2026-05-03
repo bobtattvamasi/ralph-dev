@@ -4279,6 +4279,90 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-03T05:03:50.524617+00:00"
+    },
+    {
+      "id": "R20-17",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Document explicit Tester phase in architecture",
+      "description": "Update ARCHITECTURE.md and project docs to reflect the Coder -> Tester -> Lead pipeline, Tester report contract, and tester timeout/failure reason codes.",
+      "target_files": [
+        "ARCHITECTURE.md",
+        "AGENTS.md",
+        "system_promt.md"
+      ],
+      "acceptance_criteria": [
+        "ARCHITECTURE.md describes Coder -> Tester -> Lead execution flow.",
+        "Docs state that Coder and Lead do not run tests.",
+        "Docs describe TESTER_START, TESTER_DONE, TESTER_TIMEOUT and TESTER_REPORT.",
+        "Docs describe tester_timeout and tester_failed reason codes.",
+        "Docs clarify that auto mode should use fast/overnight test profile while explicit verify can use full tests."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    },
+    {
+      "id": "R17-01A",
+      "parent_id": "R17-01",
+      "phase": "R17",
+      "status": "pending",
+      "title": "kickoff CLI argument and mode parsing",
+      "description": "Split R17-01 so the kickoff command path is introduced in the shell runner without mixing init generation concerns.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "kickoff <path> <description> is parsed and routed correctly",
+        "invalid kickoff invocation returns clear usage output"
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "rationale": "Separate CLI/mode parsing from scaffold generation to keep the first change narrow and shell-local."
+    },
+    {
+      "id": "R17-01B",
+      "parent_id": "R17-01",
+      "phase": "R17",
+      "status": "pending",
+      "title": "kickoff init and scaffold wiring",
+      "description": "Wire kickoff description into init/scaffold generation for R17-01 so the description is consumed during project creation.",
+      "target_files": [
+        "ralph.sh",
+        "ralph-init.sh",
+        "src/ralph/resources/ralph.sh"
+      ],
+      "acceptance_criteria": [
+        "kickoff passes description into the init/scaffold generation path",
+        "generated scaffold reflects the provided description during initialization"
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder",
+      "rationale": "The current target_files are too narrow because acceptance depends on init/scaffold behavior outside ralph.sh alone."
+    },
+    {
+      "id": "R17-01C",
+      "parent_id": "R17-01",
+      "phase": "R17",
+      "status": "pending",
+      "title": "kickoff focused test coverage",
+      "description": "Add focused regression coverage for the kickoff command introduced by R17-01.",
+      "target_files": [
+        "tests/test_ralph_shell_helpers.py"
+      ],
+      "acceptance_criteria": [
+        "focused test covers kickoff path",
+        "test verifies directory and .ralph scaffold creation"
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "rationale": "Acceptance implies focused tests, so test work should be explicit instead of hidden as out-of-scope diff."
     }
   ]
 }
