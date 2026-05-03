@@ -212,12 +212,28 @@ async def test_cmd_help_sends_command_list(bot_env: dict[str, object]) -> None:
     safe_send = bot_env["safe_send"]
     safe_send.assert_awaited_once()
     message = safe_send.await_args.args[0]
-    assert "/help" not in message or "Ralph Bot" in message
-    assert "/article [new]" in message
-    assert "/timeout [seconds]" in message
-    assert "/done [task_id]" in message
-    assert "/audit &lt;task_id&gt;" in message
-    assert "/ask &lt;question&gt;" in message
+    assert "Ralph Bot" in message
+    assert "<b>Primary commands</b>" in message
+    assert "Secondary commands remain available if called directly." in message
+
+    command_lines = [line for line in message.splitlines() if line.startswith("/")]
+    assert command_lines == list(bot.PRIMARY_COMMAND_HELP_LINES)
+    assert len(command_lines) == 9
+
+    assert "/status" in message
+    assert "/tasks [phase]" in message
+    assert "/auto" in message
+    assert "/stop" in message
+    assert "/pause" in message
+    assert "/resume" in message
+    assert "/log [N]" in message
+    assert "/tail [N]" in message
+    assert "/diff" in message
+    assert "/article [new]" not in message
+    assert "/timeout [seconds]" not in message
+    assert "/done [task_id]" not in message
+    assert "/audit &lt;task_id&gt;" not in message
+    assert "/ask &lt;question&gt;" not in message
 
 
 @pytest.mark.asyncio
@@ -529,6 +545,66 @@ async def test_handle_update_routes_help(bot_env: dict[str, object]) -> None:
     message = safe_send.await_args.args[0]
     assert "/pause" in message
     assert "/resume" in message
+    assert "/article" not in message
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_primary_commands(bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    status_mock = AsyncMock()
+    pause_mock = AsyncMock()
+    resume_mock = AsyncMock()
+    auto_mock = AsyncMock()
+    stop_mock = AsyncMock()
+    tail_mock = AsyncMock()
+    diff_mock = AsyncMock()
+    safe_send = bot_env["safe_send"]
+
+    monkeypatch.setattr(bot, "cmd_status", status_mock)
+    monkeypatch.setattr(bot, "cmd_pause", pause_mock)
+    monkeypatch.setattr(bot, "cmd_resume", resume_mock)
+    monkeypatch.setattr(bot, "cmd_start_auto", auto_mock)
+    monkeypatch.setattr(bot, "cmd_stop", stop_mock)
+    monkeypatch.setattr(bot, "cmd_tail", tail_mock)
+    monkeypatch.setattr(bot, "cmd_diff", diff_mock)
+    monkeypatch.setattr(bot, "get_tasks_summary", lambda phase=None: f"tasks:{phase}")
+    monkeypatch.setattr(bot, "get_log_tail", lambda n: f"log:{n}")
+
+    await bot.handle_update({"message": {"text": "/status"}})
+    await bot.handle_update({"message": {"text": "/tasks R20"}})
+    await bot.handle_update({"message": {"text": "/auto"}})
+    await bot.handle_update({"message": {"text": "/stop now"}})
+    await bot.handle_update({"message": {"text": "/pause"}})
+    await bot.handle_update({"message": {"text": "/resume"}})
+    await bot.handle_update({"message": {"text": "/log 7"}})
+    await bot.handle_update({"message": {"text": "/tail 3"}})
+    await bot.handle_update({"message": {"text": "/diff"}})
+
+    status_mock.assert_awaited_once_with()
+    pause_mock.assert_awaited_once_with()
+    resume_mock.assert_awaited_once_with()
+    auto_mock.assert_awaited_once_with()
+    stop_mock.assert_awaited_once_with(force=True)
+    tail_mock.assert_awaited_once_with(3)
+    diff_mock.assert_awaited_once_with()
+    safe_send.assert_any_await("tasks:R20")
+    safe_send.assert_any_await("<pre>log:7</pre>")
+
+
+@pytest.mark.asyncio
+async def test_handle_update_keeps_secondary_commands_available_directly(
+    bot_env: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    article_mock = AsyncMock()
+    timeout_mock = AsyncMock()
+
+    monkeypatch.setattr(bot, "cmd_article", article_mock)
+    monkeypatch.setattr(bot, "cmd_timeout", timeout_mock)
+
+    await bot.handle_update({"message": {"text": "/article new"}})
+    await bot.handle_update({"message": {"text": "/timeout 60"}})
+
+    article_mock.assert_awaited_once_with("new")
+    timeout_mock.assert_awaited_once_with("60")
 
 
 @pytest.mark.asyncio

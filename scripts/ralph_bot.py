@@ -2161,7 +2161,7 @@ async def cmd_help() -> None:
         "🤖 <b>Ralph Bot</b>\n\n"
         "<b>Primary commands</b>\n"
         f"{help_lines}\n\n"
-        "Other operator commands remain available if called directly.\n"
+        "Secondary commands remain available if called directly.\n"
     )
 
 
