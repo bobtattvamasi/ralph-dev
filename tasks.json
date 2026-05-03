@@ -3973,7 +3973,7 @@
     {
       "id": "R20-15",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Auto mode skips unsafe tasks",
       "description": "Teach auto mode to skip tasks that are unsafe for unattended execution and continue to the next safe pending task instead of burning retries and wall-clock cap on structurally bad tasks.",
       "target_files": [
@@ -3996,7 +3996,8 @@
       "complexity": "complex",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-03T08:21:18.753032+00:00"
     },
     {
       "id": "R20-16",
