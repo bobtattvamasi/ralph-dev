@@ -3947,7 +3947,7 @@
     {
       "id": "R20-14",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Task decomposition planner",
       "description": "Add a report-only script that analyzes one unsafe or oversized task and proposes smaller child tasks with narrower target_files and acceptance criteria suitable for unattended execution.",
       "target_files": [
@@ -3967,7 +3967,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-03T08:04:04.680179+00:00"
     },
     {
       "id": "R20-15",
