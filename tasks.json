@@ -4766,28 +4766,29 @@
       "completed_at": "2026-05-19T09:22:57.100237+00:00"
     },
     {
-  "id": "R23-09",
-  "phase": "R23",
-  "status": "pending",
-  "title": "Resolve duplicate task ID R12-03",
-  "description": "Inspect the duplicate R12-03 entries in tasks.json and repair the backlog so task IDs are unique without losing historical context.",
-  "target_files": [
-    "tasks.json"
-  ],
-  "acceptance_criteria": [
-    "tasks.json contains no duplicate task IDs.",
-    "Both original R12-03 entries are inspected before mutation.",
-    "If both entries represent the same work, preserve the more complete entry and merge useful revision notes/history.",
-    "If entries represent different work, rename the stale/historical duplicate to a unique archival ID.",
-    "python3 -m json.tool tasks.json passes.",
-    "ralph doctor no longer fails due to duplicate task IDs.",
-    "No runtime code is changed."
-  ],
-  "priority": "high",
-  "complexity": "simple",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R23-09",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "Resolve duplicate task ID R12-03",
+      "description": "Inspect the duplicate R12-03 entries in tasks.json and repair the backlog so task IDs are unique without losing historical context.",
+      "target_files": [
+        "tasks.json"
+      ],
+      "acceptance_criteria": [
+        "tasks.json contains no duplicate task IDs.",
+        "Both original R12-03 entries are inspected before mutation.",
+        "If both entries represent the same work, preserve the more complete entry and merge useful revision notes/history.",
+        "If entries represent different work, rename the stale/historical duplicate to a unique archival ID.",
+        "python3 -m json.tool tasks.json passes.",
+        "ralph doctor no longer fails due to duplicate task IDs.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T09:28:47.211605+00:00"
+    }
   ]
 }
