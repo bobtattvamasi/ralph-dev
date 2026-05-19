@@ -4579,30 +4579,31 @@
       "completed_at": "2026-05-19T07:30:45.537285+00:00"
     },
     {
-  "id": "R23-02",
-  "phase": "R23",
-  "status": "pending",
-  "title": "CLI wrapper: next, explain, auto --safe, task",
-  "description": "Add a thin operator CLI entrypoint that wraps existing Ralph commands without changing runtime semantics.",
-  "target_files": [
-    "scripts/ralph_cli.py",
-    "tests/test_ralph_cli.py",
-    "pyproject.toml"
-  ],
-  "acceptance_criteria": [
-    "ralph next maps to python3 scripts/next_task.py.",
-    "ralph explain maps to python3 scripts/next_task.py --auto-safe --explain.",
-    "ralph auto --safe maps to ./ralph.sh auto.",
-    "ralph task <ID> maps to ./ralph.sh task <ID>.",
-    "CLI wrapper does not duplicate task selection logic.",
-    "Focused tests cover command argument parsing and subprocess command construction.",
-    "No runtime behavior in ralph.sh changes."
-  ],
-  "priority": "high",
-  "complexity": "moderate",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R23-02",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "CLI wrapper: next, explain, auto --safe, task",
+      "description": "Add a thin operator CLI entrypoint that wraps existing Ralph commands without changing runtime semantics.",
+      "target_files": [
+        "scripts/ralph_cli.py",
+        "tests/test_ralph_cli.py",
+        "pyproject.toml"
+      ],
+      "acceptance_criteria": [
+        "ralph next maps to python3 scripts/next_task.py.",
+        "ralph explain maps to python3 scripts/next_task.py --auto-safe --explain.",
+        "ralph auto --safe maps to ./ralph.sh auto.",
+        "ralph task <ID> maps to ./ralph.sh task <ID>.",
+        "CLI wrapper does not duplicate task selection logic.",
+        "Focused tests cover command argument parsing and subprocess command construction.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T07:45:44.707362+00:00"
+    }
   ]
 }
