@@ -103,3 +103,5 @@
 - **T02** (2026-03-31 16:22 UTC): Second note
 - **R19-02** (2026-04-10 17:49 UTC): R19-02 is acceptable as implemented: modified `.sh` files are syntax-checked before `make test`, syntax failure short-circuits the test run, and the reported out-of-scope files are bookkeeping/audit artifacts rather than missing product work for this task.
 - **R22-03** (2026-05-03 17:14 UTC): Scope stayed within ralph.sh, Makefile, and tests/test_ralph_shell_helpers.py. Fast-path behavior is covered for auto, phase, and tester timeout selection; provided smoke suite passed in 1.86s.
+
+- **Stage 1 Auto-safe runner v1** (2026-05-19 UTC): Closed. Ralph now has a stable Coder -> Tester -> Lead -> Verifier -> Finalizer pipeline, auto-safe hygiene, integration/full-suite task filtering, active backlog policy, parked non-Stage-1 feature work, and runtime bookkeeping checkpoint before next auto task selection. `next_task.py --auto-safe --explain` reports no pending runnable work; remaining unresolved items are parked/blocked future-stage tasks.
