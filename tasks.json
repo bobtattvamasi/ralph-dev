@@ -4632,6 +4632,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T07:56:06.130582+00:00"
-    }
+    },
+    {
+  "id": "R23-04",
+  "phase": "R23",
+  "status": "pending",
+  "title": "CLI groom command",
+  "description": "Add ralph groom as a lightweight operator command that prints the active backlog view and points to backlog policy without changing tasks.json.",
+  "target_files": [
+    "src/ralph/cli.py",
+    "tests/test_ralph_cli.py",
+    "tests/test_cli_packaging.py"
+  ],
+  "acceptance_criteria": [
+    "ralph groom prints docs/ACTIVE_BACKLOG.md from the target project when present.",
+    "ralph groom mentions docs/BACKLOG_POLICY.md when present.",
+    "ralph groom is read-only and does not modify tasks.json.",
+    "ralph groom returns nonzero if ACTIVE_BACKLOG.md is missing.",
+    "Focused tests cover command construction/read behavior.",
+    "No runtime behavior in ralph.sh changes."
+  ],
+  "priority": "high",
+  "complexity": "simple",
+  "role": "coder",
+  "scope_too_wide": false,
+  "selection_warnings": []
+}
   ]
 }
