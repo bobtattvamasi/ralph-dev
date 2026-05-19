@@ -5016,6 +5016,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T14:05:44.130617+00:00"
+    },
+    {
+      "id": "R24-08",
+      "phase": "R24",
+      "status": "verified_done",
+      "title": "Split installed-mode packaging test matrix",
+      "description": "Refactor tests/test_cli_packaging.py so installed package resource checks, command smoke tests, and trust-resource checks are separated into clear focused tests.",
+      "target_files": [
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "Installed package resource checks are in a focused test.",
+        "CLI command smoke matrix is in a focused test.",
+        "Trust-resource checks remain separate.",
+        "Shared setup helpers remain small and readable.",
+        "Tests still run commands from cwd outside REPO_ROOT where relevant.",
+        "python3 -m pytest tests/test_cli_packaging.py -q passes.",
+        "No runtime behavior changes."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T14:39:04.763219+00:00"
     }
   ]
 }
