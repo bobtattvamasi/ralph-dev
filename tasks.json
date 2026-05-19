@@ -4066,7 +4066,7 @@
       "id": "R22-02",
       "phase": "R22",
       "priority": "high",
-      "status": "blocked",
+      "status": "verified_done",
       "title": "review_service.py — единый парсер lead review JSON",
       "description": "Вынести логику парсинга lead review из ralph.sh в отдельный Python модуль. Один authoritative source, deterministic fallback.",
       "target_files": [
@@ -4081,8 +4081,8 @@
       "depends_on": [
         "R20-03"
       ],
-      "completed_at": null,
-      "revision_notes": "tester_failed"
+      "completed_at": "2026-05-19T06:29:26.251167+00:00",
+      "revision_notes": "Verified as stale-spec resolved: review_service.py exists, ralph.sh uses validate-shell/parse-shell, replay proof exists via R20-03, and malformed reviews intentionally fail-closed to fix instead of skip/defer."
     },
     {
       "id": "R22-03",
