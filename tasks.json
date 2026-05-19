@@ -4993,28 +4993,29 @@
       "completed_at": "2026-05-19T13:58:16.414790+00:00"
     },
     {
-  "id": "R24-07",
-  "phase": "R24",
-  "status": "pending",
-  "title": "Package data manifest audit",
-  "description": "Add a packaging test that verifies required Ralph resources are included in installed package data, not only present in the source checkout.",
-  "target_files": [
-    "tests/test_cli_packaging.py",
-    "pyproject.toml"
-  ],
-  "acceptance_criteria": [
-    "Test verifies installed package can resolve ralph.sh via ralph.cli.resource_path.",
-    "Test verifies installed package can resolve scripts/next_task.py via ralph.cli.resource_path.",
-    "Test runs from outside REPO_ROOT.",
-    "Test fails if required resources are present in source tree but missing from installed package data.",
-    "pyproject.toml package-data is updated only if the test reveals a real missing resource.",
-    "No runtime behavior in ralph.sh changes."
-  ],
-  "priority": "high",
-  "complexity": "simple",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R24-07",
+      "phase": "R24",
+      "status": "verified_done",
+      "title": "Package data manifest audit",
+      "description": "Add a packaging test that verifies required Ralph resources are included in installed package data, not only present in the source checkout.",
+      "target_files": [
+        "tests/test_cli_packaging.py",
+        "pyproject.toml"
+      ],
+      "acceptance_criteria": [
+        "Test verifies installed package can resolve ralph.sh via ralph.cli.resource_path.",
+        "Test verifies installed package can resolve scripts/next_task.py via ralph.cli.resource_path.",
+        "Test runs from outside REPO_ROOT.",
+        "Test fails if required resources are present in source tree but missing from installed package data.",
+        "pyproject.toml package-data is updated only if the test reveals a real missing resource.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T14:05:44.130617+00:00"
+    }
   ]
 }
