@@ -5068,6 +5068,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T14:43:29.314943+00:00"
+    },
+    {
+      "id": "R24-10",
+      "phase": "R24",
+      "status": "verified_done",
+      "title": "Packaging polish checkpoint",
+      "description": "Record the completed R24 packaging polish work and define the readiness boundary for moving from installed CLI reliability to bootstrap/kickoff work.",
+      "target_files": [
+        "docs/ACTIVE_BACKLOG.md",
+        "docs/PACKAGING_PLAN.md",
+        "progress.md"
+      ],
+      "acceptance_criteria": [
+        "ACTIVE_BACKLOG.md marks R24 packaging polish as checkpoint-complete.",
+        "PACKAGING_PLAN.md lists completed R24 work: installed smoke coverage, installed verify, packaging matrix split, resource audit, package-data manifest audit, and install guide.",
+        "progress.md records R24 packaging polish checkpoint.",
+        "Next-stage options are listed: bootstrap/kickoff, release polish, or product-factory planning.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T14:50:29.722908+00:00"
     }
   ]
 }
