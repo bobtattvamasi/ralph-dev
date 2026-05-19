@@ -6,19 +6,22 @@ The developer's superpower for building vertical AI products fast.
 ## What Ralph Does
 1. Takes tasks.json with a project plan (phases, priorities, dependencies)
 2. Runs tasks automatically: ./ralph.sh auto
-3. For each task: builds prompt → runs Codex CLI (coder) → Codex CLI 
-   (lead review) → approve/fix/retry → git commit → next task
+3. For each task: builds prompt → runs Codex CLI (coder) → runtime Tester 
+   phase → Codex CLI (lead review) → closure verification → final commit/status
+   handling → next task
 4. Handles failures: timeout, watchdog, retry with backoff, skip and alert
 5. Developer controls and monitors via Telegram bot
 6. Produces working committed code with audit trail
 
 ## Architecture
-Telegram → ralph_bot.py → ralph.sh → codex exec (coder) → codex exec (lead)
-                                       ↓ approve/fix/alert
-                                  git commit → next task
+Telegram → ralph_bot.py → ralph.sh → codex exec (coder) → Tester
+                                                    ↓ TESTER_REPORT
+                                               codex exec (lead)
+                                                    ↓ approve/fix/alert
+                                               Verifier → Finalizer
 
 ## Core Files
-- ralph.sh — main loop, prompt builder, codex runner, timeout/retry/watchdog
+- ralph.sh — main loop, prompt builder, coder/tester/lead orchestration, timeout/retry/watchdog
 - scripts/ralph_bot.py — Telegram bot, all commands
 - tasks.json — task definitions (statuses: pending/done/verified_done/
   blocked/false_positive/partial)
@@ -37,7 +40,7 @@ ralph_notify.py, ralph_tail.sh, update_memory.py, update_progress.py
 ./ralph.sh task <ID>     # run single task
 ./ralph.sh auto          # run all pending
 ./ralph.sh phase <PHASE> # run phase
-make test                # full test suite
+make test                # explicit full test suite
 python3 scripts/update_task.py <ID> <status>
 python3 scripts/next_task.py
 
@@ -48,6 +51,20 @@ python3 scripts/next_task.py
 - Watchdog monitors output file activity
 - Timeout scales by complexity (simple=180s, moderate=420s, complex/critical=600s)
 - MAX_CODEX_RETRIES=3 with backoff
+
+## Tester Phase
+- Coder and Lead do not own the main test phase.
+- The runtime Tester phase runs the configured project test command and is the authoritative source of test truth for the task.
+- Tester emits `TESTER_START`, `TESTER_DONE`, `TESTER_TIMEOUT`, and `TESTER_REPORT`.
+- `tester_timeout` means the configured test command exceeded the allowed runtime.
+- `tester_failed` means the configured test command completed with a failing result.
+- Lead should review the diff, acceptance criteria, and tester report. Lead should not require full-suite evidence unless the task explicitly asks for it.
+
+## Test Profiles
+- Auto and phase mode should prefer the fast or overnight profile configured in `test_cmd_fast`.
+- The overnight profile is intentionally smaller than the full suite and should avoid heavy integration coverage by default.
+- Explicit verify or manual full checks may use the full test command such as `make test`.
+- Tasks that explicitly require integration scenarios or full-suite baselines should not rely on overnight-smoke evidence alone.
 
 ## Environment
 - macOS, zsh, GNU coreutils via brew (gtimeout, gdate)

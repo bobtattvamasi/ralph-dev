@@ -15,8 +15,12 @@
 6. Python changes must pass `python3 -c "import ast; ast.parse(...)"` where applicable.
 7. Prefer repo-local state and configuration over machine-level assumptions.
 8. Prefer narrow task execution over broad repo exploration: start from the known hot zone and expand only when evidence requires it.
+9. Treat the runtime Tester phase as the authoritative test owner. Coder and Lead do not own full-suite execution.
+10. Coder should rely on the eventual Tester report for authoritative verification and should not assume ad hoc full-test runs replace runtime evidence.
+11. Lead should review diff plus tester evidence and should not demand full-suite proof unless the task acceptance explicitly requires it.
 
 ## Notes
 - Ralph attaches to any repo that contains `tasks.json`.
 - Telegram bot is the main human control surface.
 - Persistent memory lives in `.ralph/memory/`.
+- The effective execution pipeline is `Coder -> Tester -> Lead -> Verifier -> Finalizer`.
