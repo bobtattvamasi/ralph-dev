@@ -79,6 +79,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project directory that contains tasks.json.",
     )
 
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Run lightweight operator health checks.",
+    )
+    doctor_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+
     task_parser = subparsers.add_parser(
         "task",
         help="Run one explicitly selected task.",
@@ -149,7 +159,32 @@ def build_command(args: argparse.Namespace) -> list[str]:
     raise ValueError(f"Unknown command: {args.command}")
 
 
+def build_doctor_commands() -> list[tuple[str, list[str]]]:
+    next_task_script = resource_path("scripts", "next_task.py")
+    return [
+        ("git status --short", ["git", "status", "--short"]),
+        ("python -m json.tool tasks.json", [sys.executable, "-m", "json.tool", "tasks.json"]),
+        ("python -m pytest tests/test_shell_parity.py -q", [sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"]),
+        ("python scripts/next_task.py --auto-safe --explain", [sys.executable, str(next_task_script), "--auto-safe", "--explain"]),
+    ]
+
+
+def execute_doctor(args: argparse.Namespace) -> int:
+    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+    exit_code = 0
+
+    for label, command in build_doctor_commands():
+        print(f"==> {label}")
+        step_code = run_command(command, cwd=project_dir)
+        if exit_code == 0 and step_code != 0:
+            exit_code = step_code
+
+    return exit_code
+
+
 def execute(args: argparse.Namespace) -> int:
+    if args.command == "doctor":
+        return execute_doctor(args)
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     return run_command(build_command(args), cwd=project_dir)
 

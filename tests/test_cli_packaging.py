@@ -31,6 +31,7 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     ralph_bin = bin_dir / ("ralph.exe" if os.name == "nt" else "ralph")
 
     subprocess.run([str(python_bin), "-m", "pip", "install", str(REPO_ROOT)], check=True)
+    subprocess.run([str(python_bin), "-m", "pip", "install", "pytest"], check=True)
 
     help_result = run([str(ralph_bin), "--help"])
     assert help_result.returncode == 0
@@ -38,6 +39,7 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert "auto" in help_result.stdout
     assert "next" in help_result.stdout
     assert "explain" in help_result.stdout
+    assert "doctor" in help_result.stdout
     assert "task" in help_result.stdout
     assert "status" in help_result.stdout
     assert "bot" in help_result.stdout
@@ -79,6 +81,13 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     bot_help_result = run([str(ralph_bin), "bot", "--help"], cwd=tmp_path)
     assert bot_help_result.returncode == 0
     assert "project-dir" in bot_help_result.stdout
+
+    doctor_result = run([str(ralph_bin), "doctor", "--project-dir", str(REPO_ROOT)], env=runtime_env)
+    assert doctor_result.returncode == 0
+    assert "==> git status --short" in doctor_result.stdout
+    assert "==> python -m json.tool tasks.json" in doctor_result.stdout
+    assert "==> python -m pytest tests/test_shell_parity.py -q" in doctor_result.stdout
+    assert "==> python scripts/next_task.py --auto-safe --explain" in doctor_result.stdout
 
 
 def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Path) -> None:
