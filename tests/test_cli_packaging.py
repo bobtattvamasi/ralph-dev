@@ -41,6 +41,8 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert "explain" in help_result.stdout
     assert "doctor" in help_result.stdout
     assert "groom" in help_result.stdout
+    assert "tail" in help_result.stdout
+    assert "log" in help_result.stdout
     assert "task" in help_result.stdout
     assert "status" in help_result.stdout
     assert "bot" in help_result.stdout
@@ -97,6 +99,18 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert groom_result.returncode == 0
     assert "# Active Backlog" in groom_result.stdout
     assert "Backlog policy: docs/BACKLOG_POLICY.md" in groom_result.stdout
+
+    logs_dir = project_dir / "logs"
+    (logs_dir / "ralph_2026-05-18.log").write_text("old\n", encoding="utf-8")
+    (logs_dir / "ralph_2026-05-19.log").write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    tail_result = run([str(ralph_bin), "tail", "--project-dir", str(project_dir), "--lines", "2"], env=runtime_env)
+    assert tail_result.returncode == 0
+    assert tail_result.stdout == "two\nthree\n"
+
+    log_result = run([str(ralph_bin), "log", "--project-dir", str(project_dir)], env=runtime_env)
+    assert log_result.returncode == 0
+    assert str(project_dir / "logs" / "ralph_2026-05-19.log") in log_result.stdout
 
 
 def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Path) -> None:

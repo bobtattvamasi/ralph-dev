@@ -110,6 +110,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project directory that contains tasks.json.",
     )
 
+    tail_parser = subparsers.add_parser(
+        "tail",
+        help="Show the tail of the latest Ralph log file.",
+    )
+    tail_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+    tail_parser.add_argument(
+        "--lines",
+        type=int,
+        default=80,
+        help="Number of lines to print from the end of the latest log. Defaults to 80.",
+    )
+
+    log_parser = subparsers.add_parser(
+        "log",
+        help="List available Ralph log files newest first.",
+    )
+    log_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+
     task_parser = subparsers.add_parser(
         "task",
         help="Run one explicitly selected task.",
@@ -222,6 +248,22 @@ def execute_groom(args: argparse.Namespace) -> int:
     return 0
 
 
+def find_log_files(project_dir: Path) -> list[Path]:
+    log_dir = project_dir / "logs"
+    files = [path for path in log_dir.glob("ralph_*.log") if path.is_file()]
+    return sorted(files, key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
+
+
+def latest_log_file(project_dir: Path) -> Path | None:
+    log_files = find_log_files(project_dir)
+    return log_files[0] if log_files else None
+
+
+def tail_lines(path: Path, line_count: int) -> list[str]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return lines[-line_count:]
+
+
 def execute_status(args: argparse.Namespace) -> int:
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     tasks_path = project_dir / "tasks.json"
@@ -280,6 +322,35 @@ def execute_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def execute_tail(args: argparse.Namespace) -> int:
+    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+    line_count = int(getattr(args, "lines", 80))
+    if line_count <= 0:
+        print("--lines must be greater than 0", file=sys.stderr)
+        return 1
+
+    log_path = latest_log_file(project_dir)
+    if log_path is None:
+        print(f"No Ralph logs found in {project_dir / 'logs'}", file=sys.stderr)
+        return 1
+
+    for line in tail_lines(log_path, line_count):
+        print(line)
+    return 0
+
+
+def execute_log(args: argparse.Namespace) -> int:
+    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+    log_files = find_log_files(project_dir)
+    if not log_files:
+        print(f"No Ralph logs found in {project_dir / 'logs'}", file=sys.stderr)
+        return 1
+
+    for path in log_files:
+        print(path)
+    return 0
+
+
 def execute(args: argparse.Namespace) -> int:
     if args.command == "doctor":
         return execute_doctor(args)
@@ -287,6 +358,10 @@ def execute(args: argparse.Namespace) -> int:
         return execute_groom(args)
     if args.command == "status":
         return execute_status(args)
+    if args.command == "tail":
+        return execute_tail(args)
+    if args.command == "log":
+        return execute_log(args)
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     return run_command(build_command(args), cwd=project_dir)
 

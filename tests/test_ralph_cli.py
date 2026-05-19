@@ -118,6 +118,54 @@ def test_execute_status_prints_operator_summary(monkeypatch: pytest.MonkeyPatch,
     assert '"reason": "unsafe_pending"' in captured.out
 
 
+def test_find_log_files_sorts_newest_first(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    older = logs_dir / "ralph_2026-05-18.log"
+    newer = logs_dir / "ralph_2026-05-19.log"
+    older.write_text("old\n", encoding="utf-8")
+    newer.write_text("new\n", encoding="utf-8")
+    older.touch()
+    newer.touch()
+
+    files = ralph_cli.find_log_files(tmp_path)
+
+    assert files[0] == newer
+    assert files[1] == older
+
+
+def test_execute_tail_prints_last_requested_lines(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "ralph_2026-05-19.log").write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    exit_code = ralph_cli.execute_tail(Namespace(command="tail", project_dir=str(tmp_path), lines=2))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == "two\nthree\n"
+    assert captured.err == ""
+
+
+def test_execute_log_lists_log_files_newest_first(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    older = logs_dir / "ralph_2026-05-18.log"
+    newer = logs_dir / "ralph_2026-05-19.log"
+    older.write_text("old\n", encoding="utf-8")
+    newer.write_text("new\n", encoding="utf-8")
+    older.touch()
+    newer.touch()
+
+    exit_code = ralph_cli.execute_log(Namespace(command="log", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    lines = captured.out.splitlines()
+    assert lines == [str(newer), str(older)]
+    assert captured.err == ""
+
+
 def test_main_preserves_subprocess_return_code(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
@@ -212,3 +260,23 @@ def test_execute_status_returns_nonzero_for_invalid_tasks_json(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "Invalid tasks.json:" in captured.err
+
+
+def test_execute_tail_returns_nonzero_when_logs_are_missing(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    exit_code = ralph_cli.execute_tail(Namespace(command="tail", project_dir=str(tmp_path), lines=2))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert f"No Ralph logs found in {tmp_path / 'logs'}" in captured.err
+
+
+def test_execute_log_returns_nonzero_when_logs_are_missing(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    exit_code = ralph_cli.execute_log(Namespace(command="log", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert f"No Ralph logs found in {tmp_path / 'logs'}" in captured.err
