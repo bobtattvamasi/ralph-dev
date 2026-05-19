@@ -4455,7 +4455,7 @@
     {
       "id": "R20-22",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Clean or own runtime bookkeeping diffs after auto task completion",
       "description": "After auto runs, runtime-owned files such as progress.md and .ralph/memory/recent.md must either be intentionally committed by runtime or restored, so the working tree is clean before the next task.",
       "target_files": [
@@ -4475,7 +4475,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T07:23:08.291697+00:00"
     },
     {
       "id": "R20-23",
