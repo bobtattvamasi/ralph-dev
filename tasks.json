@@ -4553,6 +4553,30 @@
       "selection_warnings": [],
       "completed_at": "2026-05-19T07:05:14.055018+00:00",
       "revision_notes": "Verified: created docs/ACTIVE_BACKLOG.md and parked non-Stage-1 bootstrap, memory, and security-gate tasks so the active Stage 1 lane centers on R20-22."
+    },
+    {
+      "id": "R23-01",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "CLI operator UX plan",
+      "description": "Define the Stage 2 terminal UX for Ralph so common operator workflows are available through a small stable command surface instead of scattered scripts.",
+      "target_files": [
+        "docs/CLI_UX_PLAN.md",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "CLI_UX_PLAN.md defines the intended ralph command surface: next, explain, groom, doctor, auto --safe, task <ID>, verify, status.",
+        "The plan maps each proposed command to existing scripts or runtime behavior.",
+        "The plan identifies which commands are wrappers only and which require new implementation.",
+        "The plan defines Stage 2 exit criteria.",
+        "ACTIVE_BACKLOG.md points to the Stage 2 CLI/operator UX plan."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T07:30:45.537285+00:00"
     }
   ]
 }
