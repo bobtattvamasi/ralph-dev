@@ -6,6 +6,7 @@ Stage `R24` is `Packaging Polish`.
 The goal is to make Ralph reliable as an installed terminal tool, not only as a repo-local development checkout.
 
 Operator install steps and smoke guidance live in [INSTALL.md](INSTALL.md).
+Packaging audit details live in [PACKAGING_AUDIT.md](PACKAGING_AUDIT.md).
 
 ## Target Install And Use Flow
 Preferred operator flow:
@@ -61,6 +62,19 @@ What each smoke should prove:
 - `tail` / `log`: installed command can discover and read runtime logs
 - `auto --safe`: console script can delegate to packaged runtime safely
 - `task <ID>`: explicit task execution path works through the installed entrypoint
+
+## Completed R24 Work
+- `R24-01` packaging polish plan
+- `R24-02` installed CLI smoke coverage
+- `R24-03` installed-mode verify
+- `R24-04` packaging smoke matrix consolidation
+- `R24-05` packaged resource audit
+- `R24-06` resource bundling audit test
+- `R24-07` package data manifest audit
+- `R24-08` packaging test matrix split
+- `R24-09` operator install guide
+
+These tasks established the installed-mode surface, resource packaging guarantees, and operator install docs for Stage R24.
 
 ## Repo-Local Vs Installed-Mode Gaps
 ### Packaged Resource Paths
