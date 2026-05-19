@@ -4514,6 +4514,30 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T06:55:18.055377+00:00"
+    },
+    {
+      "id": "R20-25",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Active backlog report and Stage 1 parking cleanup",
+      "description": "Create a stage-scoped active backlog report and park non-Stage-1 future-feature tasks so auto-safe lane reflects only current stabilization work.",
+      "target_files": [
+        "tasks.json",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "docs/ACTIVE_BACKLOG.md lists Stage 1 active tasks.",
+        "docs/ACTIVE_BACKLOG.md lists parked/manual-only future tasks separately.",
+        "Non-Stage-1 bootstrap, kickoff, product-factory, Qdrant/memory, and Semgrep/security-gate tasks are marked or documented as parked/manual-only according to BACKLOG_POLICY.md.",
+        "R22-01 remains blocked or rewritten/deferred as future state-service decomposition work.",
+        "After cleanup, python3 scripts/next_task.py --auto-safe --explain no longer selects non-Stage-1 feature work.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
     }
   ]
 }
