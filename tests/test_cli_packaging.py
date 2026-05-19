@@ -60,11 +60,14 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     project_dir, env = create_test_project(runtime_root)
     runtime_env = env.copy()
     runtime_env["PATH"] = f"{bin_dir}:{runtime_env['PATH']}"
+    (project_dir / "tests").mkdir(exist_ok=True)
+    (project_dir / "tests" / "test_shell_parity.py").write_text("def test_shell_parity_smoke():\n    assert True\n", encoding="utf-8")
 
     status_result = run([str(ralph_bin), "status", "--project-dir", str(project_dir)], env=runtime_env)
     assert status_result.returncode == 0
     assert "Git state:" in status_result.stdout
     assert "Task counts:" in status_result.stdout
+    assert "Duplicate task IDs: none" in status_result.stdout
     assert "Active backlog:" in status_result.stdout
     assert "Next auto-safe state:" in status_result.stdout
 
@@ -88,7 +91,7 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert bot_help_result.returncode == 0
     assert "project-dir" in bot_help_result.stdout
 
-    doctor_result = run([str(ralph_bin), "doctor", "--project-dir", str(REPO_ROOT)], env=runtime_env)
+    doctor_result = run([str(ralph_bin), "doctor", "--project-dir", str(project_dir)], env=runtime_env)
     assert doctor_result.returncode == 0
     assert "==> git status --short" in doctor_result.stdout
     assert "==> python -m json.tool tasks.json" in doctor_result.stdout

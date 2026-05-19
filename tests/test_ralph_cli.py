@@ -74,6 +74,20 @@ def test_build_doctor_commands_uses_existing_lightweight_checks() -> None:
     ]
 
 
+def test_duplicate_task_ids_detects_duplicates_and_sorts() -> None:
+    duplicates = ralph_cli.duplicate_task_ids(
+        [
+            {"id": "R12-03"},
+            {"id": "R12-03"},
+            {"id": "R10-01"},
+            {"id": "R10-01"},
+            {"id": "R20-22"},
+        ]
+    )
+
+    assert duplicates == ["R10-01", "R12-03"]
+
+
 def test_execute_groom_prints_active_backlog_and_policy_hint(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -92,7 +106,7 @@ def test_execute_status_prints_operator_summary(monkeypatch: pytest.MonkeyPatch,
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "ACTIVE_BACKLOG.md").write_text("# Active Backlog\n", encoding="utf-8")
     (tmp_path / "tasks.json").write_text(
-        '{"tasks":[{"id":"T01","status":"pending"},{"id":"T02","status":"verified_done"},{"id":"T03","status":"pending"}]}',
+        '{"tasks":[{"id":"T01","status":"pending"},{"id":"T02","status":"verified_done"},{"id":"T01","status":"pending"}]}',
         encoding="utf-8",
     )
 
@@ -113,9 +127,33 @@ def test_execute_status_prints_operator_summary(monkeypatch: pytest.MonkeyPatch,
     assert "Task counts:" in captured.out
     assert "- pending: 2" in captured.out
     assert "- verified_done: 1" in captured.out
+    assert "Duplicate task IDs: T01" in captured.out
     assert "Active backlog: present" in captured.out
     assert "Next auto-safe state:" in captured.out
     assert '"reason": "unsafe_pending"' in captured.out
+
+
+def test_execute_status_prints_no_duplicates_for_clean_tasks_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "ACTIVE_BACKLOG.md").write_text("# Active Backlog\n", encoding="utf-8")
+    (tmp_path / "tasks.json").write_text(
+        '{"tasks":[{"id":"T01","status":"pending"},{"id":"T02","status":"verified_done"}]}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        ralph_cli,
+        "run_command_capture",
+        lambda command, cwd: subprocess.CompletedProcess(command, 0, "{\n  \"reason\": \"ok\"\n}\n", ""),
+    )
+
+    exit_code = ralph_cli.execute_status(Namespace(command="status", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Duplicate task IDs: none" in captured.out
 
 
 def test_find_log_files_sorts_newest_first(tmp_path: Path) -> None:
@@ -232,6 +270,23 @@ def test_execute_doctor_runs_all_checks_and_returns_first_failure(
             tmp_path.resolve(),
         ),
     ]
+
+
+def test_execute_doctor_returns_nonzero_when_duplicate_task_ids_exist(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    (tmp_path / "tasks.json").write_text(
+        '{"tasks":[{"id":"R12-03","status":"pending"},{"id":"R12-03","status":"done"}]}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(ralph_cli, "run_command", lambda command, cwd: 0)
+
+    exit_code = ralph_cli.execute_doctor(Namespace(command="doctor", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Duplicate task IDs: R12-03" in captured.out
 
 
 def test_execute_groom_returns_nonzero_when_active_backlog_is_missing(

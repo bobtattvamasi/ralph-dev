@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import subprocess
 import sys
@@ -216,6 +217,32 @@ def build_doctor_commands() -> list[tuple[str, list[str]]]:
     ]
 
 
+def duplicate_task_ids(tasks: list[dict[str, object]]) -> list[str]:
+    counts = collections.Counter(
+        str(task.get("id", "")).strip()
+        for task in tasks
+        if isinstance(task, dict) and str(task.get("id", "")).strip()
+    )
+    return sorted(task_id for task_id, count in counts.items() if count > 1)
+
+
+def load_tasks_payload(project_dir: Path) -> tuple[dict[str, object], list[dict[str, object]]]:
+    tasks_path = project_dir / "tasks.json"
+    try:
+        tasks_payload = json.loads(tasks_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"Missing tasks.json: {tasks_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid tasks.json: {exc}") from exc
+
+    tasks = tasks_payload.get("tasks")
+    if not isinstance(tasks, list):
+        raise ValueError("Invalid tasks.json: top-level 'tasks' must be a list")
+
+    normalized_tasks = [task for task in tasks if isinstance(task, dict)]
+    return tasks_payload, normalized_tasks
+
+
 def execute_doctor(args: argparse.Namespace) -> int:
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     exit_code = 0
@@ -225,6 +252,18 @@ def execute_doctor(args: argparse.Namespace) -> int:
         step_code = run_command(command, cwd=project_dir)
         if exit_code == 0 and step_code != 0:
             exit_code = step_code
+
+    try:
+        _, tasks = load_tasks_payload(project_dir)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1 if exit_code == 0 else exit_code
+
+    duplicates = duplicate_task_ids(tasks)
+    if duplicates:
+        print(f"Duplicate task IDs: {', '.join(duplicates)}")
+        if exit_code == 0:
+            exit_code = 1
 
     return exit_code
 
@@ -266,7 +305,6 @@ def tail_lines(path: Path, line_count: int) -> list[str]:
 
 def execute_status(args: argparse.Namespace) -> int:
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
-    tasks_path = project_dir / "tasks.json"
     active_backlog_path = project_dir / "docs" / "ACTIVE_BACKLOG.md"
 
     git_result = run_command_capture(["git", "status", "--short"], cwd=project_dir)
@@ -276,17 +314,9 @@ def execute_status(args: argparse.Namespace) -> int:
         return git_result.returncode
 
     try:
-        tasks_payload = json.loads(tasks_path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        print(f"Missing tasks.json: {tasks_path}", file=sys.stderr)
-        return 1
-    except json.JSONDecodeError as exc:
-        print(f"Invalid tasks.json: {exc}", file=sys.stderr)
-        return 1
-
-    tasks = tasks_payload.get("tasks")
-    if not isinstance(tasks, list):
-        print("Invalid tasks.json: top-level 'tasks' must be a list", file=sys.stderr)
+        _, tasks = load_tasks_payload(project_dir)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
 
     counts: dict[str, int] = {}
@@ -316,6 +346,8 @@ def execute_status(args: argparse.Namespace) -> int:
     for status in sorted(counts):
         print(f"- {status}: {counts[status]}")
 
+    duplicates = duplicate_task_ids(tasks)
+    print(f"Duplicate task IDs: {', '.join(duplicates) if duplicates else 'none'}")
     print(f"Active backlog: {'present' if active_backlog_path.exists() else 'missing'}")
     print("Next auto-safe state:")
     print(explain_result.stdout, end="")
