@@ -61,7 +61,10 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
 
     status_result = run([str(ralph_bin), "status", "--project-dir", str(project_dir)], env=runtime_env)
     assert status_result.returncode == 0
-    assert "Task Progress" in status_result.stdout
+    assert "Git state:" in status_result.stdout
+    assert "Task counts:" in status_result.stdout
+    assert "Active backlog:" in status_result.stdout
+    assert "Next auto-safe state:" in status_result.stdout
 
     next_result = run([str(ralph_bin), "next", "--project-dir", str(project_dir)], env=runtime_env)
     assert next_result.returncode == 0

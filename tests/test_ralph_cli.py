@@ -88,6 +88,36 @@ def test_execute_groom_prints_active_backlog_and_policy_hint(capsys: pytest.Capt
     assert captured.err == ""
 
 
+def test_execute_status_prints_operator_summary(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "ACTIVE_BACKLOG.md").write_text("# Active Backlog\n", encoding="utf-8")
+    (tmp_path / "tasks.json").write_text(
+        '{"tasks":[{"id":"T01","status":"pending"},{"id":"T02","status":"verified_done"},{"id":"T03","status":"pending"}]}',
+        encoding="utf-8",
+    )
+
+    def fake_run_capture(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if command[:3] == ["git", "status", "--short"]:
+            return subprocess.CompletedProcess(command, 0, " M tasks.json\n?? notes.txt\n", "")
+        return subprocess.CompletedProcess(command, 0, '{\n  "reason": "unsafe_pending"\n}\n', "")
+
+    monkeypatch.setattr(ralph_cli, "run_command_capture", fake_run_capture)
+
+    exit_code = ralph_cli.execute_status(Namespace(command="status", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Git state: dirty" in captured.out
+    assert " M tasks.json" in captured.out
+    assert "?? notes.txt" in captured.out
+    assert "Task counts:" in captured.out
+    assert "- pending: 2" in captured.out
+    assert "- verified_done: 1" in captured.out
+    assert "Active backlog: present" in captured.out
+    assert "Next auto-safe state:" in captured.out
+    assert '"reason": "unsafe_pending"' in captured.out
+
+
 def test_main_preserves_subprocess_return_code(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
@@ -164,3 +194,21 @@ def test_execute_groom_returns_nonzero_when_active_backlog_is_missing(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "Missing active backlog report:" in captured.err
+
+
+def test_execute_status_returns_nonzero_for_invalid_tasks_json(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "tasks.json").write_text("{not-json}\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        ralph_cli,
+        "run_command_capture",
+        lambda command, cwd: subprocess.CompletedProcess(command, 0, "", ""),
+    )
+
+    exit_code = ralph_cli.execute_status(Namespace(command="status", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Invalid tasks.json:" in captured.err

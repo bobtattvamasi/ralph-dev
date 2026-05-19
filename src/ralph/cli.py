@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,16 @@ def resource_path(*parts: str) -> Path:
 def run_command(command: list[str], cwd: Path) -> int:
     completed = subprocess.run(command, cwd=cwd, check=False)
     return completed.returncode
+
+
+def run_command_capture(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -211,11 +222,71 @@ def execute_groom(args: argparse.Namespace) -> int:
     return 0
 
 
+def execute_status(args: argparse.Namespace) -> int:
+    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+    tasks_path = project_dir / "tasks.json"
+    active_backlog_path = project_dir / "docs" / "ACTIVE_BACKLOG.md"
+
+    git_result = run_command_capture(["git", "status", "--short"], cwd=project_dir)
+    if git_result.returncode != 0:
+        if git_result.stderr:
+            print(git_result.stderr, end="", file=sys.stderr)
+        return git_result.returncode
+
+    try:
+        tasks_payload = json.loads(tasks_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(f"Missing tasks.json: {tasks_path}", file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as exc:
+        print(f"Invalid tasks.json: {exc}", file=sys.stderr)
+        return 1
+
+    tasks = tasks_payload.get("tasks")
+    if not isinstance(tasks, list):
+        print("Invalid tasks.json: top-level 'tasks' must be a list", file=sys.stderr)
+        return 1
+
+    counts: dict[str, int] = {}
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        status = str(task.get("status", "unknown")).strip() or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+
+    explain_result = run_command_capture(
+        [sys.executable, str(resource_path("scripts", "next_task.py")), "--auto-safe", "--explain"],
+        cwd=project_dir,
+    )
+    if explain_result.returncode != 0:
+        if explain_result.stdout:
+            print(explain_result.stdout, end="")
+        if explain_result.stderr:
+            print(explain_result.stderr, end="", file=sys.stderr)
+        return explain_result.returncode
+
+    git_lines = [line for line in git_result.stdout.splitlines() if line.strip()]
+    print(f"Git state: {'clean' if not git_lines else 'dirty'}")
+    for line in git_lines:
+        print(line)
+
+    print("Task counts:")
+    for status in sorted(counts):
+        print(f"- {status}: {counts[status]}")
+
+    print(f"Active backlog: {'present' if active_backlog_path.exists() else 'missing'}")
+    print("Next auto-safe state:")
+    print(explain_result.stdout, end="")
+    return 0
+
+
 def execute(args: argparse.Namespace) -> int:
     if args.command == "doctor":
         return execute_doctor(args)
     if args.command == "groom":
         return execute_groom(args)
+    if args.command == "status":
+        return execute_status(args)
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     return run_command(build_command(args), cwd=project_dir)
 
