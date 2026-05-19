@@ -5,6 +5,8 @@ Stage `R24` is `Packaging Polish`.
 
 The goal is to make Ralph reliable as an installed terminal tool, not only as a repo-local development checkout.
 
+Operator install steps and smoke guidance live in [INSTALL.md](INSTALL.md).
+
 ## Target Install And Use Flow
 Preferred operator flow:
 - install Ralph into a dedicated `venv`

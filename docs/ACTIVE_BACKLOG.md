@@ -110,6 +110,9 @@ Stage `R24` is `Packaging Polish`.
 The objective is to make Ralph reliable as an installed terminal tool, not only as a repo-local checkout with helper scripts nearby.
 
 ## Stage R24 Active Task
+- `R24-09` — operator install guide
+
+## Stage R24 Completed Docs
 - `R24-01` — packaging polish plan
 
 ## Stage R24 Focus
@@ -117,3 +120,4 @@ The objective is to make Ralph reliable as an installed terminal tool, not only 
 - packaged resources and helper script coverage
 - `--project-dir` consistency
 - installed-mode smoke reliability for the current operator surface
+- operator-facing install and usage documentation
