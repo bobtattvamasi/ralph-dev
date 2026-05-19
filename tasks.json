@@ -3435,7 +3435,7 @@
     {
       "id": "R16-05",
       "phase": "R16",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Self-registration on init",
       "description": "Make ralph-init.sh and ralph.sh auto-register the current project in projects.json on first run if it is not already present.",
       "target_files": [
@@ -3449,12 +3449,12 @@
       "complexity": "simple",
       "role": "coder",
       "completed_at": null,
-      "revision_notes": "R16-05 failed after 2 retries"
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: bootstrap-style self-registration work belongs to a later bootstrap stage, not the Auto-safe runner v1 lane."
     },
     {
       "id": "R17-01",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "ralph kickoff CLI command",
       "description": "Add new ralph.sh mode 'kickoff <path> <description>' that creates the target directory, runs ralph-init.sh there, and passes the description into AI generation steps.",
       "target_files": [
@@ -3466,12 +3466,13 @@
       ],
       "priority": "high",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: kickoff/bootstrap feature work is deferred until after Auto-safe runner v1."
     },
     {
       "id": "R17-02",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "AI architecture generation",
       "description": "Generate ARCHITECTURE.md from project description during kickoff. The prompt should include project type, stack, features, and target audience.",
       "target_files": [
@@ -3483,12 +3484,13 @@
       ],
       "priority": "high",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: kickoff architecture generation belongs to a later bootstrap/product-factory stage."
     },
     {
       "id": "R17-03",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "AI task generation",
       "description": "Generate tasks.json with phases P0-P3 from architecture plus project description. Produced tasks must include id, title, acceptance_criteria, priority, complexity, and target_files.",
       "target_files": [
@@ -3500,12 +3502,13 @@
       ],
       "priority": "high",
       "complexity": "complex",
-      "role": "coder"
+      "role": "coder",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: kickoff task generation belongs to a later bootstrap/product-factory stage."
     },
     {
       "id": "R17-04",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Skeleton code generation",
       "description": "Generate initial project files such as main entrypoint, config, and tests/ from the architecture. Support at minimum python-telegram-bot, fastapi, and cli project types.",
       "target_files": [
@@ -3517,12 +3520,13 @@
       ],
       "priority": "medium",
       "complexity": "complex",
-      "role": "coder"
+      "role": "coder",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: scaffold generation is later-stage bootstrap/product-factory work."
     },
     {
       "id": "R17-05",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Bot /kickoff interactive command",
       "description": "Add /kickoff to ralph_bot.py as an interactive conversation that asks for name, description, stack, and type, then calls ralph.sh kickoff and reports progress back to Telegram.",
       "target_files": [
@@ -3534,12 +3538,13 @@
       ],
       "priority": "medium",
       "complexity": "moderate",
-      "role": "coder"
+      "role": "coder",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: /kickoff bot flow is later-stage operator UX and bootstrap work."
     },
     {
       "id": "R17-06",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Auto-registration after kickoff",
       "description": "After kickoff completes, automatically add the new project to projects.json and notify via Telegram that the project is available.",
       "target_files": [
@@ -3551,7 +3556,8 @@
       ],
       "priority": "medium",
       "complexity": "simple",
-      "role": "coder"
+      "role": "coder",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: auto-registration after kickoff belongs to a later bootstrap stage."
     },
     {
       "id": "R18-01",
@@ -3863,7 +3869,7 @@
     {
       "id": "R20-08",
       "phase": "R20",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Bootstrap creates runnable project",
       "description": "ralph-init.sh must produce: git init, minimal Makefile with test target, .ralph/project.json with test_cmd and test_cmd_fast, tasks.json from template, AGENTS.md from template.",
       "target_files": [
@@ -3878,7 +3884,8 @@
       "role": "coder",
       "depends_on": [
         "R20-04"
-      ]
+      ],
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: runnable bootstrap project creation is deferred until after Auto-safe runner v1."
     },
     {
       "id": "R20-09",
@@ -4060,7 +4067,7 @@
         "R20-05"
       ],
       "completed_at": null,
-      "revision_notes": "Tech Lead requested only runtime-owned bookkeeping or diff-production work and did not specify a coder-owned implementation gap."
+      "revision_notes": "Keep blocked after Stage 1 cleanup: state_service.py exists in partial form, but the remaining migration should be decomposed into narrower post-Stage-1 tasks instead of treated as active stabilization work."
     },
     {
       "id": "R22-02",
@@ -4110,7 +4117,7 @@
       "id": "R22-04",
       "phase": "R22",
       "priority": "medium",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Qdrant memory — семантический поиск вместо recent.md",
       "description": "Заменить .ralph/memory/recent.md на Qdrant local instance для semantic retrieval релевантного контекста к задаче.",
       "target_files": [
@@ -4124,13 +4131,14 @@
       ],
       "depends_on": [
         "R22-01"
-      ]
+      ],
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: later-stage memory/Qdrant architecture work should stay out of the Auto-safe runner v1 lane."
     },
     {
       "id": "R22-05",
       "phase": "R22",
       "priority": "low",
-      "status": "pending",
+      "status": "false_positive",
       "title": "Semgrep security gate в lead review",
       "description": "Добавить Semgrep scan как обязательный шаг перед lead approve для задач затрагивающих security-sensitive файлы.",
       "target_files": [
@@ -4144,7 +4152,8 @@
       ],
       "depends_on": [
         "R22-02"
-      ]
+      ],
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: later-stage Semgrep/security-gate feature work should not occupy the Stage 1 auto-safe lane."
     },
     {
       "id": "R20-10",
@@ -4331,7 +4340,7 @@
       "id": "R17-01A",
       "parent_id": "R17-01",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "kickoff CLI argument and mode parsing",
       "description": "Split R17-01 so the kickoff command path is introduced in the shell runner without mixing init generation concerns.",
       "target_files": [
@@ -4345,13 +4354,14 @@
       "priority": "high",
       "complexity": "simple",
       "role": "coder",
-      "rationale": "Separate CLI/mode parsing from scaffold generation to keep the first change narrow and shell-local."
+      "rationale": "Separate CLI/mode parsing from scaffold generation to keep the first change narrow and shell-local.",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: kickoff CLI work is deferred until after Auto-safe runner v1."
     },
     {
       "id": "R17-01B",
       "parent_id": "R17-01",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "kickoff init and scaffold wiring",
       "description": "Wire kickoff description into init/scaffold generation for R17-01 so the description is consumed during project creation.",
       "target_files": [
@@ -4366,13 +4376,14 @@
       "priority": "high",
       "complexity": "moderate",
       "role": "coder",
-      "rationale": "The current target_files are too narrow because acceptance depends on init/scaffold behavior outside ralph.sh alone."
+      "rationale": "The current target_files are too narrow because acceptance depends on init/scaffold behavior outside ralph.sh alone.",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: kickoff scaffold wiring is later-stage bootstrap work."
     },
     {
       "id": "R17-01C",
       "parent_id": "R17-01",
       "phase": "R17",
-      "status": "pending",
+      "status": "false_positive",
       "title": "kickoff focused test coverage",
       "description": "Add focused regression coverage for the kickoff command introduced by R17-01.",
       "target_files": [
@@ -4385,7 +4396,8 @@
       "priority": "high",
       "complexity": "simple",
       "role": "coder",
-      "rationale": "Acceptance implies focused tests, so test work should be explicit instead of hidden as out-of-scope diff."
+      "rationale": "Acceptance implies focused tests, so test work should be explicit instead of hidden as out-of-scope diff.",
+      "revision_notes": "Parked/manual-only after Stage 1 backlog cleanup: kickoff test coverage remains part of later bootstrap work."
     },
     {
       "id": "R20-18",
@@ -4518,7 +4530,7 @@
     {
       "id": "R20-25",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Active backlog report and Stage 1 parking cleanup",
       "description": "Create a stage-scoped active backlog report and park non-Stage-1 future-feature tasks so auto-safe lane reflects only current stabilization work.",
       "target_files": [
@@ -4537,7 +4549,9 @@
       "complexity": "simple",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T07:20:00+00:00",
+      "revision_notes": "Verified: created docs/ACTIVE_BACKLOG.md and parked non-Stage-1 bootstrap, memory, and security-gate tasks so the active Stage 1 lane centers on R20-22."
     }
   ]
 }
