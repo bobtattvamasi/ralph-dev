@@ -74,6 +74,20 @@ def test_build_doctor_commands_uses_existing_lightweight_checks() -> None:
     ]
 
 
+def test_execute_groom_prints_active_backlog_and_policy_hint(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "ACTIVE_BACKLOG.md").write_text("# Active Backlog\n- R20-22\n", encoding="utf-8")
+    (docs_dir / "BACKLOG_POLICY.md").write_text("# Policy\n", encoding="utf-8")
+
+    exit_code = ralph_cli.execute_groom(Namespace(command="groom", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == "# Active Backlog\n- R20-22\nBacklog policy: docs/BACKLOG_POLICY.md\n"
+    assert captured.err == ""
+
+
 def test_main_preserves_subprocess_return_code(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
@@ -140,3 +154,13 @@ def test_execute_doctor_runs_all_checks_and_returns_first_failure(
             tmp_path.resolve(),
         ),
     ]
+
+
+def test_execute_groom_returns_nonzero_when_active_backlog_is_missing(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    exit_code = ralph_cli.execute_groom(Namespace(command="groom", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Missing active backlog report:" in captured.err

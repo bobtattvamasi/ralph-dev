@@ -40,6 +40,7 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert "next" in help_result.stdout
     assert "explain" in help_result.stdout
     assert "doctor" in help_result.stdout
+    assert "groom" in help_result.stdout
     assert "task" in help_result.stdout
     assert "status" in help_result.stdout
     assert "bot" in help_result.stdout
@@ -88,6 +89,11 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert "==> python -m json.tool tasks.json" in doctor_result.stdout
     assert "==> python -m pytest tests/test_shell_parity.py -q" in doctor_result.stdout
     assert "==> python scripts/next_task.py --auto-safe --explain" in doctor_result.stdout
+
+    groom_result = run([str(ralph_bin), "groom", "--project-dir", str(REPO_ROOT)], env=runtime_env)
+    assert groom_result.returncode == 0
+    assert "# Active Backlog" in groom_result.stdout
+    assert "Backlog policy: docs/BACKLOG_POLICY.md" in groom_result.stdout
 
 
 def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Path) -> None:

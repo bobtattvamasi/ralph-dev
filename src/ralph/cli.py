@@ -89,6 +89,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project directory that contains tasks.json.",
     )
 
+    groom_parser = subparsers.add_parser(
+        "groom",
+        help="Show the current active backlog view.",
+    )
+    groom_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+
     task_parser = subparsers.add_parser(
         "task",
         help="Run one explicitly selected task.",
@@ -182,9 +192,30 @@ def execute_doctor(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def execute_groom(args: argparse.Namespace) -> int:
+    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+    active_backlog_path = project_dir / "docs" / "ACTIVE_BACKLOG.md"
+    backlog_policy_path = project_dir / "docs" / "BACKLOG_POLICY.md"
+    active_backlog_text = ""
+
+    if not active_backlog_path.exists():
+        print(f"Missing active backlog report: {active_backlog_path}", file=sys.stderr)
+        return 1
+
+    active_backlog_text = active_backlog_path.read_text(encoding="utf-8")
+    print(active_backlog_text, end="")
+    if backlog_policy_path.exists():
+        if not active_backlog_text.endswith("\n"):
+            print()
+        print(f"Backlog policy: docs/BACKLOG_POLICY.md")
+    return 0
+
+
 def execute(args: argparse.Namespace) -> int:
     if args.command == "doctor":
         return execute_doctor(args)
+    if args.command == "groom":
+        return execute_groom(args)
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     return run_command(build_command(args), cwd=project_dir)
 
