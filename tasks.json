@@ -4793,7 +4793,7 @@
     {
       "id": "R23-10",
       "phase": "R23",
-      "status": "pending",
+      "status": "verified_done",
       "title": "CLI verify command",
       "description": "Add ralph verify as an explicit operator command for running the configured full verification checks without changing task execution state.",
       "target_files": [
@@ -4815,7 +4815,7 @@
       "role": "coder",
       "scope_too_wide": false,
       "selection_warnings": [],
-      "completed_at": null,
+      "completed_at": "2026-05-19T09:40:52.720654+00:00",
       "revision_notes": "Reopened: task was marked verified_done before implementation; no src/ralph/cli.py or CLI tests changed for ralph verify."
     }
   ]
