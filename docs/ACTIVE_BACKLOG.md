@@ -71,6 +71,8 @@ Stage 2 `CLI/operator UX` core command surface is implemented.
 
 There are no active pending Stage 2 CLI tasks after `R23-10`.
 
+Stage 2 is now considered checkpoint-complete.
+
 ## Completed Stage 2 CLI Work
 - `R23-01` — CLI operator UX plan
 - `R23-02` — basic CLI wrappers
@@ -101,3 +103,17 @@ There are no active pending Stage 2 CLI tasks after `R23-10`.
 - packaging polish
 - project bootstrap/kickoff
 - product factory
+
+## Stage R24 Goal
+Stage `R24` is `Packaging Polish`.
+
+The objective is to make Ralph reliable as an installed terminal tool, not only as a repo-local checkout with helper scripts nearby.
+
+## Stage R24 Active Task
+- `R24-01` — packaging polish plan
+
+## Stage R24 Focus
+- installed `venv` and `pipx` flow
+- packaged resources and helper script coverage
+- `--project-dir` consistency
+- installed-mode smoke reliability for the current operator surface
