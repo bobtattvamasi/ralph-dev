@@ -4658,6 +4658,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T08:09:22.627644+00:00"
+    },
+    {
+      "id": "R23-05",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "Refresh active backlog for Stage 2 CLI progress",
+      "description": "Update docs/ACTIVE_BACKLOG.md so it reflects closed Stage 1 work and current Stage 2 CLI/operator UX progress.",
+      "target_files": [
+        "docs/ACTIVE_BACKLOG.md",
+        "tasks.json"
+      ],
+      "acceptance_criteria": [
+        "ACTIVE_BACKLOG.md no longer lists R20-22 as a remaining Stage 1 active task.",
+        "ACTIVE_BACKLOG.md marks Stage 1 Auto-safe runner v1 as closed.",
+        "ACTIVE_BACKLOG.md lists completed Stage 2 tasks R23-01, R23-02, R23-03, and R23-04.",
+        "ACTIVE_BACKLOG.md identifies the next Stage 2 candidate as CLI status or tail/log work.",
+        "ralph groom output reflects the updated active backlog.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T08:34:35.088889+00:00"
     }
   ]
 }
