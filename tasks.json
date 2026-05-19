@@ -4943,6 +4943,29 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T13:42:57.443220+00:00"
+    },
+    {
+      "id": "R24-05",
+      "phase": "R24",
+      "status": "verified_done",
+      "title": "Packaged resource audit",
+      "description": "Audit CLI and packaging paths to identify which commands rely on packaged resources, project-local files, or repo-root files.",
+      "target_files": [
+        "docs/PACKAGING_AUDIT.md"
+      ],
+      "acceptance_criteria": [
+        "PACKAGING_AUDIT.md lists each CLI command and its resource/path dependencies.",
+        "Audit distinguishes packaged resources, project-local files, and repo-root-only assumptions.",
+        "Audit identifies remaining installed-mode risks.",
+        "Audit recommends the next 2-3 R24 implementation tasks.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T13:48:32.288303+00:00"
     }
   ]
 }
