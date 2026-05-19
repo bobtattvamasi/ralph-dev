@@ -29,11 +29,13 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     bin_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
     python_bin = bin_dir / ("python.exe" if os.name == "nt" else "python")
     ralph_bin = bin_dir / ("ralph.exe" if os.name == "nt" else "ralph")
+    outside_cwd = tmp_path / "outside"
+    outside_cwd.mkdir()
 
     subprocess.run([str(python_bin), "-m", "pip", "install", str(REPO_ROOT)], check=True)
     subprocess.run([str(python_bin), "-m", "pip", "install", "pytest"], check=True)
 
-    help_result = run([str(ralph_bin), "--help"])
+    help_result = run([str(ralph_bin), "--help"], cwd=outside_cwd)
     assert help_result.returncode == 0
     assert "init" in help_result.stdout
     assert "auto" in help_result.stdout
@@ -63,8 +65,13 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     runtime_env["PATH"] = f"{bin_dir}:{runtime_env['PATH']}"
     (project_dir / "tests").mkdir(exist_ok=True)
     (project_dir / "tests" / "test_shell_parity.py").write_text("def test_shell_parity_smoke():\n    assert True\n", encoding="utf-8")
+    (project_dir / "ralph.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    docs_dir = project_dir / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "ACTIVE_BACKLOG.md").write_text("# Active Backlog\n", encoding="utf-8")
+    (docs_dir / "BACKLOG_POLICY.md").write_text("# Backlog Policy\n", encoding="utf-8")
 
-    status_result = run([str(ralph_bin), "status", "--project-dir", str(project_dir)], env=runtime_env)
+    status_result = run([str(ralph_bin), "status", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert status_result.returncode == 0
     assert "Git state:" in status_result.stdout
     assert "Task counts:" in status_result.stdout
@@ -72,40 +79,40 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert "Active backlog:" in status_result.stdout
     assert "Next auto-safe state:" in status_result.stdout
 
-    next_result = run([str(ralph_bin), "next", "--project-dir", str(project_dir)], env=runtime_env)
+    next_result = run([str(ralph_bin), "next", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert next_result.returncode == 0
     assert '"id": "T01"' in next_result.stdout
 
-    explain_result = run([str(ralph_bin), "explain", "--project-dir", str(project_dir)], env=runtime_env)
+    explain_result = run([str(ralph_bin), "explain", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert explain_result.returncode == 0
     assert explain_result.stdout.strip()
 
-    task_help_result = run([str(ralph_bin), "task", "--help"], cwd=tmp_path)
+    task_help_result = run([str(ralph_bin), "task", "--help"], cwd=outside_cwd)
     assert task_help_result.returncode == 0
     assert "task id to run" in task_help_result.stdout.lower()
 
-    auto_result = run([str(ralph_bin), "auto", "--safe", "--project-dir", str(project_dir)], env=runtime_env)
+    auto_result = run([str(ralph_bin), "auto", "--safe", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert auto_result.returncode == 0
     assert "AUTO_TASK_RESULT T01 status=skipped reason=INTEGRATION_EVIDENCE_REQUIRED" in auto_result.stdout
 
-    bot_help_result = run([str(ralph_bin), "bot", "--help"], cwd=tmp_path)
+    bot_help_result = run([str(ralph_bin), "bot", "--help"], cwd=outside_cwd)
     assert bot_help_result.returncode == 0
     assert "project-dir" in bot_help_result.stdout
 
-    doctor_result = run([str(ralph_bin), "doctor", "--project-dir", str(project_dir)], env=runtime_env)
+    doctor_result = run([str(ralph_bin), "doctor", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert doctor_result.returncode == 0
     assert "==> git status --short" in doctor_result.stdout
     assert "==> python -m json.tool tasks.json" in doctor_result.stdout
     assert "==> python -m pytest tests/test_shell_parity.py -q" in doctor_result.stdout
     assert "==> python scripts/next_task.py --auto-safe --explain" in doctor_result.stdout
 
-    verify_result = run([str(ralph_bin), "verify", "--project-dir", str(REPO_ROOT)], env=runtime_env)
+    verify_result = run([str(ralph_bin), "verify", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert verify_result.returncode == 0
-    assert "==> bash -n ralph.sh" in verify_result.stdout
-    assert "==> bash -n src/ralph/resources/ralph.sh" in verify_result.stdout
+    assert "==> bash -n packaged ralph.sh" in verify_result.stdout
+    assert "==> bash -n project ralph.sh" in verify_result.stdout
     assert "==> python -m pytest tests/test_shell_parity.py -q" in verify_result.stdout
 
-    groom_result = run([str(ralph_bin), "groom", "--project-dir", str(REPO_ROOT)], env=runtime_env)
+    groom_result = run([str(ralph_bin), "groom", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert groom_result.returncode == 0
     assert "# Active Backlog" in groom_result.stdout
     assert "Backlog policy: docs/BACKLOG_POLICY.md" in groom_result.stdout
@@ -114,11 +121,11 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     (logs_dir / "ralph_2026-05-18.log").write_text("old\n", encoding="utf-8")
     (logs_dir / "ralph_2026-05-19.log").write_text("one\ntwo\nthree\n", encoding="utf-8")
 
-    tail_result = run([str(ralph_bin), "tail", "--project-dir", str(project_dir), "--lines", "2"], env=runtime_env)
+    tail_result = run([str(ralph_bin), "tail", "--project-dir", str(project_dir), "--lines", "2"], cwd=outside_cwd, env=runtime_env)
     assert tail_result.returncode == 0
     assert tail_result.stdout == "two\nthree\n"
 
-    log_result = run([str(ralph_bin), "log", "--project-dir", str(project_dir)], env=runtime_env)
+    log_result = run([str(ralph_bin), "log", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
     assert log_result.returncode == 0
     assert str(project_dir / "logs" / "ralph_2026-05-19.log") in log_result.stdout
 

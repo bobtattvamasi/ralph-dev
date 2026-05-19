@@ -227,12 +227,29 @@ def build_doctor_commands() -> list[tuple[str, list[str]]]:
     ]
 
 
-def build_verify_commands() -> list[tuple[str, list[str]]]:
-    return [
-        ("bash -n ralph.sh", ["bash", "-n", "ralph.sh"]),
-        ("bash -n src/ralph/resources/ralph.sh", ["bash", "-n", "src/ralph/resources/ralph.sh"]),
-        ("python -m pytest tests/test_shell_parity.py -q", [sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"]),
-    ]
+def build_verify_plan(project_dir: Path) -> tuple[list[tuple[str, list[str], Path]], list[str]]:
+    commands = [("bash -n packaged ralph.sh", ["bash", "-n", str(resource_path("ralph.sh"))], project_dir)]
+    skipped: list[str] = []
+
+    project_shell = project_dir / "ralph.sh"
+    if project_shell.exists():
+        commands.append(("bash -n project ralph.sh", ["bash", "-n", "ralph.sh"], project_dir))
+    else:
+        skipped.append("==> bash -n project ralph.sh (skipped: missing in project_dir)")
+
+    parity_test = project_dir / "tests" / "test_shell_parity.py"
+    if parity_test.exists():
+        commands.append(
+            (
+                "python -m pytest tests/test_shell_parity.py -q",
+                [sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"],
+                project_dir,
+            )
+        )
+    else:
+        skipped.append("==> python -m pytest tests/test_shell_parity.py -q (skipped: missing in project_dir)")
+
+    return commands, skipped
 
 
 def duplicate_task_ids(tasks: list[dict[str, object]]) -> list[str]:
@@ -290,9 +307,18 @@ def execute_verify(args: argparse.Namespace) -> int:
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     exit_code = 0
 
-    for label, command in build_verify_commands():
+    try:
+        commands, skipped = build_verify_plan(project_dir)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    for line in skipped:
+        print(line)
+
+    for label, command, cwd in commands:
         print(f"==> {label}")
-        step_code = run_command(command, cwd=project_dir)
+        step_code = run_command(command, cwd=cwd)
         if exit_code == 0 and step_code != 0:
             exit_code = step_code
 

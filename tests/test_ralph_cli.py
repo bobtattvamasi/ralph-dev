@@ -74,16 +74,39 @@ def test_build_doctor_commands_uses_existing_lightweight_checks() -> None:
     ]
 
 
-def test_build_verify_commands_uses_expected_read_only_checks() -> None:
-    commands = ralph_cli.build_verify_commands()
+def test_build_verify_plan_uses_packaged_shell_and_project_local_optional_checks(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "ralph.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (project_dir / "tests").mkdir()
+    (project_dir / "tests" / "test_shell_parity.py").write_text("def test_shell_parity_smoke():\n    assert True\n", encoding="utf-8")
+
+    commands, skipped = ralph_cli.build_verify_plan(project_dir)
 
     assert commands == [
-        ("bash -n ralph.sh", ["bash", "-n", "ralph.sh"]),
-        ("bash -n src/ralph/resources/ralph.sh", ["bash", "-n", "src/ralph/resources/ralph.sh"]),
+        ("bash -n packaged ralph.sh", ["bash", "-n", str(ralph_cli.resource_path("ralph.sh"))], project_dir),
+        ("bash -n project ralph.sh", ["bash", "-n", "ralph.sh"], project_dir),
         (
             "python -m pytest tests/test_shell_parity.py -q",
             [sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"],
+            project_dir,
         ),
+    ]
+    assert skipped == []
+
+
+def test_build_verify_plan_skips_optional_checks_when_project_files_are_missing(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    commands, skipped = ralph_cli.build_verify_plan(project_dir)
+
+    assert commands == [
+        ("bash -n packaged ralph.sh", ["bash", "-n", str(ralph_cli.resource_path("ralph.sh"))], project_dir),
+    ]
+    assert skipped == [
+        "==> bash -n project ralph.sh (skipped: missing in project_dir)",
+        "==> python -m pytest tests/test_shell_parity.py -q (skipped: missing in project_dir)",
     ]
 
 
@@ -305,6 +328,12 @@ def test_execute_doctor_returns_nonzero_when_duplicate_task_ids_exist(
 def test_execute_verify_runs_all_checks_and_returns_first_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "ralph.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (project_dir / "tests").mkdir()
+    (project_dir / "tests" / "test_shell_parity.py").write_text("def test_shell_parity_smoke():\n    assert True\n", encoding="utf-8")
+
     recorded: list[tuple[list[str], Path]] = []
     codes = iter([0, 9, 0])
 
@@ -314,14 +343,32 @@ def test_execute_verify_runs_all_checks_and_returns_first_failure(
 
     monkeypatch.setattr(ralph_cli, "run_command", fake_run_command)
 
-    exit_code = ralph_cli.execute_verify(Namespace(command="verify", project_dir=str(tmp_path)))
+    exit_code = ralph_cli.execute_verify(Namespace(command="verify", project_dir=str(project_dir)))
 
     assert exit_code == 9
     assert recorded == [
-        (["bash", "-n", "ralph.sh"], tmp_path.resolve()),
-        (["bash", "-n", "src/ralph/resources/ralph.sh"], tmp_path.resolve()),
-        ([sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"], tmp_path.resolve()),
+        (["bash", "-n", str(ralph_cli.resource_path("ralph.sh"))], project_dir.resolve()),
+        (["bash", "-n", "ralph.sh"], project_dir.resolve()),
+        ([sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"], project_dir.resolve()),
     ]
+
+
+def test_execute_verify_returns_nonzero_when_packaged_shell_is_missing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    def fake_resource_path(*parts: str) -> Path:
+        raise FileNotFoundError(f"Missing packaged Ralph resource: {'/'.join(parts)}")
+
+    monkeypatch.setattr(ralph_cli, "resource_path", fake_resource_path)
+
+    exit_code = ralph_cli.execute_verify(Namespace(command="verify", project_dir=str(project_dir)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Missing packaged Ralph resource: ralph.sh" in captured.err
 
 
 def test_execute_groom_returns_nonzero_when_active_backlog_is_missing(
