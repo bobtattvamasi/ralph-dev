@@ -4149,7 +4149,7 @@
     {
       "id": "R20-10",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Investigate new test failures in handoff mode and task tail",
       "description": "After R20-03 fixes, 3 new integration tests started failing:\n1. test_ralph_task_success_final_tail_does_not_run_nested_status_pytest\n2. test_ralph_handoff_mode_closes_from_existing_worktree_state_without_coder_run\n3. test_ralph_handoff_mode_closes_from_repo_backed_candidate_state_without_coder_run\n\nRoot cause unknown - likely unrelated to JSON extraction changes. May indicate race condition in handoff cleanup or task tail logic.",
       "target_files": [
@@ -4166,7 +4166,9 @@
       "role": "coder",
       "depends_on": [
         "R20-03"
-      ]
+      ],
+      "completed_at": "2026-05-19T05:55:51.698414+00:00",
+      "revision_notes": "Verified: targeted handoff/final-tail integration tests pass, review-target detection is task-scoped, and full pytest baseline is 9 failures <= 21."
     },
     {
       "id": "F01",
@@ -4438,29 +4440,52 @@
       "completed_at": "2026-05-03T16:54:45.270631+00:00"
     },
     {
-  "id": "R20-22",
-  "phase": "R20",
-  "status": "pending",
-  "title": "Clean or own runtime bookkeeping diffs after auto task completion",
-  "description": "After auto runs, runtime-owned files such as progress.md and .ralph/memory/recent.md must either be intentionally committed by runtime or restored, so the working tree is clean before the next task.",
-  "target_files": [
-    "ralph.sh",
-    "src/ralph/resources/ralph.sh",
-    "tests/test_ralph_shell_helpers.py"
-  ],
-  "acceptance_criteria": [
-    "Successful task completion does not leave progress.md dirty unless runtime explicitly owns and commits it.",
-    "Successful task completion does not leave .ralph/memory/recent.md dirty unless runtime explicitly owns and commits it.",
-    "Before selecting the next task, auto mode checks for runtime-owned dirty files and cleans or records them deterministically.",
-    "If unrelated dirty files remain, auto blocks with a clear reason instead of continuing.",
-    "Focused tests cover dirty runtime bookkeeping after successful task completion.",
-    "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
-  ],
-  "priority": "critical",
-  "complexity": "moderate",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R20-22",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Clean or own runtime bookkeeping diffs after auto task completion",
+      "description": "After auto runs, runtime-owned files such as progress.md and .ralph/memory/recent.md must either be intentionally committed by runtime or restored, so the working tree is clean before the next task.",
+      "target_files": [
+        "ralph.sh",
+        "src/ralph/resources/ralph.sh",
+        "tests/test_ralph_shell_helpers.py"
+      ],
+      "acceptance_criteria": [
+        "Successful task completion does not leave progress.md dirty unless runtime explicitly owns and commits it.",
+        "Successful task completion does not leave .ralph/memory/recent.md dirty unless runtime explicitly owns and commits it.",
+        "Before selecting the next task, auto mode checks for runtime-owned dirty files and cleans or records them deterministically.",
+        "If unrelated dirty files remain, auto blocks with a clear reason instead of continuing.",
+        "Focused tests cover dirty runtime bookkeeping after successful task completion.",
+        "ralph.sh and src/ralph/resources/ralph.sh stay in parity."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    },
+    {
+      "id": "R20-23",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Treat integration/full-suite evidence tasks as unsafe for overnight-smoke auto",
+      "description": "Tasks whose acceptance criteria require specific integration tests or full suite baseline should not run under overnight-smoke auto profile unless explicitly allowed.",
+      "target_files": [
+        "scripts/ralph_common.py",
+        "tests/test_task_hygiene.py",
+        "tests/test_next_task_auto_safe.py"
+      ],
+      "acceptance_criteria": [
+        "Tasks mentioning tests/test_integration.py, integration tests, full test suite, full suite, or baseline failures emit INTEGRATION_EVIDENCE_REQUIRED.",
+        "INTEGRATION_EVIDENCE_REQUIRED makes the task unsafe for --auto-safe by default.",
+        "Such tasks can still be run manually by explicit task id.",
+        "Focused tests cover an R20-10-like task."
+      ],
+      "priority": "critical",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    }
   ]
 }
