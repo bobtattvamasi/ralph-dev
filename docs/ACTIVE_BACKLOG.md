@@ -12,11 +12,12 @@ The objective is a stable unattended runner for narrow reliability work, not boo
 - `R19-03` — target_files limit warning path verified as stale-blocked resolved
 - `R19-04` — long Python heredoc scope anomaly path verified as stale-blocked resolved
 - `R20-16` — overnight-safe test profile verified as stale-blocked resolved
-
-## Remaining Stage 1 Active Task
 - `R20-22` — clean or own runtime bookkeeping diffs after auto task completion
 
-This is the only remaining active Stage 1 implementation task after parking later-stage work.
+## Stage 1 Status
+Stage 1 `Auto-safe runner v1` is closed.
+
+The Stage 1 reliability lane is complete enough that unattended auto-safe behavior, runtime bookkeeping cleanup, and backlog hygiene are no longer the active bottleneck.
 
 ## Deferred Blocked Work
 - `R22-01` remains `blocked`
@@ -53,7 +54,7 @@ These tasks are intentionally out of the Stage 1 unattended auto-safe lane becau
 After this cleanup:
 - unattended auto-safe should no longer select non-Stage-1 feature work
 - it is acceptable for auto-safe to return no safe task or a blocked/unrunnable explanation
-- Stage 1 execution focus stays on `R20-22`
+- Stage 1 execution no longer has an active implementation task
 
 ## Backlog Use
 - `tasks.json` remains the runtime source of truth
@@ -65,7 +66,15 @@ Stage 2 is `CLI/operator UX`.
 
 The objective is to make Ralph convenient as a terminal tool by wrapping existing runtime and script entry points into a small operator command surface.
 
-## Stage 2 Active Task
+## Completed Stage 2 CLI Work
 - `R23-01` — CLI operator UX plan
+- `R23-02` — basic CLI wrappers
+- `R23-03` — `doctor`
+- `R23-04` — `groom`
 
-This task defines the target command surface before wrapper implementation starts.
+## Next Stage 2 Candidates
+- CLI status
+- CLI tail/log
+- CLI verify
+
+These are the next operator-facing gaps after the initial wrapper, doctor, and grooming commands.
