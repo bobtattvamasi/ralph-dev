@@ -4842,6 +4842,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T09:59:35.033593+00:00"
+    },
+    {
+      "id": "R24-01",
+      "phase": "R24",
+      "status": "verified_done",
+      "title": "Packaging polish plan",
+      "description": "Define the packaging polish stage so Ralph can be installed and used as a terminal tool from arbitrary project directories.",
+      "target_files": [
+        "docs/PACKAGING_PLAN.md",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "PACKAGING_PLAN.md defines the target install/use flow for Ralph.",
+        "Plan covers pipx/venv install, console script, packaged resources, and project-dir behavior.",
+        "Plan lists smoke commands: ralph doctor, ralph status, ralph verify, ralph next, ralph auto --safe.",
+        "Plan identifies gaps between repo-local usage and installed usage.",
+        "ACTIVE_BACKLOG.md points to the packaging polish stage as the next active stage.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T10:06:23.648991+00:00"
     }
   ]
 }
