@@ -4738,6 +4738,32 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T09:13:14.019342+00:00"
+    },
+    {
+      "id": "R23-08",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "Detect duplicate task IDs in doctor/status",
+      "description": "Teach Ralph CLI health checks to detect duplicate task IDs in tasks.json and report them clearly to the operator.",
+      "target_files": [
+        "src/ralph/cli.py",
+        "tests/test_ralph_cli.py",
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "ralph doctor reports duplicate task IDs if tasks.json contains duplicates.",
+        "ralph status reports duplicate task IDs in the operator summary.",
+        "Duplicate IDs make doctor return nonzero.",
+        "Status remains read-only and may still print the summary while warning about duplicates.",
+        "Focused tests cover duplicate task ID detection.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T09:22:57.100237+00:00"
     }
   ]
 }
