@@ -4481,6 +4481,7 @@
         "Such tasks can still be run manually by explicit task id.",
         "Focused tests cover an R20-10-like task."
       ],
+      "auto_safe_override": "hygiene_rule_update",
       "priority": "critical",
       "complexity": "simple",
       "role": "coder",

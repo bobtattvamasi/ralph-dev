@@ -181,3 +181,51 @@ def test_run_next_task_helper_supports_auto_safe_selection_and_skip_logging(tmp_
     payload_line = next(line for line in result.stdout.splitlines() if line.startswith("TASK_JSON="))
     payload = json.loads(payload_line[len("TASK_JSON="):])
     assert payload["id"] == "T02"
+
+
+def test_next_task_auto_safe_skips_integration_evidence_task_but_explicit_task_still_works(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    write_task_file(
+        project_dir,
+        [
+            {
+                "id": "R20-10",
+                "phase": "R20",
+                "status": "pending",
+                "title": "Investigate integration regressions",
+                "description": "Needs integration tests and full suite baseline evidence.",
+                "target_files": ["ralph.sh", "tests/test_integration.py"],
+                "acceptance_criteria": [
+                    "tests/test_integration.py scenarios pass.",
+                    "pytest baseline failures do not increase.",
+                ],
+                "priority": "critical",
+                "complexity": "moderate",
+            },
+            {
+                "id": "R20-23",
+                "phase": "R20",
+                "status": "pending",
+                "title": "Treat integration/full-suite evidence tasks as unsafe for overnight-smoke auto",
+                "description": "Tasks requiring integration tests or full suite baseline stay unsafe unless explicitly allowed.",
+                "target_files": ["scripts/ralph_common.py", "tests/test_task_hygiene.py"],
+                "acceptance_criteria": ["Add focused tests for the hygiene rule update."],
+                "priority": "high",
+                "complexity": "simple",
+                "auto_safe_override": "hygiene_rule_update",
+            },
+        ],
+    )
+
+    auto_safe = run_next_task(project_dir, "--auto-safe")
+    explicit = run_next_task(project_dir, "--auto-safe", "--task", "R20-10")
+
+    assert auto_safe.returncode == 0, auto_safe.stdout + auto_safe.stderr
+    payload = json.loads(auto_safe.stdout)
+    assert payload["id"] == "R20-23"
+    assert auto_safe.stderr.splitlines() == [
+        "TASK_SKIPPED_UNSAFE R20-10 INTEGRATION_EVIDENCE_REQUIRED",
+    ]
+    assert explicit.returncode == 0, explicit.stdout + explicit.stderr
+    assert json.loads(explicit.stdout)["id"] == "R20-10"

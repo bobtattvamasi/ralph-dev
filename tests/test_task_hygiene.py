@@ -198,3 +198,71 @@ def test_checker_reports_external_service_and_memory_system_change_for_r22_04_li
         "TASK_HYGIENE_WARN R22-04 EXTERNAL_SERVICE task depends on external or containerized service runtime",
         "TASK_HYGIENE_WARN R22-04 MEMORY_SYSTEM_CHANGE task changes memory retrieval or .ralph/memory behavior",
     ]
+
+
+def test_checker_reports_integration_evidence_required_for_r20_10_like_task(tmp_path: Path) -> None:
+    project_dir = make_project(tmp_path)
+    write_tasks(
+        project_dir,
+        [
+            {
+                "id": "R20-10",
+                "status": "pending",
+                "title": "Investigate integration regressions",
+                "description": "Acceptance depends on integration tests and full suite baseline.",
+                "target_files": ["ralph.sh", "tests/test_integration.py"],
+                "acceptance_criteria": [
+                    "tests/test_integration.py scenarios pass.",
+                    "Full test suite stays within baseline failures.",
+                ],
+                "priority": "high",
+                "complexity": "moderate",
+            }
+        ],
+    )
+
+    result = run_checker(project_dir, "--task-id", "R20-10")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        "TASK_HYGIENE_WARN R20-10 INTEGRATION_EVIDENCE_REQUIRED task requires integration/full-suite evidence that overnight-smoke auto cannot prove safely",
+    ]
+
+
+def test_hygiene_rule_update_override_only_suppresses_integration_evidence_warning(tmp_path: Path) -> None:
+    project_dir = make_project(tmp_path)
+    write_tasks(
+        project_dir,
+        [
+            {
+                "id": "R20-23",
+                "status": "pending",
+                "title": "Treat integration/full-suite evidence tasks as unsafe for overnight-smoke auto",
+                "description": "Update hygiene for integration tests and full suite baseline tasks.",
+                "target_files": ["scripts/ralph_common.py"],
+                "acceptance_criteria": [
+                    "tasks/test_integration.py style tasks emit INTEGRATION_EVIDENCE_REQUIRED"
+                ],
+                "auto_safe_override": "hygiene_rule_update",
+            },
+            {
+                "id": "R17-01",
+                "status": "pending",
+                "title": "kickoff integration rule docs",
+                "description": "Bootstrap a new command generator",
+                "target_files": ["scripts/thing.py"],
+                "acceptance_criteria": ["Full suite baseline is documented."],
+                "auto_safe_override": "hygiene_rule_update",
+            },
+        ],
+    )
+
+    override_only = run_checker(project_dir, "--task-id", "R20-23")
+    other_warning = run_checker(project_dir, "--task-id", "R17-01")
+
+    assert override_only.returncode == 0, override_only.stdout + override_only.stderr
+    assert override_only.stdout == ""
+    assert other_warning.returncode == 0, other_warning.stdout + other_warning.stderr
+    assert other_warning.stdout.splitlines() == [
+        "TASK_HYGIENE_WARN R17-01 BOOTSTRAP_FEATURE bootstrap/kickoff/init/generation style task is risky for unattended auto",
+    ]

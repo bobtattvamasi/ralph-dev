@@ -23,6 +23,7 @@ TASK_HYGIENE_WARNING_ORDER = (
     "BOOTSTRAP_FEATURE",
     "EXTERNAL_SERVICE",
     "MEMORY_SYSTEM_CHANGE",
+    "INTEGRATION_EVIDENCE_REQUIRED",
     "MISSING_TEST_TARGET",
     "PREVIOUS_RETRY_FAILURE",
     "COMPLEX_TASK",
@@ -80,6 +81,15 @@ TASK_HYGIENE_MEMORY_SYSTEM_PATTERNS = (
     r"\.ralph/memory\b",
     r"\bmemory path replacement\b",
 )
+TASK_HYGIENE_INTEGRATION_EVIDENCE_PATTERNS = (
+    r"\btests/test_integration\.py\b",
+    r"\bintegration tests?\b",
+    r"\bfull test suite\b",
+    r"\bfull suite\b",
+    r"\bbaseline failures?\b",
+    r"\bpytest baseline\b",
+)
+AUTO_SAFE_OVERRIDE_HYGIENE_RULE_UPDATE = "hygiene_rule_update"
 BOOKKEEPING_EXACT = {
     "tasks.json",
     "progress.md",
@@ -524,6 +534,10 @@ def task_hygiene_acceptance_text(task: dict[str, Any]) -> str:
     return " ".join(task_hygiene_normalize_text(item) for item in criteria if task_hygiene_normalize_text(item))
 
 
+def task_auto_safe_override(task: dict[str, Any]) -> str:
+    return task_hygiene_normalize_text(task.get("auto_safe_override"))
+
+
 def task_has_test_target(task: dict[str, Any]) -> bool:
     items = task.get("target_files") or []
     if not isinstance(items, list):
@@ -577,6 +591,16 @@ def warn_memory_system_change(task: dict[str, Any]) -> str | None:
     return None
 
 
+def warn_integration_evidence_required(task: dict[str, Any]) -> str | None:
+    if task_auto_safe_override(task) == AUTO_SAFE_OVERRIDE_HYGIENE_RULE_UPDATE:
+        return None
+    text = task_hygiene_title_description_text(task) + " " + task_hygiene_acceptance_text(task)
+    for pattern in TASK_HYGIENE_INTEGRATION_EVIDENCE_PATTERNS:
+        if re.search(pattern, text):
+            return "task requires integration/full-suite evidence that overnight-smoke auto cannot prove safely"
+    return None
+
+
 def warn_complex_task(task: dict[str, Any]) -> str | None:
     if task_hygiene_normalize_text(task.get("complexity")) == "complex":
         return "complex task is risky for unattended auto"
@@ -597,6 +621,7 @@ def task_hygiene_warnings(task: dict[str, Any]) -> list[tuple[str, str]]:
         "BOOTSTRAP_FEATURE": warn_bootstrap_feature(task),
         "EXTERNAL_SERVICE": warn_external_service(task),
         "MEMORY_SYSTEM_CHANGE": warn_memory_system_change(task),
+        "INTEGRATION_EVIDENCE_REQUIRED": warn_integration_evidence_required(task),
         "MISSING_TEST_TARGET": warn_missing_test_target(task),
         "PREVIOUS_RETRY_FAILURE": warn_previous_retry_failure(task),
         "COMPLEX_TASK": warn_complex_task(task),
