@@ -59,3 +59,13 @@ After this cleanup:
 - `tasks.json` remains the runtime source of truth
 - this document is the human-readable active backlog view
 - parked work stays in `tasks.json` but should not be confused with the current stabilization lane
+
+## Stage 2 Goal
+Stage 2 is `CLI/operator UX`.
+
+The objective is to make Ralph convenient as a terminal tool by wrapping existing runtime and script entry points into a small operator command surface.
+
+## Stage 2 Active Task
+- `R23-01` — CLI operator UX plan
+
+This task defines the target command surface before wrapper implementation starts.
