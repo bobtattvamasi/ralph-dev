@@ -4789,6 +4789,33 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T09:28:47.211605+00:00"
+    },
+    {
+      "id": "R23-10",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "CLI verify command",
+      "description": "Add ralph verify as an explicit operator command for running the configured full verification checks without changing task execution state.",
+      "target_files": [
+        "src/ralph/cli.py",
+        "tests/test_ralph_cli.py",
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "ralph verify runs explicit verification checks without starting auto mode.",
+        "verify runs bash -n ralph.sh and bash -n src/ralph/resources/ralph.sh.",
+        "verify runs python3 -m pytest tests/test_shell_parity.py -q.",
+        "verify preserves nonzero exit code if any check fails.",
+        "verify is read-only and does not modify tasks.json or runtime state.",
+        "Focused tests cover command construction and exit-code behavior.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T09:32:46.772872+00:00"
     }
   ]
 }
