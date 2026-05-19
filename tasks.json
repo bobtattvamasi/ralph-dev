@@ -3666,7 +3666,7 @@
     {
       "id": "R19-03",
       "phase": "R19",
-      "status": "blocked",
+      "status": "verified_done",
       "title": "Enforce target_files limit of 3",
       "description": "[PARKING LOT] In next_task.py and task validation, warn or auto-split tasks with more than 3 target_files. Large scope tasks consistently fail in single codex exec.",
       "target_files": [
@@ -3680,13 +3680,13 @@
       "priority": "high",
       "complexity": "simple",
       "role": "coder",
-      "completed_at": null,
-      "revision_notes": "R19-03 failed after 2 retries"
+      "completed_at": "2026-05-19T06:45:34.745290+00:00",
+      "revision_notes": "Verified as stale-blocked resolved: next_task.py already emits scope-too-wide warnings and integration coverage exists for next_task output and auto log."
     },
     {
       "id": "R19-04",
       "phase": "R19",
-      "status": "blocked",
+      "status": "verified_done",
       "title": "Ban inline Python heredoc >10 lines in bash",
       "description": "[PARKING LOT] Add a post-coder check: if any .sh file contains a Python heredoc (<<PY or <<PYTHON) longer than 10 lines, flag as scope anomaly and require extraction to scripts/. This prevents bash parse errors from embedded Python.",
       "target_files": [
@@ -3700,8 +3700,8 @@
       "priority": "high",
       "complexity": "simple",
       "role": "coder",
-      "completed_at": null,
-      "revision_notes": "R19-04 failed after 2 retries"
+      "completed_at": "2026-05-19T06:45:34.834486+00:00",
+      "revision_notes": "Verified as stale-blocked resolved: ralph.sh already detects long Python heredocs and integration coverage exists for scope anomaly warning."
     },
     {
       "id": "R19-05",
@@ -4012,7 +4012,7 @@
     {
       "id": "R20-16",
       "phase": "R20",
-      "status": "blocked",
+      "status": "verified_done",
       "title": "Overnight-safe test profile",
       "description": "Add a dedicated fast verification profile for unattended auto mode so Ralph can run a small but meaningful smoke/critical subset instead of relying on a hand-written ad hoc test_cmd_fast.",
       "target_files": [
@@ -4034,8 +4034,8 @@
       "role": "coder",
       "scope_too_wide": false,
       "selection_warnings": [],
-      "completed_at": null,
-      "revision_notes": "R20-16 failed after 2 retries"
+      "completed_at": "2026-05-19T06:45:34.923328+00:00",
+      "revision_notes": "Verified as stale-blocked resolved: test_cmd_fast exists in .ralph/project.json, pyproject defines overnight_smoke, and focused smoke tests are marked for shell helpers and bot commands."
     },
     {
       "id": "R22-01",
