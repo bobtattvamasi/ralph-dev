@@ -5041,6 +5041,33 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T14:39:04.763219+00:00"
+    },
+    {
+      "id": "R24-09",
+      "phase": "R24",
+      "status": "verified_done",
+      "title": "Operator install guide",
+      "description": "Document the supported installed Ralph workflow for venv/pipx usage, --project-dir behavior, and smoke checks.",
+      "target_files": [
+        "docs/INSTALL.md",
+        "docs/PACKAGING_PLAN.md",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "INSTALL.md documents venv install from repo.",
+        "INSTALL.md documents pipx install from repo.",
+        "INSTALL.md shows running ralph from outside the source repo using --project-dir.",
+        "INSTALL.md lists smoke checks: ralph status, doctor, verify, next, explain, groom, tail/log.",
+        "PACKAGING_PLAN.md links to INSTALL.md.",
+        "ACTIVE_BACKLOG.md marks R24 installed workflow docs as the next packaging polish task.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T14:43:29.314943+00:00"
     }
   ]
 }
