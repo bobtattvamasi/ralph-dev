@@ -40,6 +40,7 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert "next" in help_result.stdout
     assert "explain" in help_result.stdout
     assert "doctor" in help_result.stdout
+    assert "verify" in help_result.stdout
     assert "groom" in help_result.stdout
     assert "tail" in help_result.stdout
     assert "log" in help_result.stdout
@@ -97,6 +98,12 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert "==> python -m json.tool tasks.json" in doctor_result.stdout
     assert "==> python -m pytest tests/test_shell_parity.py -q" in doctor_result.stdout
     assert "==> python scripts/next_task.py --auto-safe --explain" in doctor_result.stdout
+
+    verify_result = run([str(ralph_bin), "verify", "--project-dir", str(REPO_ROOT)], env=runtime_env)
+    assert verify_result.returncode == 0
+    assert "==> bash -n ralph.sh" in verify_result.stdout
+    assert "==> bash -n src/ralph/resources/ralph.sh" in verify_result.stdout
+    assert "==> python -m pytest tests/test_shell_parity.py -q" in verify_result.stdout
 
     groom_result = run([str(ralph_bin), "groom", "--project-dir", str(REPO_ROOT)], env=runtime_env)
     assert groom_result.returncode == 0

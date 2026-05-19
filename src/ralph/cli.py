@@ -101,6 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project directory that contains tasks.json.",
     )
 
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Run explicit read-only verification checks.",
+    )
+    verify_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+
     groom_parser = subparsers.add_parser(
         "groom",
         help="Show the current active backlog view.",
@@ -217,6 +227,14 @@ def build_doctor_commands() -> list[tuple[str, list[str]]]:
     ]
 
 
+def build_verify_commands() -> list[tuple[str, list[str]]]:
+    return [
+        ("bash -n ralph.sh", ["bash", "-n", "ralph.sh"]),
+        ("bash -n src/ralph/resources/ralph.sh", ["bash", "-n", "src/ralph/resources/ralph.sh"]),
+        ("python -m pytest tests/test_shell_parity.py -q", [sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"]),
+    ]
+
+
 def duplicate_task_ids(tasks: list[dict[str, object]]) -> list[str]:
     counts = collections.Counter(
         str(task.get("id", "")).strip()
@@ -264,6 +282,19 @@ def execute_doctor(args: argparse.Namespace) -> int:
         print(f"Duplicate task IDs: {', '.join(duplicates)}")
         if exit_code == 0:
             exit_code = 1
+
+    return exit_code
+
+
+def execute_verify(args: argparse.Namespace) -> int:
+    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+    exit_code = 0
+
+    for label, command in build_verify_commands():
+        print(f"==> {label}")
+        step_code = run_command(command, cwd=project_dir)
+        if exit_code == 0 and step_code != 0:
+            exit_code = step_code
 
     return exit_code
 
@@ -386,6 +417,8 @@ def execute_log(args: argparse.Namespace) -> int:
 def execute(args: argparse.Namespace) -> int:
     if args.command == "doctor":
         return execute_doctor(args)
+    if args.command == "verify":
+        return execute_verify(args)
     if args.command == "groom":
         return execute_groom(args)
     if args.command == "status":

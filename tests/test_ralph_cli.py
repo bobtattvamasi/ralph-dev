@@ -74,6 +74,19 @@ def test_build_doctor_commands_uses_existing_lightweight_checks() -> None:
     ]
 
 
+def test_build_verify_commands_uses_expected_read_only_checks() -> None:
+    commands = ralph_cli.build_verify_commands()
+
+    assert commands == [
+        ("bash -n ralph.sh", ["bash", "-n", "ralph.sh"]),
+        ("bash -n src/ralph/resources/ralph.sh", ["bash", "-n", "src/ralph/resources/ralph.sh"]),
+        (
+            "python -m pytest tests/test_shell_parity.py -q",
+            [sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"],
+        ),
+    ]
+
+
 def test_duplicate_task_ids_detects_duplicates_and_sorts() -> None:
     duplicates = ralph_cli.duplicate_task_ids(
         [
@@ -287,6 +300,28 @@ def test_execute_doctor_returns_nonzero_when_duplicate_task_ids_exist(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "Duplicate task IDs: R12-03" in captured.out
+
+
+def test_execute_verify_runs_all_checks_and_returns_first_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    recorded: list[tuple[list[str], Path]] = []
+    codes = iter([0, 9, 0])
+
+    def fake_run_command(command: list[str], cwd: Path) -> int:
+        recorded.append((command, cwd))
+        return next(codes)
+
+    monkeypatch.setattr(ralph_cli, "run_command", fake_run_command)
+
+    exit_code = ralph_cli.execute_verify(Namespace(command="verify", project_dir=str(tmp_path)))
+
+    assert exit_code == 9
+    assert recorded == [
+        (["bash", "-n", "ralph.sh"], tmp_path.resolve()),
+        (["bash", "-n", "src/ralph/resources/ralph.sh"], tmp_path.resolve()),
+        ([sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"], tmp_path.resolve()),
+    ]
 
 
 def test_execute_groom_returns_nonzero_when_active_backlog_is_missing(
