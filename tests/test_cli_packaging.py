@@ -22,6 +22,25 @@ def run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None =
     )
 
 
+def run_installed_cli(
+    ralph_bin: Path,
+    *args: str,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return run([str(ralph_bin), *args], cwd=cwd, env=env)
+
+
+def run_installed_python(
+    python_bin: Path,
+    code: str,
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return run([str(python_bin), "-c", code], cwd=cwd, env=env)
+
+
 def install_cli(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     venv_dir = tmp_path / "venv"
     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
@@ -76,7 +95,7 @@ def prepare_fixture_project(
 def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     bin_dir, python_bin, ralph_bin, outside_cwd = install_cli(tmp_path)
 
-    help_result = run([str(ralph_bin), "--help"], cwd=outside_cwd)
+    help_result = run_installed_cli(ralph_bin, "--help", cwd=outside_cwd)
     assert help_result.returncode == 0
     assert "init" in help_result.stdout
     assert "auto" in help_result.stdout
@@ -111,59 +130,44 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     runtime_env = env.copy()
     runtime_env["PATH"] = f"{bin_dir}:{runtime_env['PATH']}"
 
-    status_result = run([str(ralph_bin), "status", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert status_result.returncode == 0
-    assert "Git state:" in status_result.stdout
-    assert "Task counts:" in status_result.stdout
-    assert "Duplicate task IDs: none" in status_result.stdout
-    assert "Active backlog:" in status_result.stdout
-    assert "Next auto-safe state:" in status_result.stdout
+    smoke_cases = [
+        (
+            ("status", "--project-dir", str(project_dir)),
+            runtime_env,
+            ("Git state:", "Task counts:", "Duplicate task IDs: none", "Active backlog:", "Next auto-safe state:"),
+        ),
+        (("next", "--project-dir", str(project_dir)), runtime_env, ('"id": "T01"',)),
+        (("explain", "--project-dir", str(project_dir)), runtime_env, ("\"has_pending\": true", "\"reason\":")),
+        (("auto", "--safe", "--project-dir", str(project_dir)), runtime_env, ("AUTO_TASK_RESULT T01 status=skipped reason=INTEGRATION_EVIDENCE_REQUIRED",)),
+        (("doctor", "--project-dir", str(project_dir)), runtime_env, (
+            "==> git status --short",
+            "==> python -m json.tool tasks.json",
+            "==> python -m pytest tests/test_shell_parity.py -q",
+            "==> python scripts/next_task.py --auto-safe --explain",
+        )),
+        (("verify", "--project-dir", str(project_dir)), runtime_env, (
+            "==> bash -n packaged ralph.sh",
+            "==> bash -n project ralph.sh",
+            "==> python -m pytest tests/test_shell_parity.py -q",
+        )),
+        (("groom", "--project-dir", str(project_dir)), runtime_env, ("# Active Backlog", "Backlog policy: docs/BACKLOG_POLICY.md")),
+        (("tail", "--project-dir", str(project_dir), "--lines", "2"), runtime_env, ()),
+        (("log", "--project-dir", str(project_dir)), runtime_env, (str(project_dir / "logs" / "ralph_2026-05-19.log"),)),
+    ]
 
-    next_result = run([str(ralph_bin), "next", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert next_result.returncode == 0
-    assert '"id": "T01"' in next_result.stdout
+    for args, env_override, expected_snippets in smoke_cases:
+        result = run_installed_cli(ralph_bin, *args, cwd=outside_cwd, env=env_override)
+        assert result.returncode == 0, args
+        for snippet in expected_snippets:
+            assert snippet in result.stdout, (args, snippet, result.stdout)
 
-    explain_result = run([str(ralph_bin), "explain", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert explain_result.returncode == 0
-    assert explain_result.stdout.strip()
-
-    task_help_result = run([str(ralph_bin), "task", "--help"], cwd=outside_cwd)
+    task_help_result = run_installed_cli(ralph_bin, "task", "--help", cwd=outside_cwd)
     assert task_help_result.returncode == 0
     assert "task id to run" in task_help_result.stdout.lower()
 
-    auto_result = run([str(ralph_bin), "auto", "--safe", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert auto_result.returncode == 0
-    assert "AUTO_TASK_RESULT T01 status=skipped reason=INTEGRATION_EVIDENCE_REQUIRED" in auto_result.stdout
-
-    bot_help_result = run([str(ralph_bin), "bot", "--help"], cwd=outside_cwd)
+    bot_help_result = run_installed_cli(ralph_bin, "bot", "--help", cwd=outside_cwd)
     assert bot_help_result.returncode == 0
     assert "project-dir" in bot_help_result.stdout
-
-    doctor_result = run([str(ralph_bin), "doctor", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert doctor_result.returncode == 0
-    assert "==> git status --short" in doctor_result.stdout
-    assert "==> python -m json.tool tasks.json" in doctor_result.stdout
-    assert "==> python -m pytest tests/test_shell_parity.py -q" in doctor_result.stdout
-    assert "==> python scripts/next_task.py --auto-safe --explain" in doctor_result.stdout
-
-    verify_result = run([str(ralph_bin), "verify", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert verify_result.returncode == 0
-    assert "==> bash -n packaged ralph.sh" in verify_result.stdout
-    assert "==> bash -n project ralph.sh" in verify_result.stdout
-    assert "==> python -m pytest tests/test_shell_parity.py -q" in verify_result.stdout
-
-    groom_result = run([str(ralph_bin), "groom", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert groom_result.returncode == 0
-    assert "# Active Backlog" in groom_result.stdout
-    assert "Backlog policy: docs/BACKLOG_POLICY.md" in groom_result.stdout
-
-    tail_result = run([str(ralph_bin), "tail", "--project-dir", str(project_dir), "--lines", "2"], cwd=outside_cwd, env=runtime_env)
-    assert tail_result.returncode == 0
-    # Keep the smoke focused on successful execution; this environment emits cleanup noise.
-
-    log_result = run([str(ralph_bin), "log", "--project-dir", str(project_dir)], cwd=outside_cwd, env=runtime_env)
-    assert log_result.returncode == 0
-    assert str(project_dir / "logs" / "ralph_2026-05-19.log") in log_result.stdout
 
 
 def test_packaged_resource_bundling_audit_covers_cli_command_dependencies(tmp_path: Path) -> None:
@@ -265,22 +269,19 @@ def test_packaged_resource_bundling_audit_covers_cli_command_dependencies(tmp_pa
 def test_installed_package_resources_resolve_outside_repo_root(tmp_path: Path) -> None:
     _, python_bin, _, outside_cwd = install_cli(tmp_path)
 
-    resource_probe = run(
-        [
-            str(python_bin),
-            "-c",
-            (
-                "import os\n"
-                "from pathlib import Path\n"
-                "from ralph.cli import resource_path\n"
-                "repo_root = Path(os.environ['REPO_ROOT'])\n"
-                "for rel in [('ralph.sh',), ('scripts', 'next_task.py')]:\n"
-                "    path = resource_path(*rel)\n"
-                "    print('/'.join(rel), path)\n"
-                "    print('exists', path.exists())\n"
-                "    print('outside_repo', repo_root not in path.parents)\n"
-            ),
-        ],
+    resource_probe = run_installed_python(
+        python_bin,
+        (
+            "import os\n"
+            "from pathlib import Path\n"
+            "from ralph.cli import resource_path\n"
+            "repo_root = Path(os.environ['REPO_ROOT'])\n"
+            "for rel in [('ralph.sh',), ('scripts', 'next_task.py')]:\n"
+            "    path = resource_path(*rel)\n"
+            "    print('/'.join(rel), path)\n"
+            "    print('exists', path.exists())\n"
+            "    print('outside_repo', repo_root not in path.parents)\n"
+        ),
         cwd=outside_cwd,
         env={**os.environ, "REPO_ROOT": str(REPO_ROOT)},
     )
@@ -295,17 +296,14 @@ def test_installed_package_resources_resolve_outside_repo_root(tmp_path: Path) -
 def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Path) -> None:
     _, python_bin, _, _ = install_cli(tmp_path)
 
-    resource_probe = run(
-        [
-            str(python_bin),
-            "-c",
-            (
-                "from ralph.cli import resource_path\n"
-                "for parts in [('scripts','verify_task_closure.py'), ('scripts','models.py'), ('scripts','re_audit_tasks.py'), ('scripts','audit_artifact.py')]:\n"
-                "    p = resource_path(*parts)\n"
-                "    print('/'.join(parts), p.exists())\n"
-            ),
-        ],
+    resource_probe = run_installed_python(
+        python_bin,
+        (
+            "from ralph.cli import resource_path\n"
+            "for parts in [('scripts','verify_task_closure.py'), ('scripts','models.py'), ('scripts','re_audit_tasks.py'), ('scripts','audit_artifact.py')]:\n"
+            "    p = resource_path(*parts)\n"
+            "    print('/'.join(parts), p.exists())\n"
+        ),
         cwd=tmp_path,
     )
     assert resource_probe.returncode == 0, resource_probe.stdout + resource_probe.stderr
@@ -318,30 +316,27 @@ def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Pat
     (project_dir / "docs").mkdir(parents=True)
     (project_dir / "docs" / "TRUST_LAYER.md").write_text("# Trust Layer\n", encoding="utf-8")
 
-    verify_result = run(
-        [
-            str(python_bin),
-            "-c",
-            (
-                "import json, os, subprocess\n"
-                "from pathlib import Path\n"
-                "from ralph.cli import resource_path\n"
-                "project_dir = Path(os.environ['RALPH_PROJECT_DIR'])\n"
-                "task = {\n"
-                "  'id': 'R10-PKG',\n"
-                "  'title': 'Docs: trust layer note',\n"
-                "  'description': 'Update the trust layer documentation with a short note.',\n"
-                "  'acceptance_criteria': ['Trust layer documentation exists']\n"
-                "}\n"
-                "env = os.environ.copy()\n"
-                "env['RALPH_CHANGED_FILES_JSON'] = json.dumps(['docs/TRUST_LAYER.md'])\n"
-                "proc = subprocess.run([\n"
-                "  os.environ['PYTHON_BIN'], str(resource_path('scripts', 'verify_task_closure.py'))\n"
-                "], input=json.dumps(task), text=True, capture_output=True, env=env, cwd=str(project_dir))\n"
-                "print(proc.stdout)\n"
-                "raise SystemExit(proc.returncode)\n"
-            ),
-        ],
+    verify_result = run_installed_python(
+        python_bin,
+        (
+            "import json, os, subprocess\n"
+            "from pathlib import Path\n"
+            "from ralph.cli import resource_path\n"
+            "project_dir = Path(os.environ['RALPH_PROJECT_DIR'])\n"
+            "task = {\n"
+            "  'id': 'R10-PKG',\n"
+            "  'title': 'Docs: trust layer note',\n"
+            "  'description': 'Update the trust layer documentation with a short note.',\n"
+            "  'acceptance_criteria': ['Trust layer documentation exists']\n"
+            "}\n"
+            "env = os.environ.copy()\n"
+            "env['RALPH_CHANGED_FILES_JSON'] = json.dumps(['docs/TRUST_LAYER.md'])\n"
+            "proc = subprocess.run([\n"
+            "  os.environ['PYTHON_BIN'], str(resource_path('scripts', 'verify_task_closure.py'))\n"
+            "], input=json.dumps(task), text=True, capture_output=True, env=env, cwd=str(project_dir))\n"
+            "print(proc.stdout)\n"
+            "raise SystemExit(proc.returncode)\n"
+        ),
         cwd=tmp_path,
         env={
             **os.environ,
