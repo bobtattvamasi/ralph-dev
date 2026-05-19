@@ -4966,6 +4966,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T13:48:32.288303+00:00"
+    },
+    {
+      "id": "R24-06",
+      "phase": "R24",
+      "status": "verified_done",
+      "title": "Packaged resource bundling audit test",
+      "description": "Add a focused packaging test that verifies CLI command dependencies resolve through packaged resources or explicit project-local files, not accidental repo-root helper paths.",
+      "target_files": [
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "Test verifies packaged helper scripts required by CLI commands exist in src/ralph/resources.",
+        "Test covers packaged next_task.py dependency for next/explain/status/doctor.",
+        "Test covers packaged ralph.sh dependency for verify/auto/task.",
+        "Test documents project-local-only dependencies for groom/tail/log.",
+        "Test fails if a required packaged helper is missing.",
+        "No runtime behavior in ralph.sh changes.",
+        "No CLI behavior changes unless a tiny path bug is found."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T13:58:16.414790+00:00"
     }
   ]
 }
