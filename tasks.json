@@ -4305,7 +4305,7 @@
     {
       "id": "R20-17",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Document explicit Tester phase in architecture",
       "description": "Update ARCHITECTURE.md and project docs to reflect the Coder -> Tester -> Lead pipeline, Tester report contract, and tester timeout/failure reason codes.",
       "target_files": [
@@ -4324,7 +4324,8 @@
       "complexity": "simple",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T06:50:51.614533+00:00"
     },
     {
       "id": "R17-01A",
