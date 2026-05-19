@@ -4494,7 +4494,7 @@
     {
       "id": "R20-24",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Backlog policy and status semantics",
       "description": "Document how Ralph should use task statuses and distinguish active work from parking-lot, manual-only, stale-spec, blocked, and verified tasks.",
       "target_files": [
@@ -4512,7 +4512,8 @@
       "complexity": "simple",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T06:55:18.055377+00:00"
     }
   ]
 }
