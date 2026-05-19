@@ -4490,6 +4490,29 @@
       "selection_warnings": [],
       "completed_at": "2026-05-19T06:11:31.119238+00:00",
       "revision_notes": "Verified: integration/full-suite evidence tasks emit INTEGRATION_EVIDENCE_REQUIRED and are skipped by overnight auto; explicit task selection remains allowed."
+    },
+    {
+      "id": "R20-24",
+      "phase": "R20",
+      "status": "pending",
+      "title": "Backlog policy and status semantics",
+      "description": "Document how Ralph should use task statuses and distinguish active work from parking-lot, manual-only, stale-spec, blocked, and verified tasks.",
+      "target_files": [
+        "docs/BACKLOG_POLICY.md",
+        "AGENTS.md"
+      ],
+      "acceptance_criteria": [
+        "BACKLOG_POLICY.md defines pending, blocked, verified_done, done, false_positive, and stale-spec usage.",
+        "Policy explains how to represent parking-lot and manual-only tasks without breaking existing tooling.",
+        "Policy explains when to close stale specs as verified_done vs keep blocked vs decompose.",
+        "Policy defines that active auto-safe backlog should stay small and stage-scoped.",
+        "AGENTS.md links to BACKLOG_POLICY.md."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
     }
   ]
 }
