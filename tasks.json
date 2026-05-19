@@ -4711,6 +4711,32 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T08:53:23.901933+00:00"
-    }
+    },
+    {
+  "id": "R23-07",
+  "phase": "R23",
+  "status": "pending",
+  "title": "CLI tail/log command",
+  "description": "Add ralph tail/log as read-only operator commands for viewing recent Ralph logs without remembering log file paths.",
+  "target_files": [
+    "src/ralph/cli.py",
+    "tests/test_ralph_cli.py",
+    "tests/test_cli_packaging.py"
+  ],
+  "acceptance_criteria": [
+    "ralph tail prints the last N lines from the latest logs/ralph_*.log file.",
+    "ralph tail defaults to 80 lines and supports --lines <N>.",
+    "ralph log lists available logs or prints the latest log path.",
+    "Commands are read-only and do not modify runtime state.",
+    "Commands return nonzero with a clear error if no logs exist.",
+    "Focused tests cover latest-log selection, tail output, and missing-log behavior.",
+    "No runtime behavior in ralph.sh changes."
+  ],
+  "priority": "high",
+  "complexity": "simple",
+  "role": "coder",
+  "scope_too_wide": false,
+  "selection_warnings": []
+}
   ]
 }
