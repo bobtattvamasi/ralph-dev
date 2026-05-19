@@ -34,7 +34,7 @@ def build_shell_fixture(tmp_path: Path, *, broken_verifier: bool = False) -> Pat
                         "title": "Bot: /auto command",
                         "description": "Wire /auto in the bot",
                         "status": "pending",
-                        "acceptance_criteria": ["test_auto_route covers /auto"],
+                        "acceptance_criteria": ["Wire /auto through the bot route cleanly."],
                         "target_files": ["scripts/ralph_bot.py"],
                     }
                 ],
@@ -56,7 +56,7 @@ def build_shell_fixture(tmp_path: Path, *, broken_verifier: bool = False) -> Pat
     ):
         (project_dir / name).write_text(content, encoding="utf-8")
 
-    for script_name in ("extract_json.py", "ralph_common.py"):
+    for script_name in ("extract_json.py", "ralph_common.py", "review_service.py"):
         shutil.copy2(REPO_ROOT / "scripts" / script_name, project_dir / "scripts" / script_name)
     verify_target = project_dir / "scripts" / "verify_task_closure.py"
     if broken_verifier:

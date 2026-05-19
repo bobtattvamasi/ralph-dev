@@ -62,7 +62,7 @@ def test_next_task_auto_safe_skips_unsafe_and_selects_safe(tmp_path: Path) -> No
                 "title": "Safe runtime fix",
                 "description": "Tighten one shell helper",
                 "target_files": ["ralph.sh", "tests/test_ralph_shell_helpers.py"],
-                "acceptance_criteria": ["Focused tests cover shell helper behavior"],
+                "acceptance_criteria": ["Tighten one shell helper with a narrow scoped change."],
                 "priority": "high",
                 "complexity": "simple",
             },

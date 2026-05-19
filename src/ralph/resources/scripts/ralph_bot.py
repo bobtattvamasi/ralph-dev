@@ -138,8 +138,10 @@ HOT_RELOAD_EXPORTS = [
     "cmd_redo",
     "cmd_pause",
     "cmd_resume",
+    "cmd_tasks",
     "cmd_add",
     "cmd_rm",
+    "cmd_log",
     "cmd_diff",
     "cmd_cost",
     "cmd_stats",
@@ -153,9 +155,48 @@ HOT_RELOAD_EXPORTS = [
     "cmd_trust_report",
     "cmd_ask",
     "cmd_help",
+    "cmd_hidden",
     "cmd_reload",
     "handle_update",
 ]
+
+PRIMARY_COMMAND_HELP_LINES = (
+    "/status — current state",
+    "/tasks [phase] — task list",
+    "/auto — run all",
+    "/stop — stop after current task; use `/stop now` to kill immediately",
+    "/pause — pause before next step",
+    "/resume — resume after pause",
+    "/log [N] — last N lines from ralph execution log",
+    "/tail [N] — last N lines of live codex output",
+    "/diff — last commit changes",
+)
+
+SECONDARY_COMMAND_HELP_LINES = (
+    "/hidden — show secondary commands",
+    "/projects — list registered projects",
+    "/switch &lt;project&gt; — switch active project",
+    "/start &lt;task_id&gt; — run one task",
+    "/phase &lt;phase&gt; — run one phase",
+    "/plan — show phase plan summary",
+    "/article &lt;topic|new&gt; — generate article draft",
+    "/add &lt;phase&gt; &lt;title&gt; — append a pending task",
+    "/rm &lt;task_id&gt; — remove a task",
+    "/exit — stop Ralph and bot",
+    "/done &lt;task_id&gt; — mark task done",
+    "/redo &lt;task_id&gt; [notes] — reopen task for another pass",
+    "/timeout &lt;seconds&gt; — override timeout for next run",
+    "/comment &lt;text&gt; — save note for next attempt",
+    "/progress — show narrative progress log",
+    "/audit &lt;task_id&gt; — show trust audit summary",
+    "/audit_last [N] — show recent audit artifacts",
+    "/trust_report — show trust-layer report",
+    "/ask &lt;question&gt; — ask repo-local assistant",
+    "/cost — show today's token usage",
+    "/stats — show runtime metrics",
+    "/limits — show current budgets and limits",
+    "/reload — hot-reload bot handlers",
+)
 
 
 def configure_module_runtime(module: ModuleType) -> None:
@@ -1657,6 +1698,11 @@ async def cmd_resume() -> None:
     await safe_send("▶️ Ralph resumed")
 
 
+async def cmd_tasks(phase: str | None = None) -> None:
+    """Send task summary, optionally filtered by phase."""
+    await safe_send(get_tasks_summary(phase))
+
+
 async def cmd_add(args: str) -> None:
     """Add a new pending task to tasks.json."""
     parts = args.split(maxsplit=1)
@@ -1740,6 +1786,12 @@ async def cmd_rm(args: str) -> None:
         return
 
     await safe_send(f"🗑 Task {task_id} removed")
+
+
+async def cmd_log(n: int = 15) -> None:
+    """Send escaped Ralph log tail."""
+    log_text = html.escape(get_log_tail(n))
+    await safe_send(f"<pre>{log_text}</pre>")
 
 
 async def cmd_diff() -> None:
@@ -2144,40 +2196,23 @@ async def cmd_reload() -> None:
 async def cmd_help() -> None:
     """Send help text."""
     set_send_context("/help")
+    help_lines = "\n".join(PRIMARY_COMMAND_HELP_LINES)
     await safe_send(
         "🤖 <b>Ralph Bot</b>\n\n"
-        "/status — current state\n"
-        "/projects — list registered projects\n"
-        "/switch <name> — switch active project context\n"
-        "/tasks [phase] — task list\n"
-        "/plan — phase summary and next pending tasks\n"
-        "/article [new] — get today's article or generate a new one\n"
-        "/add [phase] [title] — add a pending task\n"
-        "/rm [task_id] — remove a task\n"
-        "/pause — pause before next step\n"
-        "/resume — resume after pause\n"
-        "/start TASK_ID — run one task\n"
-        "/phase NUM — run phase\n"
-        "/auto — run all\n"
-        "/stop — stop after current task\n"
-        "/stop now — kill immediately\n"
-        "/exit — force kill immediately\n"
-        "/done [task_id] — mark task done\n"
-        "/redo [task_id] [notes] — redo task\n"
-        "/timeout [seconds] — set timeout override\n"
-        "/comment text — instruction for next task\n"
-        "/log [N] — last N lines from ralph execution log\n"
-        "/progress — phase progress bars\n"
-        "/tail [N] — last N lines of live codex output\n"
-        "/audit &lt;task_id&gt; — latest trust audit summary\n"
-        "/audit_last [N] — latest audit summaries\n"
-        "/trust_report — trust summary across audit artifacts\n"
-        "/ask &lt;question&gt; — bounded operator question entrypoint\n"
-        "/cost — token usage & cost estimate\n"
-        "/stats — aggregated task metrics from metrics.csv\n"
-        "/limits — today's spend vs cost limit\n"
-        "/diff — last commit changes\n"
-        "/reload — hot-reload bot handlers\n"
+        "<b>Primary commands</b>\n"
+        f"{help_lines}\n\n"
+        "Secondary commands remain available if called directly. Use `/hidden` to inspect them.\n"
+    )
+
+
+async def cmd_hidden() -> None:
+    """Send the secondary command list."""
+    set_send_context("/hidden")
+    help_lines = "\n".join(SECONDARY_COMMAND_HELP_LINES)
+    await safe_send(
+        "🤖 <b>Ralph Bot</b>\n\n"
+        "<b>Secondary commands</b>\n"
+        f"{help_lines}\n"
     )
 
 
@@ -2224,8 +2259,8 @@ async def handle_update(update: dict) -> None:
         handler_name = "cmd_switch"
         handler_coro = cmd_switch(args)
     elif cmd == "/tasks":
-        handler_name = "tasks_summary"
-        handler_coro = safe_send(get_tasks_summary(args or None))
+        handler_name = "cmd_tasks"
+        handler_coro = cmd_tasks(args or None)
     elif cmd == "/plan":
         handler_name = "cmd_plan"
         handler_coro = cmd_plan()
@@ -2279,13 +2314,8 @@ async def handle_update(update: dict) -> None:
         handler_name = "comment_save"
         handler_coro = comment_handler()
     elif cmd == "/log":
-        async def log_handler() -> None:
-            n = int(args) if args.isdigit() else 15
-            log_text = html.escape(get_log_tail(n))
-            await safe_send(f"<pre>{log_text}</pre>")
-
         handler_name = "cmd_log"
-        handler_coro = log_handler()
+        handler_coro = cmd_log(int(args) if args.isdigit() else 15)
     elif cmd == "/progress":
         handler_name = "cmd_progress"
         handler_coro = cmd_progress()
@@ -2319,6 +2349,9 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/reload":
         handler_name = "cmd_reload"
         handler_coro = cmd_reload()
+    elif cmd == "/hidden":
+        handler_name = "cmd_hidden"
+        handler_coro = cmd_hidden()
     elif cmd == "/help" or (cmd == "/start" and not args):
         handler_name = "cmd_help"
         handler_coro = cmd_help()

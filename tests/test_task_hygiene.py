@@ -124,7 +124,7 @@ def test_checker_supports_task_id_and_include_non_pending(tmp_path: Path) -> Non
                 "title": "Safe narrow fix",
                 "description": "Adjust one helper",
                 "target_files": ["scripts/helper.py", "tests/test_helper.py"],
-                "acceptance_criteria": ["Helper returns correct value"],
+                "acceptance_criteria": ["Adjust one helper with narrow task scope."],
             },
         ],
     )

@@ -19,6 +19,67 @@ from typing import Any, Callable
 DEFAULT_CONTROL_ACTION = "continue"
 COMPLETED_STATUSES = {"done", "verified_done"}
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+TASK_HYGIENE_WARNING_ORDER = (
+    "BOOTSTRAP_FEATURE",
+    "EXTERNAL_SERVICE",
+    "MEMORY_SYSTEM_CHANGE",
+    "MISSING_TEST_TARGET",
+    "PREVIOUS_RETRY_FAILURE",
+    "COMPLEX_TASK",
+    "BROAD_SCOPE",
+)
+TASK_HYGIENE_BOOTSTRAP_PATTERNS = (
+    r"\bbootstrap\b",
+    r"\bkickoff\b",
+    r"\bscaffold\b",
+    r"\binit\b",
+    r"\bgeneration\b",
+    r"\bgenerate\b",
+    r"\bnew cli mode\b",
+    r"\bnew cli\b",
+    r"\bnew command\b",
+)
+TASK_HYGIENE_TEST_IMPLYING_PATTERNS = (
+    r"\btest\b",
+    r"\btests\b",
+    r"\bcoverage\b",
+    r"\bcreate dirty worktree\b",
+    r"\brun [a-z0-9_.-]+\b",
+    r"\bmust refuse\b",
+    r"\bmust fail\b",
+    r"\bmust skip\b",
+    r"\bverify\b",
+    r"\bshould block\b",
+    r"\bexits?\b",
+    r"\bconfig/profile behavior\b",
+    r"\bcommand responds\b",
+    r"\bshows\b",
+    r"\bprints\b",
+    r"\blogs\b",
+)
+TASK_HYGIENE_RETRY_PATTERNS = (
+    r"failed after retries",
+    r"failed after \d+ retries",
+    r"\bretries\b",
+    r"\bretry\b",
+)
+TASK_HYGIENE_EXTERNAL_SERVICE_PATTERNS = (
+    r"\bqdrant\b",
+    r"\bdocker\b",
+    r"\bembedded\b",
+    r"\blocal instance\b",
+    r"\bexternal service\b",
+    r"\bservice container\b",
+)
+TASK_HYGIENE_MEMORY_SYSTEM_PATTERNS = (
+    r"\bmemory_service\b",
+    r"\bmemory service\b",
+    r"\bsemantic retrieval\b",
+    r"\bsemantic search\b",
+    r"\brecent\.md\b",
+    r"\.ralph/memory\b",
+    r"\bmemory path replacement\b",
+)
 BOOKKEEPING_EXACT = {
     "tasks.json",
     "progress.md",
@@ -388,13 +449,30 @@ def completed_task_ids(tasks: list[dict[str, Any]]) -> set[str]:
     return {str(task.get("id")) for task in tasks if task.get("status") in COMPLETED_STATUSES}
 
 
+def task_dependencies(task: dict[str, Any]) -> list[str]:
+    dependencies: list[str] = []
+    seen: set[str] = set()
+
+    for key in ("dependencies", "depends_on"):
+        raw = task.get(key) or []
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            value = str(item or "").strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            dependencies.append(value)
+    return dependencies
+
+
 def runnable_reason(task: dict[str, Any], tasks: list[dict[str, Any]]) -> tuple[bool, str]:
     status = str(task.get("status", ""))
     if status != "pending":
         return False, f"status={status}"
 
     done_ids = completed_task_ids(tasks)
-    unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
+    unmet = [dep for dep in task_dependencies(task) if dep not in done_ids]
     if unmet:
         return False, "unmet dependencies: " + ", ".join(unmet)
     return True, "pending and dependencies satisfied"
@@ -411,7 +489,7 @@ def pick_next_task(
         task
         for task in tasks
         if task.get("status") == "pending"
-        and all(dep in done_ids for dep in task.get("dependencies", []))
+        and all(dep in done_ids for dep in task_dependencies(task))
     ]
     if task_id:
         return next((task for task in candidates if task.get("id") == task_id), None)
@@ -423,6 +501,177 @@ def pick_next_task(
     return candidates[0]
 
 
+def task_hygiene_normalize_text(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def task_hygiene_title_description_text(task: dict[str, Any]) -> str:
+    return " ".join(
+        filter(
+            None,
+            (
+                task_hygiene_normalize_text(task.get("title")),
+                task_hygiene_normalize_text(task.get("description")),
+            ),
+        )
+    )
+
+
+def task_hygiene_acceptance_text(task: dict[str, Any]) -> str:
+    criteria = task.get("acceptance_criteria") or []
+    if not isinstance(criteria, list):
+        return task_hygiene_normalize_text(criteria)
+    return " ".join(task_hygiene_normalize_text(item) for item in criteria if task_hygiene_normalize_text(item))
+
+
+def task_has_test_target(task: dict[str, Any]) -> bool:
+    items = task.get("target_files") or []
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        value = str(item or "").strip().replace("\\", "/")
+        if value.startswith("tests/") or "/tests/" in value:
+            return True
+    return False
+
+
+def warn_bootstrap_feature(task: dict[str, Any]) -> str | None:
+    text = task_hygiene_title_description_text(task)
+    for pattern in TASK_HYGIENE_BOOTSTRAP_PATTERNS:
+        if re.search(pattern, text):
+            return "bootstrap/kickoff/init/generation style task is risky for unattended auto"
+    return None
+
+
+def warn_missing_test_target(task: dict[str, Any]) -> str | None:
+    if task_has_test_target(task):
+        return None
+    text = task_hygiene_acceptance_text(task)
+    for pattern in TASK_HYGIENE_TEST_IMPLYING_PATTERNS:
+        if re.search(pattern, text):
+            return "acceptance implies test coverage but target_files has no tests/ path"
+    return None
+
+
+def warn_previous_retry_failure(task: dict[str, Any]) -> str | None:
+    notes = task_hygiene_normalize_text(task.get("revision_notes"))
+    for pattern in TASK_HYGIENE_RETRY_PATTERNS:
+        if re.search(pattern, notes):
+            return "revision_notes mention previous retry failure"
+    return None
+
+
+def warn_external_service(task: dict[str, Any]) -> str | None:
+    text = task_hygiene_title_description_text(task) + " " + task_hygiene_acceptance_text(task)
+    for pattern in TASK_HYGIENE_EXTERNAL_SERVICE_PATTERNS:
+        if re.search(pattern, text):
+            return "task depends on external or containerized service runtime"
+    return None
+
+
+def warn_memory_system_change(task: dict[str, Any]) -> str | None:
+    text = task_hygiene_title_description_text(task) + " " + task_hygiene_acceptance_text(task)
+    for pattern in TASK_HYGIENE_MEMORY_SYSTEM_PATTERNS:
+        if re.search(pattern, text):
+            return "task changes memory retrieval or .ralph/memory behavior"
+    return None
+
+
+def warn_complex_task(task: dict[str, Any]) -> str | None:
+    if task_hygiene_normalize_text(task.get("complexity")) == "complex":
+        return "complex task is risky for unattended auto"
+    return None
+
+
+def warn_broad_scope(task: dict[str, Any]) -> str | None:
+    if task.get("scope_too_wide") is True:
+        return "task is already marked scope_too_wide"
+    warnings = task.get("selection_warnings") or []
+    if isinstance(warnings, list) and warnings:
+        return "selection_warnings indicate broad or structurally risky scope"
+    return None
+
+
+def task_hygiene_warnings(task: dict[str, Any]) -> list[tuple[str, str]]:
+    checks = {
+        "BOOTSTRAP_FEATURE": warn_bootstrap_feature(task),
+        "EXTERNAL_SERVICE": warn_external_service(task),
+        "MEMORY_SYSTEM_CHANGE": warn_memory_system_change(task),
+        "MISSING_TEST_TARGET": warn_missing_test_target(task),
+        "PREVIOUS_RETRY_FAILURE": warn_previous_retry_failure(task),
+        "COMPLEX_TASK": warn_complex_task(task),
+        "BROAD_SCOPE": warn_broad_scope(task),
+    }
+    return [(code, checks[code]) for code in TASK_HYGIENE_WARNING_ORDER if checks[code]]
+
+
+def is_task_safe_for_auto(task: dict[str, Any]) -> bool:
+    return not task_hygiene_warnings(task)
+
+
+def unsafe_task_reason(task: dict[str, Any]) -> str:
+    warnings = task_hygiene_warnings(task)
+    if not warnings:
+        return ""
+    code, _ = warnings[0]
+    return code
+
+
+SCOPE_CONTRACT_CONFIG_PATTERNS = {
+    ".ralph/project.json",
+    "pyproject.toml",
+    "package.json",
+    "tsconfig.json",
+    "pnpm-workspace.yaml",
+}
+SCOPE_CONTRACT_AUTO_REPAIR_CONFIG_ALLOWLIST = {
+    ".ralph/project.json",
+    "pyproject.toml",
+}
+
+
+def scope_contract_repair_payload(paths: list[str]) -> dict[str, str]:
+    normalized_paths: list[str] = []
+    seen: set[str] = set()
+
+    for raw_path in paths:
+        raw_value = str(raw_path or "").strip().replace("\\", "/")
+        if raw_value.startswith(".ralph/"):
+            path = raw_value
+        else:
+            path = normalize_path(raw_path)
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        normalized_paths.append(path)
+
+    reason = "missing_target_file"
+    if any(path.startswith("tests/") for path in normalized_paths):
+        reason = "missing_test_target"
+    elif any(path in SCOPE_CONTRACT_CONFIG_PATTERNS or path.endswith(".toml") for path in normalized_paths):
+        reason = "missing_config_target"
+
+    return {
+        "reason": reason,
+        "add_target_files": ",".join(normalized_paths),
+    }
+
+
+def scope_contract_auto_repair_payload(paths: list[str]) -> dict[str, Any]:
+    repair = scope_contract_repair_payload(paths)
+    target_paths = [item for item in repair["add_target_files"].split(",") if item]
+    allowed = bool(target_paths) and len(target_paths) <= 2 and all(
+        item.startswith("tests/") or item in SCOPE_CONTRACT_AUTO_REPAIR_CONFIG_ALLOWLIST
+        for item in target_paths
+    )
+    return {
+        "reason": repair["reason"],
+        "add_target_files": repair["add_target_files"],
+        "allowed": allowed,
+        "count": len(target_paths),
+    }
+
+
 def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = None) -> dict[str, Any]:
     done_ids = completed_task_ids(tasks)
     unresolved = [task for task in tasks if task.get("status") not in COMPLETED_STATUSES]
@@ -431,7 +680,7 @@ def explain_non_runnable(tasks: list[dict[str, Any]], *, phase: str | None = Non
     pending = [task for task in unresolved if task.get("status") == "pending"]
     blocked_pending = []
     for task in pending:
-        unmet = [dep for dep in task.get("dependencies", []) if dep not in done_ids]
+        unmet = [dep for dep in task_dependencies(task) if dep not in done_ids]
         if unmet:
             blocked_pending.append(
                 {

@@ -2549,7 +2549,12 @@ working_tree_clean_for_final_commit() {
     local changed_paths=""
     local path=""
 
-    changed_paths=$(collect_changed_paths)
+    changed_paths=$(
+        {
+            git diff --name-only --cached 2>/dev/null
+            git diff --name-only 2>/dev/null
+        } | "${AWK}" 'NF' | sort -u
+    )
     [ -n "$changed_paths" ] || return 0
 
     while IFS= read -r path; do
@@ -2573,6 +2578,7 @@ review_target_already_contains_task_changes() {
     local base_hash="${REVIEW_BASE_HASH:-}"
     local target_hash="${REVIEW_TARGET_HASH:-}"
     local candidate_paths=""
+    local target_paths=""
     local path=""
 
     [ -n "$base_hash" ] || return 1
@@ -2582,20 +2588,35 @@ review_target_already_contains_task_changes() {
 
     if [ -n "${TASK_JSON:-}" ]; then
         candidate_paths=$(handoff_candidate_paths "$TASK_JSON")
+        target_paths=$(
+            TASK_JSON="$TASK_JSON" python3 - <<'PY'
+import json
+import os
+
+raw = os.environ.get("TASK_JSON", "").strip()
+if not raw:
+    raise SystemExit(0)
+task = json.loads(raw)
+for item in task.get("target_files") or []:
+    value = str(item or "").strip()
+    if value:
+        print(value)
+PY
+        )
     fi
 
-    if [ -n "$candidate_paths" ]; then
-        set --
-        while IFS= read -r path; do
-            [ -n "$path" ] || continue
-            set -- "$@" "$path"
-        done <<< "$candidate_paths"
-        [ "$#" -gt 0 ] || return 1
-        git diff --quiet --ignore-submodules "$base_hash" "$target_hash" -- "$@" 2>/dev/null && return 1
-        return 0
+    if [ -n "$target_paths" ]; then
+        candidate_paths=$(printf '%s\n%s\n' "$candidate_paths" "$target_paths" | "${AWK}" 'NF' | sort -u)
     fi
 
-    [ -n "$(task_scoped_diff_between_refs "$base_hash" "$target_hash")" ] || return 1
+    set --
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        set -- "$@" "$path"
+    done <<< "$candidate_paths"
+    [ "$#" -gt 0 ] || return 1
+
+    git diff --quiet --ignore-submodules "$base_hash" "$target_hash" -- "$@" 2>/dev/null && return 1
     return 0
 }
 

@@ -75,8 +75,13 @@ def normalize_review(review: dict[str, Any]) -> tuple[dict[str, Any] | None, str
     task_id = str(review.get("task_id", "")).strip()
     summary = str(review.get("summary", "")).strip()
     decision = str(review.get("decision", "")).strip()
+    fix_instructions = str(review.get("fix_instructions", "")).strip()
 
-    if task_id == PLACEHOLDER_TASK_ID or summary.lower() == PLACEHOLDER_SUMMARY:
+    if (
+        task_id == PLACEHOLDER_TASK_ID
+        or summary.lower() == PLACEHOLDER_SUMMARY
+        or "placeholder/template json" in fix_instructions.lower()
+    ):
         return None, "Tech Lead returned placeholder/template JSON and could not be trusted safely."
 
     if decision == "done":
