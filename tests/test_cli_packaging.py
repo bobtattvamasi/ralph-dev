@@ -262,6 +262,36 @@ def test_packaged_resource_bundling_audit_covers_cli_command_dependencies(tmp_pa
     assert command_dependencies["ralph log"]["packaged"] == []
 
 
+def test_installed_package_resources_resolve_outside_repo_root(tmp_path: Path) -> None:
+    _, python_bin, _, outside_cwd = install_cli(tmp_path)
+
+    resource_probe = run(
+        [
+            str(python_bin),
+            "-c",
+            (
+                "import os\n"
+                "from pathlib import Path\n"
+                "from ralph.cli import resource_path\n"
+                "repo_root = Path(os.environ['REPO_ROOT'])\n"
+                "for rel in [('ralph.sh',), ('scripts', 'next_task.py')]:\n"
+                "    path = resource_path(*rel)\n"
+                "    print('/'.join(rel), path)\n"
+                "    print('exists', path.exists())\n"
+                "    print('outside_repo', repo_root not in path.parents)\n"
+            ),
+        ],
+        cwd=outside_cwd,
+        env={**os.environ, "REPO_ROOT": str(REPO_ROOT)},
+    )
+
+    assert resource_probe.returncode == 0, resource_probe.stdout + resource_probe.stderr
+    assert "ralph.sh" in resource_probe.stdout
+    assert "scripts/next_task.py" in resource_probe.stdout
+    assert "exists True" in resource_probe.stdout
+    assert "outside_repo True" in resource_probe.stdout
+
+
 def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Path) -> None:
     _, python_bin, _, _ = install_cli(tmp_path)
 
