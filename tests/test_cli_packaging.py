@@ -166,6 +166,102 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert str(project_dir / "logs" / "ralph_2026-05-19.log") in log_result.stdout
 
 
+def test_packaged_resource_bundling_audit_covers_cli_command_dependencies(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    project_dir, _ = prepare_fixture_project(
+        runtime_root,
+        with_docs=True,
+        with_logs=True,
+        with_project_shell=True,
+        with_parity_test=True,
+    )
+
+    command_dependencies = {
+        "ralph next": {
+            "packaged": ["src/ralph/resources/scripts/next_task.py"],
+            "project": ["tasks.json"],
+            "repo_root_only": [],
+            "optional_project": [],
+        },
+        "ralph explain": {
+            "packaged": ["src/ralph/resources/scripts/next_task.py"],
+            "project": ["tasks.json"],
+            "repo_root_only": [],
+            "optional_project": [],
+        },
+        "ralph doctor": {
+            "packaged": ["src/ralph/resources/scripts/next_task.py"],
+            "project": ["tasks.json", "tests/test_shell_parity.py"],
+            "repo_root_only": [],
+            "optional_project": [],
+        },
+        "ralph status": {
+            "packaged": ["src/ralph/resources/scripts/next_task.py"],
+            "project": ["tasks.json", "docs/ACTIVE_BACKLOG.md"],
+            "repo_root_only": [],
+            "optional_project": ["docs/ACTIVE_BACKLOG.md"],
+        },
+        "ralph groom": {
+            "packaged": [],
+            "project": ["docs/ACTIVE_BACKLOG.md", "docs/BACKLOG_POLICY.md"],
+            "repo_root_only": [],
+            "optional_project": ["docs/BACKLOG_POLICY.md"],
+        },
+        "ralph tail": {
+            "packaged": [],
+            "project": ["logs/ralph_*.log"],
+            "repo_root_only": [],
+            "optional_project": [],
+        },
+        "ralph log": {
+            "packaged": [],
+            "project": ["logs/ralph_*.log"],
+            "repo_root_only": [],
+            "optional_project": [],
+        },
+        "ralph verify": {
+            "packaged": ["src/ralph/resources/ralph.sh"],
+            "project": ["ralph.sh", "tests/test_shell_parity.py"],
+            "repo_root_only": [],
+            "optional_project": ["ralph.sh", "tests/test_shell_parity.py"],
+        },
+        "ralph auto --safe": {
+            "packaged": ["src/ralph/resources/ralph.sh"],
+            "project": ["tasks.json", "progress.md", ".ralph/memory/recent.md"],
+            "repo_root_only": [],
+            "optional_project": [".ralph/memory/recent.md"],
+        },
+        "ralph task <ID>": {
+            "packaged": ["src/ralph/resources/ralph.sh"],
+            "project": ["tasks.json", "progress.md", ".ralph/memory/recent.md"],
+            "repo_root_only": [],
+            "optional_project": [".ralph/memory/recent.md"],
+        },
+    }
+
+    for command, deps in command_dependencies.items():
+        assert deps["repo_root_only"] == [], f"{command} should not require repo-root-only helper scripts"
+
+        for rel in deps["packaged"]:
+            assert (REPO_ROOT / rel).exists(), f"{command} requires packaged resource missing: {rel}"
+
+        for rel in deps["project"]:
+            if "*" in rel:
+                assert list(project_dir.glob(rel)), f"{command} requires project-local files matching: {rel}"
+            else:
+                assert (project_dir / rel).exists(), f"{command} requires project-local file missing: {rel}"
+
+        for rel in deps["optional_project"]:
+            if "*" in rel:
+                continue
+            assert (project_dir / rel).exists(), f"{command} optional project-local file missing in fixture: {rel}"
+
+    assert command_dependencies["ralph groom"]["packaged"] == []
+    assert command_dependencies["ralph tail"]["packaged"] == []
+    assert command_dependencies["ralph log"]["packaged"] == []
+
+
 def test_packaged_trust_resources_exist_and_verify_script_executes(tmp_path: Path) -> None:
     _, python_bin, _, _ = install_cli(tmp_path)
 
