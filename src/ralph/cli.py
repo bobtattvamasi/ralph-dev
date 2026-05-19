@@ -18,7 +18,7 @@ def resource_path(*parts: str) -> Path:
 
 
 def run_command(command: list[str], cwd: Path) -> int:
-    completed = subprocess.run(command, cwd=cwd)
+    completed = subprocess.run(command, cwd=cwd, check=False)
     return completed.returncode
 
 
@@ -49,6 +49,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run Ralph in auto mode for the target project.",
     )
     auto_parser.add_argument(
+        "--safe",
+        action="store_true",
+        help="Required for the unattended safe lane.",
+    )
+    auto_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+
+    next_parser = subparsers.add_parser(
+        "next",
+        help="Show the next task candidate using the existing selector.",
+    )
+    next_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+
+    explain_parser = subparsers.add_parser(
+        "explain",
+        help="Explain the current auto-safe queue state.",
+    )
+    explain_parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Project directory that contains tasks.json.",
+    )
+
+    task_parser = subparsers.add_parser(
+        "task",
+        help="Run one explicitly selected task.",
+    )
+    task_parser.add_argument("task_id", help="Task id to run.")
+    task_parser.add_argument(
         "--project-dir",
         default=".",
         help="Project directory that contains tasks.json.",
@@ -77,32 +113,52 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+def build_command(args: argparse.Namespace) -> list[str]:
+    ralph_shell = resource_path("ralph.sh")
+    next_task_script = resource_path("scripts", "next_task.py")
 
     if args.command == "init":
         command = ["bash", str(resource_path("ralph-init.sh"))]
         if args.project_name:
             command.append(args.project_name)
-        return run_command(command, cwd=project_dir)
+        return command
 
     if args.command == "auto":
-        return run_command(["bash", str(resource_path("ralph.sh")), "auto"], cwd=project_dir)
+        return ["bash", str(ralph_shell), "auto"]
+
+    if args.command == "next":
+        return [sys.executable, str(next_task_script)]
+
+    if args.command == "explain":
+        return [sys.executable, str(next_task_script), "--auto-safe", "--explain"]
+
+    if args.command == "task":
+        return ["bash", str(ralph_shell), "task", args.task_id]
 
     if args.command == "status":
-        return run_command(["bash", str(resource_path("ralph.sh")), "status"], cwd=project_dir)
+        return ["bash", str(ralph_shell), "status"]
 
     if args.command == "bot":
-        command = [
+        return [
             sys.executable,
             str(resource_path("scripts", "ralph_bot.py")),
             "--project-dir",
-            str(project_dir),
+            str(Path(getattr(args, "project_dir", ".")).resolve()),
         ]
-        return run_command(command, cwd=project_dir)
 
-    parser.error(f"Unknown command: {args.command}")
-    return 2
+    raise ValueError(f"Unknown command: {args.command}")
+
+
+def execute(args: argparse.Namespace) -> int:
+    project_dir = Path(getattr(args, "project_dir", ".")).resolve()
+    return run_command(build_command(args), cwd=project_dir)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "auto" and not args.safe:
+        parser.error("ralph auto requires --safe")
+
+    return execute(args)

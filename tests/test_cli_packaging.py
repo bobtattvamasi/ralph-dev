@@ -36,6 +36,9 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert help_result.returncode == 0
     assert "init" in help_result.stdout
     assert "auto" in help_result.stdout
+    assert "next" in help_result.stdout
+    assert "explain" in help_result.stdout
+    assert "task" in help_result.stdout
     assert "status" in help_result.stdout
     assert "bot" in help_result.stdout
 
@@ -57,9 +60,21 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     assert status_result.returncode == 0
     assert "Task Progress" in status_result.stdout
 
-    auto_result = run([str(ralph_bin), "auto", "--project-dir", str(project_dir)], env=runtime_env)
+    next_result = run([str(ralph_bin), "next", "--project-dir", str(project_dir)], env=runtime_env)
+    assert next_result.returncode == 0
+    assert '"id": "T01"' in next_result.stdout
+
+    explain_result = run([str(ralph_bin), "explain", "--project-dir", str(project_dir)], env=runtime_env)
+    assert explain_result.returncode == 0
+    assert explain_result.stdout.strip()
+
+    task_help_result = run([str(ralph_bin), "task", "--help"], cwd=tmp_path)
+    assert task_help_result.returncode == 0
+    assert "task id to run" in task_help_result.stdout.lower()
+
+    auto_result = run([str(ralph_bin), "auto", "--safe", "--project-dir", str(project_dir)], env=runtime_env)
     assert auto_result.returncode == 0
-    assert "All tasks complete!" in auto_result.stdout
+    assert "AUTO_TASK_RESULT T01 status=skipped reason=INTEGRATION_EVIDENCE_REQUIRED" in auto_result.stdout
 
     bot_help_result = run([str(ralph_bin), "bot", "--help"], cwd=tmp_path)
     assert bot_help_result.returncode == 0
