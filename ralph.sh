@@ -320,9 +320,11 @@ PY
 }
 
 RUNTIME_PROTECTED_PATHS=(tasks.json progress.md ralph_state.json ralph_control.json .ralph/memory)
+RUNTIME_BOOKKEEPING_PATHS=(tasks.json progress.md .ralph/memory/recent.md)
 RUNTIME_PROTECTION_BACKUP_DIR=""
 AUTO_REVERTED_OUT_OF_SCOPE_PATHS=""
 REVERTED_SCOPE_GUARD_PATHS=""
+RUNTIME_BOOKKEEPING_UNRELATED_PATHS=""
 
 is_runtime_protected_path() {
     local path="${1:-}"
@@ -475,6 +477,76 @@ worktree_changed_files() {
         git diff --cached --name-only 2>/dev/null
         git ls-files --others --exclude-standard 2>/dev/null
     } | "${AWK}" 'NF' | sort -u
+}
+
+collect_dirty_runtime_bookkeeping_paths() {
+    local path=""
+
+    for path in "${RUNTIME_BOOKKEEPING_PATHS[@]}"; do
+        if [ -n "$(git status --porcelain --untracked-files=all -- "$path" 2>/dev/null)" ]; then
+            if git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+                printf '%s\n' "$path"
+            elif [ -e "$path" ] && ! git check-ignore -q -- "$path" >/dev/null 2>&1; then
+                printf '%s\n' "$path"
+            fi
+        fi
+    done
+}
+
+collect_non_runtime_dirty_paths() {
+    local changed_paths=""
+    local path=""
+
+    changed_paths=$(worktree_changed_files)
+    [ -n "$changed_paths" ] || return 0
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if handoff_is_runtime_owned_path "$path" || is_runtime_protected_path "$path"; then
+            continue
+        fi
+        printf '%s\n' "$path"
+    done <<< "$changed_paths"
+}
+
+checkpoint_runtime_bookkeeping_after_task() {
+    local task_id="${1:-}"
+    local bookkeeping_paths=""
+    local unrelated_paths=""
+    local path=""
+    local commit_stderr=""
+
+    RUNTIME_BOOKKEEPING_UNRELATED_PATHS=""
+
+    bookkeeping_paths=$(collect_dirty_runtime_bookkeeping_paths)
+    if [ -n "$bookkeeping_paths" ]; then
+        while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            git add -A -- "$path"
+        done <<< "$bookkeeping_paths"
+
+        commit_stderr="$(mktemp "${TMPDIR:-/tmp}/ralph_runtime_bookkeeping_stderr.XXXXXX")" || return 1
+        if ! run_ralph_git_commit "runtime: record bookkeeping after $task_id" 2>"$commit_stderr"; then
+            log "❌ Runtime bookkeeping commit failed after $task_id"
+            if [ -s "$commit_stderr" ]; then
+                while IFS= read -r line; do
+                    [ -n "$line" ] && log "❌ git commit: $line"
+                done < "$commit_stderr"
+            fi
+            rm -f "$commit_stderr"
+            return 1
+        fi
+        rm -f "$commit_stderr"
+    fi
+
+    unrelated_paths=$(collect_non_runtime_dirty_paths)
+    if [ -n "$unrelated_paths" ]; then
+        RUNTIME_BOOKKEEPING_UNRELATED_PATHS="$unrelated_paths"
+        log "❌ Dirty worktree remains before next task selection: $(printf '%s\n' "$unrelated_paths" | paste -sd ', ' -)"
+        return 2
+    fi
+
+    return 0
 }
 
 auto_revert_out_of_scope_files() {
@@ -6012,6 +6084,23 @@ except Exception:
             defer_blocked_task "$REASON"
             is_single_task_mode && break
             continue
+        fi
+    fi
+
+    if ! is_single_task_mode && [ "$MODE" = "auto" ]; then
+        checkpoint_runtime_bookkeeping_after_task "$TASK_ID"
+        BOOKKEEPING_STATUS=$?
+        if [ $BOOKKEEPING_STATUS -ne 0 ]; then
+            if [ $BOOKKEEPING_STATUS -eq 2 ]; then
+                REASON="dirty_worktree_before_next_task"
+                [ -n "${RUNTIME_BOOKKEEPING_UNRELATED_PATHS:-}" ] && REASON="$REASON: $(printf '%s\n' "$RUNTIME_BOOKKEEPING_UNRELATED_PATHS" | paste -sd ', ' -)"
+            else
+                REASON="runtime_bookkeeping_commit_failed"
+            fi
+            write_state "blocked" "" "post_task_bookkeeping" "$REASON"
+            notify "⚠️ Auto stopped after $TASK_ID: $REASON"
+            print_auto_run_summary
+            exit 1
         fi
     fi
 

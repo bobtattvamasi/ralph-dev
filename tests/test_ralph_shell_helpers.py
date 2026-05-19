@@ -55,6 +55,7 @@ def build_shell_fixture(tmp_path: Path, *, broken_verifier: bool = False) -> Pat
         (".ralph/memory/recent.md", "# Recent\n"),
     ):
         (project_dir / name).write_text(content, encoding="utf-8")
+    (project_dir / ".gitignore").write_text("run_helper.sh\n", encoding="utf-8")
 
     for script_name in ("extract_json.py", "ralph_common.py", "review_service.py"):
         shutil.copy2(REPO_ROOT / "scripts" / script_name, project_dir / "scripts" / script_name)
@@ -239,6 +240,98 @@ def test_parse_lead_review_json_fail_closes_on_unparseable_sources(tmp_path: Pat
     parsed = json.loads(lines[1])
     assert parsed["decision"] == "fix"
     assert "could not be parsed safely" in parsed["fix_instructions"]
+
+
+def test_runtime_bookkeeping_checkpoint_commits_only_runtime_owned_files(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+    (project_dir / "tasks.json").write_text(
+        (project_dir / "tasks.json").read_text(encoding="utf-8").replace('"status": "pending"', '"status": "verified_done"'),
+        encoding="utf-8",
+    )
+    (project_dir / "progress.md").write_text("# Progress\n- done\n", encoding="utf-8")
+    (project_dir / ".ralph" / "memory" / "recent.md").write_text("# Recent\n- T01\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "checkpoint_runtime_bookkeeping_after_task 'T01'\n"
+        "git show --name-only --format='%s' HEAD\n"
+        "printf 'STATUS_START\\n'\n"
+        "git status --short --untracked-files=all\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = [line for line in result.stdout.splitlines() if line]
+    assert "runtime: record bookkeeping after T01" in lines
+    assert "tasks.json" in lines
+    assert "progress.md" in lines
+    assert ".ralph/memory/recent.md" in lines
+    assert lines[-1] == "STATUS_START"
+
+
+def test_runtime_bookkeeping_checkpoint_blocks_on_dirty_worktree_before_next_task(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+    (project_dir / "tasks.json").write_text(
+        (project_dir / "tasks.json").read_text(encoding="utf-8").replace('"status": "pending"', '"status": "verified_done"'),
+        encoding="utf-8",
+    )
+    (project_dir / "progress.md").write_text("# Progress\n- done\n", encoding="utf-8")
+    (project_dir / "scripts" / "unrelated.py").write_text("print('x')\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "if checkpoint_runtime_bookkeeping_after_task 'T01'; then\n"
+        "  RC=0\n"
+        "else\n"
+        "  RC=$?\n"
+        "fi\n"
+        "printf 'RC=%s\\n' \"$RC\"\n"
+        "git show --name-only --format='%s' HEAD\n"
+        "git status --short --untracked-files=all\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = [line for line in result.stdout.splitlines() if line]
+    assert "RC=2" in lines
+    assert "runtime: record bookkeeping after T01" in lines
+    assert "scripts/unrelated.py" not in lines
+    assert lines[-1] == "?? scripts/unrelated.py"
+    assert "Dirty worktree remains before next task selection" in (result.stdout + result.stderr)
+
+
+def test_runtime_owned_bookkeeping_commit_failure_stops_checkpoint(tmp_path: Path) -> None:
+    project_dir = build_shell_fixture(tmp_path)
+    init_git_repo(project_dir)
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project_dir, check=True, capture_output=True, text=True)
+    (project_dir / "tasks.json").write_text(
+        (project_dir / "tasks.json").read_text(encoding="utf-8").replace('"status": "pending"', '"status": "verified_done"'),
+        encoding="utf-8",
+    )
+    (project_dir / "progress.md").write_text("# Progress\n- done\n", encoding="utf-8")
+
+    result = run_helper(
+        project_dir,
+        "run_ralph_git_commit() { return 1; }\n"
+        "if checkpoint_runtime_bookkeeping_after_task 'T01'; then\n"
+        "  RC=0\n"
+        "else\n"
+        "  RC=$?\n"
+        "fi\n"
+        "printf 'RC=%s\\n' \"$RC\"\n"
+        "git status --short --untracked-files=all\n",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "RC=1" in result.stdout
+    assert "Runtime bookkeeping commit failed after T01" in (result.stdout + result.stderr)
+    assert "tasks.json" in result.stdout
+    assert "progress.md" in result.stdout
 
 
 def test_run_task_closure_verification_falls_back_when_verifier_crashes(tmp_path: Path) -> None:
