@@ -4867,6 +4867,55 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T10:06:23.648991+00:00"
-    }
+    },
+    {
+  "id": "R24-02",
+  "phase": "R24",
+  "status": "pending",
+  "title": "Installed CLI smoke coverage",
+  "description": "Add focused packaging tests that verify the installed Ralph console script works from an external project directory using packaged resources and --project-dir.",
+  "target_files": [
+    "tests/test_cli_packaging.py"
+  ],
+  "acceptance_criteria": [
+    "Packaging test installs Ralph into an isolated venv or equivalent test environment.",
+    "Installed ralph command runs from outside the source repo.",
+    "Installed ralph status works with --project-dir pointing to a fixture project.",
+    "Installed ralph verify works or clearly documents repo-local-only checks if shell resources are missing.",
+    "Installed ralph next and explain use packaged selector resources, not source-root scripts.",
+    "Test does not modify real tasks.json.",
+    "No runtime behavior in ralph.sh changes."
+  ],
+  "priority": "high",
+  "complexity": "moderate",
+  "role": "coder",
+  "scope_too_wide": false,
+  "selection_warnings": []
+},
+    {
+  "id": "R24-03",
+  "phase": "R24",
+  "status": "pending",
+  "title": "Make ralph verify installed-mode aware",
+  "description": "Update ralph verify so installed CLI verification works from external cwd with --project-dir, using packaged resources where appropriate instead of checkout-relative assumptions.",
+  "target_files": [
+    "src/ralph/cli.py",
+    "tests/test_cli_packaging.py",
+    "tests/test_ralph_cli.py"
+  ],
+  "acceptance_criteria": [
+    "ralph verify --project-dir <fixture_project> works from cwd outside REPO_ROOT when required project files/resources are present.",
+    "verify no longer assumes checkout cwd for ralph.sh path resolution.",
+    "verify uses packaged resource paths for packaged shell syntax checks where appropriate.",
+    "verify keeps shell parity check meaningful or clearly separates repo-local parity from installed-mode verification.",
+    "Focused packaging tests cover installed verify from outside cwd.",
+    "No runtime behavior in ralph.sh changes."
+  ],
+  "priority": "high",
+  "complexity": "moderate",
+  "role": "coder",
+  "scope_too_wide": false,
+  "selection_warnings": []
+}
   ]
 }
