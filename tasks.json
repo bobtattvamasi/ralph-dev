@@ -4606,31 +4606,32 @@
       "completed_at": "2026-05-19T07:45:44.707362+00:00"
     },
     {
-  "id": "R23-03",
-  "phase": "R23",
-  "status": "pending",
-  "title": "CLI doctor command",
-  "description": "Add ralph doctor as a lightweight operator health check for git cleanliness, tasks.json validity, shell parity, and auto-safe queue explanation.",
-  "target_files": [
-    "src/ralph/cli.py",
-    "tests/test_ralph_cli.py",
-    "tests/test_cli_packaging.py"
-  ],
-  "acceptance_criteria": [
-    "ralph doctor runs a lightweight health check without changing runtime state.",
-    "doctor checks git status --short.",
-    "doctor checks tasks.json JSON validity.",
-    "doctor checks shell parity via tests/test_shell_parity.py or equivalent command.",
-    "doctor runs next_task.py --auto-safe --explain.",
-    "doctor preserves nonzero exit code if any required check fails.",
-    "Focused tests cover command construction and exit-code behavior.",
-    "No runtime behavior in ralph.sh changes."
-  ],
-  "priority": "high",
-  "complexity": "moderate",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R23-03",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "CLI doctor command",
+      "description": "Add ralph doctor as a lightweight operator health check for git cleanliness, tasks.json validity, shell parity, and auto-safe queue explanation.",
+      "target_files": [
+        "src/ralph/cli.py",
+        "tests/test_ralph_cli.py",
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "ralph doctor runs a lightweight health check without changing runtime state.",
+        "doctor checks git status --short.",
+        "doctor checks tasks.json JSON validity.",
+        "doctor checks shell parity via tests/test_shell_parity.py or equivalent command.",
+        "doctor runs next_task.py --auto-safe --explain.",
+        "doctor preserves nonzero exit code if any required check fails.",
+        "Focused tests cover command construction and exit-code behavior.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T07:56:06.130582+00:00"
+    }
   ]
 }
