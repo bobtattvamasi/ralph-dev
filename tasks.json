@@ -4685,31 +4685,32 @@
       "completed_at": "2026-05-19T08:34:35.088889+00:00"
     },
     {
-  "id": "R23-06",
-  "phase": "R23",
-  "status": "pending",
-  "title": "CLI status command for operator summary",
-  "description": "Improve ralph status so it gives a compact operator summary: git cleanliness, pending/verified/blocked counts, next auto-safe state, and active backlog pointer.",
-  "target_files": [
-    "src/ralph/cli.py",
-    "tests/test_ralph_cli.py",
-    "tests/test_cli_packaging.py"
-  ],
-  "acceptance_criteria": [
-    "ralph status prints a compact operator summary instead of only delegating to raw shell status.",
-    "Status includes git clean/dirty state.",
-    "Status includes task counts by status from tasks.json.",
-    "Status includes next auto-safe state or no-safe-task reason.",
-    "Status points to docs/ACTIVE_BACKLOG.md when present.",
-    "Status is read-only and does not modify tasks.json.",
-    "Focused tests cover status output and failure behavior.",
-    "No runtime behavior in ralph.sh changes."
-  ],
-  "priority": "high",
-  "complexity": "moderate",
-  "role": "coder",
-  "scope_too_wide": false,
-  "selection_warnings": []
-}
+      "id": "R23-06",
+      "phase": "R23",
+      "status": "verified_done",
+      "title": "CLI status command for operator summary",
+      "description": "Improve ralph status so it gives a compact operator summary: git cleanliness, pending/verified/blocked counts, next auto-safe state, and active backlog pointer.",
+      "target_files": [
+        "src/ralph/cli.py",
+        "tests/test_ralph_cli.py",
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "ralph status prints a compact operator summary instead of only delegating to raw shell status.",
+        "Status includes git clean/dirty state.",
+        "Status includes task counts by status from tasks.json.",
+        "Status includes next auto-safe state or no-safe-task reason.",
+        "Status points to docs/ACTIVE_BACKLOG.md when present.",
+        "Status is read-only and does not modify tasks.json.",
+        "Focused tests cover status output and failure behavior.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T08:53:23.901933+00:00"
+    }
   ]
 }
