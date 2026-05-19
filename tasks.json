@@ -4923,7 +4923,7 @@
     {
       "id": "R24-04",
       "phase": "R24",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Consolidate installed-mode CLI smoke matrix",
       "description": "Refactor packaging tests so installed-mode CLI commands are covered by a compact smoke matrix from outside REPO_ROOT without duplicated setup.",
       "target_files": [
@@ -4941,7 +4941,8 @@
       "complexity": "simple",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T13:42:57.443220+00:00"
     }
   ]
 }
