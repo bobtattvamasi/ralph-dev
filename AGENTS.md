@@ -2,6 +2,7 @@
 
 ## Read First
 - `ARCHITECTURE.md` — execution model, orchestration, runtime, and state
+- `docs/BACKLOG_POLICY.md` — backlog policy, status semantics, and active lane rules
 - `MEMORY_SYSTEM.md` — memory layers and update policy
 - `tasks.json` — roadmap and task source of truth
 - `progress.md` — lightweight narrative history only, not authoritative task truth
