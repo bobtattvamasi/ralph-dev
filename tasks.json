@@ -4467,7 +4467,7 @@
     {
       "id": "R20-23",
       "phase": "R20",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Treat integration/full-suite evidence tasks as unsafe for overnight-smoke auto",
       "description": "Tasks whose acceptance criteria require specific integration tests or full suite baseline should not run under overnight-smoke auto profile unless explicitly allowed.",
       "target_files": [
@@ -4486,7 +4486,9 @@
       "complexity": "simple",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-19T06:11:31.119238+00:00",
+      "revision_notes": "Verified: integration/full-suite evidence tasks emit INTEGRATION_EVIDENCE_REQUIRED and are skipped by overnight auto; explicit task selection remains allowed."
     }
   ]
 }
