@@ -66,15 +66,38 @@ Stage 2 is `CLI/operator UX`.
 
 The objective is to make Ralph convenient as a terminal tool by wrapping existing runtime and script entry points into a small operator command surface.
 
+## Stage 2 Status
+Stage 2 `CLI/operator UX` core command surface is implemented.
+
+There are no active pending Stage 2 CLI tasks after `R23-10`.
+
 ## Completed Stage 2 CLI Work
 - `R23-01` — CLI operator UX plan
 - `R23-02` — basic CLI wrappers
 - `R23-03` — `doctor`
 - `R23-04` — `groom`
+- `R23-06` — `status`
+- `R23-07` — `tail`
+- `R23-07` — `log`
+- `R23-10` — `verify`
+- `ralph next`
+- `ralph explain`
+- `ralph auto --safe`
+- `ralph task <ID>`
 
-## Next Stage 2 Candidates
-- CLI status
-- CLI tail/log
-- CLI verify
+## Current Operator Surface
+- `ralph next`
+- `ralph explain`
+- `ralph doctor`
+- `ralph groom`
+- `ralph status`
+- `ralph tail`
+- `ralph log`
+- `ralph verify`
+- `ralph auto --safe`
+- `ralph task <ID>`
 
-These are the next operator-facing gaps after the initial wrapper, doctor, and grooming commands.
+## Next-Stage Decision Options
+- packaging polish
+- project bootstrap/kickoff
+- product factory

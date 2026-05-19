@@ -5,6 +5,21 @@ Stage 2 turns Ralph into a convenient terminal operator tool.
 
 The goal is not new runtime policy. The goal is a small, memorable command surface that wraps the existing scripts and makes safe operation, queue explanation, backlog grooming, and health checks easy to discover.
 
+## Stage 2 Checkpoint
+The Stage 2 core operator surface is now implemented.
+
+Implemented commands:
+- `ralph next`
+- `ralph explain`
+- `ralph doctor`
+- `ralph groom`
+- `ralph status`
+- `ralph tail`
+- `ralph log`
+- `ralph verify`
+- `ralph auto --safe`
+- `ralph task <ID>`
+
 ## Design Constraints
 - keep `tasks.json` as the source of truth
 - prefer thin wrappers over new orchestration logic
@@ -22,7 +37,7 @@ Current mapping:
 - `python3 scripts/next_task.py`
 
 Status:
-- wrapper-only
+- complete
 
 ### `ralph explain`
 Operator intent:
@@ -33,7 +48,7 @@ Current mapping:
 - `python3 scripts/next_task.py --auto-safe --explain`
 
 Status:
-- wrapper-only
+- complete
 
 ### `ralph groom`
 Operator intent:
@@ -45,7 +60,7 @@ Current mapping:
 - nearest inputs are `docs/ACTIVE_BACKLOG.md`, `docs/BACKLOG_POLICY.md`, and selective `tasks.json` inspection
 
 Status:
-- requires implementation
+- complete
 
 ### `ralph doctor`
 Operator intent:
@@ -61,7 +76,7 @@ Current mapping:
   - `python3 scripts/next_task.py --auto-safe --explain`
 
 Status:
-- requires implementation
+- complete
 
 ### `ralph auto --safe`
 Operator intent:
@@ -72,7 +87,7 @@ Current mapping:
 - `./ralph.sh auto`
 
 Status:
-- wrapper-only
+- complete
 
 Notes:
 - the wrapper should make it obvious that this is the safe unattended lane, not a broad “run everything” button
@@ -86,7 +101,7 @@ Current mapping:
 - `./ralph.sh task <ID>`
 
 Status:
-- wrapper-only
+- complete
 
 ### `ralph verify`
 Operator intent:
@@ -98,7 +113,7 @@ Current mapping:
 - current pieces exist in task-specific pytest commands and closure verification helpers, but there is no single operator command
 
 Status:
-- requires implementation
+- complete
 
 ### `ralph status`
 Operator intent:
@@ -110,7 +125,7 @@ Current mapping:
 - current information is split across `tasks.json`, runtime state files, and logs
 
 Status:
-- requires implementation
+- complete
 
 ### `ralph tail`
 Operator intent:
@@ -120,7 +135,7 @@ Current mapping:
 - log tailing exists today as ad hoc shell usage
 
 Status:
-- wrapper-only
+- complete
 
 ### `ralph log`
 Operator intent:
@@ -130,24 +145,24 @@ Current mapping:
 - grep or tail in `logs/`
 
 Status:
-- future
+- complete
 
-## Command Classification
-Wrapper-only commands:
+## Implemented Surface
 - `ralph next`
 - `ralph explain`
+- `ralph doctor`
+- `ralph groom`
+- `ralph status`
+- `ralph tail`
+- `ralph log`
+- `ralph verify`
 - `ralph auto --safe`
 - `ralph task <ID>`
-- `ralph tail`
 
-Requires implementation:
-- `ralph groom`
-- `ralph doctor`
-- `ralph verify`
-- `ralph status`
-
-Future:
-- `ralph log`
+## Future Ideas
+- packaging polish for operator install/distribution
+- project bootstrap/kickoff workflow
+- product factory / later-stage generation workflow
 
 ## Stage 2 Exit Criteria
 - common operator workflows do not require remembering raw script paths
@@ -157,21 +172,12 @@ Future:
 - explicit single-task execution is available through a stable operator command
 - operator-facing commands distinguish unattended safe flow from manual task execution
 
-## Recommended Implementation Order
-1. Add wrapper commands that only expose existing functionality:
-- `ralph next`
-- `ralph explain`
-- `ralph auto --safe`
-- `ralph task <ID>`
-- `ralph tail`
+Stage 2 core exit criteria are satisfied by the current operator surface.
 
-2. Add `ralph doctor` as the first multi-check operator command.
-
-3. Add `ralph groom` around the active backlog report and backlog policy.
-
-4. Add `ralph status` and `ralph verify` after operator workflows stabilize.
-
-5. Add `ralph log` only if `tail` and `status` still leave a discovery gap.
+## Next Decision Options
+- packaging polish
+- project bootstrap/kickoff
+- product factory
 
 ## Non-Goals For Stage 2
 - changing task selection policy
