@@ -5146,6 +5146,34 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-22T06:35:18.962086+00:00"
+    },
+    {
+      "id": "R25-03",
+      "phase": "R25",
+      "status": "verified_done",
+      "title": "Define pipx install and update UX",
+      "description": "Document and validate the human-friendly pipx-based install/update workflow for using Ralph as a normal terminal command on other machines.",
+      "target_files": [
+        "docs/INSTALL.md",
+        "docs/PACKAGING_PLAN.md",
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "INSTALL.md recommends pipx as the primary installation method for users.",
+        "INSTALL.md documents installing from a Git repository URL.",
+        "INSTALL.md documents installing from a local checkout for development.",
+        "INSTALL.md documents update commands for git URL and local checkout installs.",
+        "INSTALL.md documents pytest injection for doctor/verify parity checks.",
+        "INSTALL.md shows daily usage as cd project && ralph status/doctor/verify.",
+        "Packaging tests keep verifying console script availability after installation.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T06:54:44.200733+00:00"
     }
   ]
 }
