@@ -297,8 +297,12 @@ def load_tasks_payload(project_dir: Path) -> tuple[dict[str, object], list[dict[
 def execute_doctor(args: argparse.Namespace) -> int:
     project_dir = Path(getattr(args, "project_dir", ".")).resolve()
     exit_code = 0
+    parity_test = project_dir / "tests" / "test_shell_parity.py"
 
     for label, command in build_doctor_commands():
+        if command_requires_pytest(command) and not parity_test.exists():
+            print(f"==> {label} (skipped: missing in project_dir)")
+            continue
         if command_requires_pytest(command) and not pytest_is_available(project_dir):
             print(PYTEST_REQUIRED_MESSAGE, file=sys.stderr)
             exit_code = 1

@@ -173,6 +173,28 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
         for snippet in expected_snippets:
             assert snippet in result.stdout, (args, snippet, result.stdout)
 
+    fresh_root = tmp_path / "fresh-runtime"
+    fresh_root.mkdir()
+    fresh_project_dir, fresh_env = prepare_fixture_project(
+        fresh_root,
+        with_docs=True,
+        with_logs=True,
+        with_project_shell=True,
+        with_parity_test=False,
+    )
+    fresh_env["PATH"] = f"{bin_dir}:{fresh_env['PATH']}"
+
+    doctor_skip_result = run_installed_cli(
+        ralph_bin,
+        "doctor",
+        "--project-dir",
+        str(fresh_project_dir),
+        cwd=outside_cwd,
+        env=fresh_env,
+    )
+    assert doctor_skip_result.returncode == 0
+    assert "==> python -m pytest tests/test_shell_parity.py -q (skipped: missing in project_dir)" in doctor_skip_result.stdout
+
     task_help_result = run_installed_cli(ralph_bin, "task", "--help", cwd=outside_cwd)
     assert task_help_result.returncode == 0
     assert "task id to run" in task_help_result.stdout.lower()

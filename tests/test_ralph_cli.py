@@ -297,6 +297,13 @@ def test_execute_uses_project_dir_as_subprocess_cwd(monkeypatch: pytest.MonkeyPa
 def test_execute_doctor_runs_all_checks_and_returns_first_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_shell_parity.py").write_text(
+        "def test_shell_parity_smoke():\n    assert True\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tasks.json").write_text('{"tasks":[]}', encoding="utf-8")
+
     recorded: list[tuple[list[str], Path]] = []
     codes = iter([0, 7, 0, 0])
     args = Namespace(command="doctor", project_dir=str(tmp_path))
@@ -314,6 +321,38 @@ def test_execute_doctor_runs_all_checks_and_returns_first_failure(
         (["git", "status", "--short"], tmp_path.resolve()),
         ([sys.executable, "-m", "json.tool", "tasks.json"], tmp_path.resolve()),
         ([sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"], tmp_path.resolve()),
+        (
+            [sys.executable, str(ralph_cli.resource_path("scripts", "next_task.py")), "--auto-safe", "--explain"],
+            tmp_path.resolve(),
+        ),
+    ]
+
+
+def test_execute_doctor_skips_missing_project_local_parity_test(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    (tmp_path / "tasks.json").write_text('{"tasks":[]}', encoding="utf-8")
+
+    recorded: list[tuple[list[str], Path]] = []
+
+    def fake_run_command(command: list[str], cwd: Path) -> int:
+        recorded.append((command, cwd))
+        return 0
+
+    def fake_run_command_capture(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        pytest.fail(f"unexpected pytest availability probe for {command}")
+
+    monkeypatch.setattr(ralph_cli, "run_command", fake_run_command)
+    monkeypatch.setattr(ralph_cli, "run_command_capture", fake_run_command_capture)
+
+    exit_code = ralph_cli.execute_doctor(Namespace(command="doctor", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "==> python -m pytest tests/test_shell_parity.py -q (skipped: missing in project_dir)" in captured.out
+    assert recorded == [
+        (["git", "status", "--short"], tmp_path.resolve()),
+        ([sys.executable, "-m", "json.tool", "tasks.json"], tmp_path.resolve()),
         (
             [sys.executable, str(ralph_cli.resource_path("scripts", "next_task.py")), "--auto-safe", "--explain"],
             tmp_path.resolve(),
@@ -342,6 +381,11 @@ def test_execute_doctor_reports_missing_pytest_without_traceback(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     (tmp_path / "tasks.json").write_text('{"tasks":[]}', encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_shell_parity.py").write_text(
+        "def test_shell_parity_smoke():\n    assert True\n",
+        encoding="utf-8",
+    )
     commands: list[list[str]] = []
 
     def fake_run_command(command: list[str], cwd: Path) -> int:
