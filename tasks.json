@@ -5174,6 +5174,55 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-22T06:54:44.200733+00:00"
+    },
+    {
+      "id": "R25-04",
+      "phase": "R25",
+      "status": "verified_done",
+      "title": "Project-local default CLI UX smoke",
+      "description": "Verify and document that installed Ralph commands work from inside a target project directory without requiring --project-dir.",
+      "target_files": [
+        "tests/test_cli_packaging.py",
+        "docs/INSTALL.md"
+      ],
+      "acceptance_criteria": [
+        "Installed CLI smoke covers cd fixture_project && ralph status without --project-dir.",
+        "Installed CLI smoke covers cd fixture_project && ralph doctor without --project-dir.",
+        "Installed CLI smoke covers cd fixture_project && ralph verify without --project-dir.",
+        "Installed CLI smoke covers cd fixture_project && ralph next/explain without --project-dir.",
+        "INSTALL.md clearly states that --project-dir is optional when running from the target project directory.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T07:02:24.077520+00:00"
+    },
+    {
+      "id": "R26-01",
+      "phase": "R26",
+      "status": "pending",
+      "title": "Cross-platform package install CI",
+      "description": "Add GitHub Actions CI matrix that installs Ralph and runs CLI smoke tests on Linux, macOS, and Windows.",
+      "target_files": [
+        ".github/workflows/package-smoke.yml",
+        "docs/PACKAGING_PLAN.md"
+      ],
+      "acceptance_criteria": [
+        "CI matrix includes ubuntu-latest, macos-latest, and windows-latest.",
+        "CI installs package into a clean environment.",
+        "CI runs ralph --help.",
+        "CI runs focused CLI tests or package smoke tests.",
+        "Windows path handling is covered by at least one CLI invocation.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
     }
   ]
 }
