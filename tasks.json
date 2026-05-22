@@ -5224,6 +5224,33 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-22T07:11:49.646828+00:00"
+    },
+    {
+      "id": "R26-02",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Define supported Python version baseline",
+      "description": "Define and enforce the supported Python baseline for Ralph packaging and CLI usage.",
+      "target_files": [
+        "pyproject.toml",
+        "docs/INSTALL.md",
+        "docs/PACKAGING_PLAN.md",
+        ".github/workflows/package-smoke.yml"
+      ],
+      "acceptance_criteria": [
+        "pyproject.toml declares a supported Python version baseline.",
+        "INSTALL.md recommends installing Ralph with Python 3.11+.",
+        "INSTALL.md shows pipx install with --python python3.11.",
+        "PACKAGING_PLAN.md documents Python 3.11+ as the supported baseline and Python 3.9 as unsupported.",
+        "package-smoke CI uses the supported baseline.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T07:30:42.446102+00:00"
     }
   ]
 }
