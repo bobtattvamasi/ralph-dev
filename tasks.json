@@ -5203,7 +5203,7 @@
     {
       "id": "R26-01",
       "phase": "R26",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Cross-platform package install CI",
       "description": "Add GitHub Actions CI matrix that installs Ralph and runs CLI smoke tests on Linux, macOS, and Windows.",
       "target_files": [
@@ -5222,7 +5222,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T07:11:49.646828+00:00"
     }
   ]
 }
