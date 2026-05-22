@@ -5,6 +5,7 @@ Stage `R24` is `Packaging Polish`.
 
 The goal is to make Ralph reliable as an installed terminal tool, not only as a repo-local development checkout.
 Before PyPI publishing, the primary user-facing install path is `pipx`.
+Supported Python baseline is 3.11+.
 
 Operator install steps and smoke guidance live in [INSTALL.md](INSTALL.md).
 Packaging audit details live in [PACKAGING_AUDIT.md](PACKAGING_AUDIT.md).
@@ -72,6 +73,11 @@ What each smoke should prove:
 - macOS and Linux are supported for normal installed-mode use.
 - Windows is supported through CI smoke on a bash-capable environment, currently using Git Bash semantics for the bash-backed runtime checks.
 - Native PowerShell or cmd.exe runtime support is not claimed yet because Ralph still shells out to `bash`.
+
+## Python Baseline
+- Ralph supports Python 3.11 and newer.
+- Python 3.9 is unsupported.
+- CI and packaging smoke should use the supported baseline consistently.
 
 ## Completed R24 Work
 - `R24-01` packaging polish plan

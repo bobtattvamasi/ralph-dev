@@ -1,51 +1,54 @@
 # Install Guide
 
+Ralph supports Python 3.11+.
+Python 3.9 is unsupported and not recommended.
+
 ## Preferred Install: pipx
 `pipx` is the recommended way to install Ralph before it is published to PyPI.
 
 If `pipx` is not installed:
 
 ```bash
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
+python3.11 -m pip install --user pipx
+python3.11 -m pipx ensurepath
 ```
 
 Install Ralph from a Git URL:
 
 ```bash
-pipx install git+https://github.com/<OWNER>/<REPO>.git
+python3.11 -m pipx install --python python3.11 git+https://github.com/<OWNER>/<REPO>.git
 ```
 
 Install Ralph from a local checkout for development:
 
 ```bash
 cd /path/to/ralph-dev
-pipx install .
+python3.11 -m pipx install --python python3.11 .
 ```
 
 Upgrade or reinstall from a local checkout:
 
 ```bash
-pipx install --force .
+python3.11 -m pipx install --force --python python3.11 .
 ```
 
 Upgrade from the Git-installed package name:
 
 ```bash
-pipx upgrade ralph-dev
+python3.11 -m pipx upgrade ralph-dev
 ```
 
 Inject pytest for parity checks:
 
 ```bash
-pipx inject ralph-dev pytest
+python3.11 -m pipx inject ralph-dev pytest
 ```
 
 ## Development Fallback: venv
 If you prefer a local virtualenv during development:
 
 ```bash
-python3 -m venv .venv
+python3.11 -m venv .venv
 .venv/bin/pip install .
 export PATH="$PWD/.venv/bin:$PATH"
 ```
