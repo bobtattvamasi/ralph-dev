@@ -5123,7 +5123,7 @@
     {
       "id": "R25-02",
       "phase": "R25",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Graceful pytest-missing behavior for doctor and verify",
       "description": "Make installed ralph doctor/verify report a clear actionable message when project-local pytest checks are requested but pytest is not installed.",
       "target_files": [
@@ -5144,7 +5144,8 @@
       "complexity": "moderate",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T06:35:18.962086+00:00"
     }
   ]
 }
