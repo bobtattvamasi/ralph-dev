@@ -5251,6 +5251,32 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-22T07:30:42.446102+00:00"
+    },
+    {
+      "id": "R26-03",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Polish installed init next steps",
+      "description": "Update ralph init output so installed users see CLI commands instead of internal packaged resource paths.",
+      "target_files": [
+        "src/ralph/resources/ralph-init.sh",
+        "tests/test_cli_packaging.py",
+        "docs/INSTALL.md"
+      ],
+      "acceptance_criteria": [
+        "ralph init next steps mention ralph task <ID> instead of packaged ralph.sh paths.",
+        "ralph init next steps mention ralph auto --safe as the unattended execution path.",
+        "ralph init next steps mention ralph bot instead of python path to packaged ralph_bot.py.",
+        "Installed-mode smoke covers ralph init output from a clean project directory.",
+        "INSTALL.md init section matches the installed CLI command flow.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T11:23:39.791910+00:00"
     }
   ]
 }
