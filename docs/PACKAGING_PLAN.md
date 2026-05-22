@@ -4,14 +4,15 @@
 Stage `R24` is `Packaging Polish`.
 
 The goal is to make Ralph reliable as an installed terminal tool, not only as a repo-local development checkout.
+Before PyPI publishing, the primary user-facing install path is `pipx`.
 
 Operator install steps and smoke guidance live in [INSTALL.md](INSTALL.md).
 Packaging audit details live in [PACKAGING_AUDIT.md](PACKAGING_AUDIT.md).
 
 ## Target Install And Use Flow
 Preferred operator flow:
-- install Ralph into a dedicated `venv`
-- or install Ralph via `pipx`
+- install Ralph via `pipx`
+- use a dedicated `venv` only as a development fallback
 - expose the `ralph` console script from the installed package
 - run `ralph` from an arbitrary project directory that contains `tasks.json`
 - use `--project-dir` consistently whenever the target project is not the current shell cwd
@@ -24,8 +25,12 @@ Expected properties:
 
 ## Target Operator Examples
 Example install flows:
-- `python3 -m venv .venv && .venv/bin/pip install .`
+- `pipx install git+https://github.com/<OWNER>/<REPO>.git`
 - `pipx install .`
+- `pipx install --force .`
+- `pipx upgrade ralph-dev`
+- `pipx inject ralph-dev pytest`
+- `python3 -m venv .venv && .venv/bin/pip install .`
 
 Example usage from another project directory:
 - `ralph status --project-dir /path/to/project`
