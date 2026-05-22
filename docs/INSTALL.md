@@ -95,6 +95,11 @@ For an installed toolchain, smoke these commands from a cwd outside the Ralph so
 - `ralph tail`
 - `ralph log`
 
+## Cross-Platform Notes
+- macOS and Linux are the primary supported installed-mode platforms.
+- Windows is currently supported through CI smoke using a bash-capable environment such as Git Bash.
+- Native PowerShell or cmd.exe runtime support is not claimed yet because Ralph still shells out to `bash`.
+
 ## Parity Check Dependency
 `ralph doctor` and `ralph verify` run project-local shell parity checks when `tests/test_shell_parity.py` is present. Those parity checks require `pytest` in the same Ralph environment.
 

@@ -68,6 +68,11 @@ What each smoke should prove:
 - `auto --safe`: console script can delegate to packaged runtime safely
 - `task <ID>`: explicit task execution path works through the installed entrypoint
 
+## Cross-Platform Notes
+- macOS and Linux are supported for normal installed-mode use.
+- Windows is supported through CI smoke on a bash-capable environment, currently using Git Bash semantics for the bash-backed runtime checks.
+- Native PowerShell or cmd.exe runtime support is not claimed yet because Ralph still shells out to `bash`.
+
 ## Completed R24 Work
 - `R24-01` packaging polish plan
 - `R24-02` installed CLI smoke coverage
@@ -142,3 +147,4 @@ Stage `R24` is complete when:
 - resource bundling audit
 - installed-mode path cleanup
 - console script UX polish for `--project-dir`
+- cross-platform packaging CI expansion
