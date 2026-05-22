@@ -73,6 +73,15 @@ ralph explain
 
 `ralph groom`, `ralph tail`, and `ralph log` are also available from the project directory.
 
+## Init
+Use `ralph init` in a new project directory to bootstrap the Ralph files and see the first next steps:
+
+```bash
+ralph init demo-project
+```
+
+The generated next steps should use `ralph task`, `ralph auto --safe`, and `ralph bot`, not internal package paths.
+
 ## When `--project-dir` Is Needed
 Use `--project-dir` only when you run Ralph from outside the target project directory:
 

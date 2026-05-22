@@ -121,6 +121,10 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     init_dir.mkdir()
     init_result = run([str(ralph_bin), "init", "demo-project"], cwd=init_dir)
     assert init_result.returncode == 0
+    assert "ralph task YOUR-TASK-01" in init_result.stdout
+    assert "ralph auto --safe" in init_result.stdout
+    assert "ralph bot" in init_result.stdout
+    assert "/site-packages/ralph/resources/ralph.sh task" not in init_result.stdout
     assert (init_dir / "tasks.json").exists()
     assert (init_dir / "AGENTS.md").exists()
     assert (init_dir / ".ralph" / "memory" / "core.md").exists()
