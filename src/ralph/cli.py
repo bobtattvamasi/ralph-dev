@@ -34,6 +34,13 @@ def run_command_capture(command: list[str], cwd: Path) -> subprocess.CompletedPr
     )
 
 
+PYTEST_REQUIRED_MESSAGE = (
+    "pytest is required for project-local shell parity checks. "
+    "Install pytest in the Ralph environment, for example with `pip install pytest` "
+    "or `pipx inject ralph-dev pytest`."
+)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ralph",
@@ -252,6 +259,15 @@ def build_verify_plan(project_dir: Path) -> tuple[list[tuple[str, list[str], Pat
     return commands, skipped
 
 
+def command_requires_pytest(command: list[str]) -> bool:
+    return command[:3] == [sys.executable, "-m", "pytest"]
+
+
+def pytest_is_available(project_dir: Path) -> bool:
+    probe = run_command_capture([sys.executable, "-c", "import pytest"], cwd=project_dir)
+    return probe.returncode == 0
+
+
 def duplicate_task_ids(tasks: list[dict[str, object]]) -> list[str]:
     counts = collections.Counter(
         str(task.get("id", "")).strip()
@@ -283,6 +299,10 @@ def execute_doctor(args: argparse.Namespace) -> int:
     exit_code = 0
 
     for label, command in build_doctor_commands():
+        if command_requires_pytest(command) and not pytest_is_available(project_dir):
+            print(PYTEST_REQUIRED_MESSAGE, file=sys.stderr)
+            exit_code = 1
+            continue
         print(f"==> {label}")
         step_code = run_command(command, cwd=project_dir)
         if exit_code == 0 and step_code != 0:
@@ -317,6 +337,10 @@ def execute_verify(args: argparse.Namespace) -> int:
         print(line)
 
     for label, command, cwd in commands:
+        if command_requires_pytest(command) and not pytest_is_available(cwd):
+            print(PYTEST_REQUIRED_MESSAGE, file=sys.stderr)
+            exit_code = 1
+            continue
         print(f"==> {label}")
         step_code = run_command(command, cwd=cwd)
         if exit_code == 0 and step_code != 0:

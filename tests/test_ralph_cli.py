@@ -338,6 +338,33 @@ def test_execute_doctor_returns_nonzero_when_duplicate_task_ids_exist(
     assert "Duplicate task IDs: R12-03" in captured.out
 
 
+def test_execute_doctor_reports_missing_pytest_without_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    (tmp_path / "tasks.json").write_text('{"tasks":[]}', encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def fake_run_command(command: list[str], cwd: Path) -> int:
+        commands.append(command)
+        return 0
+
+    def fake_run_command_capture(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if command == [sys.executable, "-c", "import pytest"]:
+            return subprocess.CompletedProcess(command, 1, "", "Traceback (most recent call last)\nModuleNotFoundError: No module named pytest\n")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ralph_cli, "run_command", fake_run_command)
+    monkeypatch.setattr(ralph_cli, "run_command_capture", fake_run_command_capture)
+
+    exit_code = ralph_cli.execute_doctor(Namespace(command="doctor", project_dir=str(tmp_path)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "pytest is required for project-local shell parity checks" in captured.err
+    assert "No module named pytest" not in captured.err
+    assert [sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"] not in commands
+
+
 def test_execute_verify_runs_all_checks_and_returns_first_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -382,6 +409,38 @@ def test_execute_verify_returns_nonzero_when_packaged_shell_is_missing(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "Missing packaged Ralph resource: ralph.sh" in captured.err
+
+
+def test_execute_verify_reports_missing_pytest_without_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "ralph.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (project_dir / "tests").mkdir()
+    (project_dir / "tests" / "test_shell_parity.py").write_text("def test_shell_parity_smoke():\n    assert True\n", encoding="utf-8")
+
+    recorded: list[tuple[list[str], Path]] = []
+
+    def fake_run_command(command: list[str], cwd: Path) -> int:
+        recorded.append((command, cwd))
+        return 0
+
+    def fake_run_command_capture(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if command == [sys.executable, "-c", "import pytest"]:
+            return subprocess.CompletedProcess(command, 1, "", "Traceback (most recent call last)\nModuleNotFoundError: No module named pytest\n")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ralph_cli, "run_command", fake_run_command)
+    monkeypatch.setattr(ralph_cli, "run_command_capture", fake_run_command_capture)
+
+    exit_code = ralph_cli.execute_verify(Namespace(command="verify", project_dir=str(project_dir)))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "pytest is required for project-local shell parity checks" in captured.err
+    assert "No module named pytest" not in captured.err
+    assert ([sys.executable, "-m", "pytest", "tests/test_shell_parity.py", "-q"], project_dir.resolve()) not in recorded
 
 
 def test_execute_groom_returns_nonzero_when_active_backlog_is_missing(

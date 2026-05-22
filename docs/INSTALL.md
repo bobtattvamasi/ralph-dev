@@ -39,6 +39,23 @@ For an installed toolchain, smoke these commands from a cwd outside the Ralph so
 - `ralph tail`
 - `ralph log`
 
+## Parity Check Dependency
+`ralph doctor` and `ralph verify` run project-local shell parity checks when `tests/test_shell_parity.py` is present. Those parity checks require `pytest` in the same Ralph environment.
+
+If you installed Ralph into a `venv`, install pytest alongside it:
+
+```bash
+.venv/bin/pip install pytest
+```
+
+If you installed Ralph with `pipx`, inject pytest into the app environment:
+
+```bash
+pipx inject ralph-dev pytest
+```
+
+If pytest is missing, Ralph prints a clear message and skips the parity step instead of showing a raw Python traceback.
+
 ## Expected Project Files
 Target projects should have:
 

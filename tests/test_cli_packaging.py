@@ -41,7 +41,7 @@ def run_installed_python(
     return run([str(python_bin), "-c", code], cwd=cwd, env=env)
 
 
-def install_cli(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+def install_cli(tmp_path: Path, *, install_pytest: bool = True) -> tuple[Path, Path, Path, Path]:
     venv_dir = tmp_path / "venv"
     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
 
@@ -52,7 +52,8 @@ def install_cli(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     outside_cwd.mkdir()
 
     subprocess.run([str(python_bin), "-m", "pip", "install", str(REPO_ROOT)], check=True)
-    subprocess.run([str(python_bin), "-m", "pip", "install", "pytest"], check=True)
+    if install_pytest:
+        subprocess.run([str(python_bin), "-m", "pip", "install", "pytest"], check=True)
 
     return bin_dir, python_bin, ralph_bin, outside_cwd
 
@@ -175,6 +176,32 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     bot_help_result = run_installed_cli(ralph_bin, "bot", "--help", cwd=outside_cwd)
     assert bot_help_result.returncode == 0
     assert "project-dir" in bot_help_result.stdout
+
+
+def test_installed_cli_reports_missing_pytest_for_doctor_and_verify(tmp_path: Path) -> None:
+    bin_dir, _, ralph_bin, outside_cwd = install_cli(tmp_path, install_pytest=False)
+
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    project_dir, env = prepare_fixture_project(
+        runtime_root,
+        with_docs=True,
+        with_logs=True,
+        with_project_shell=True,
+        with_parity_test=True,
+    )
+    runtime_env = env.copy()
+    runtime_env["PATH"] = f"{bin_dir}:{runtime_env['PATH']}"
+
+    doctor_result = run_installed_cli(ralph_bin, "doctor", "--project-dir", str(project_dir), cwd=outside_cwd, env=runtime_env)
+    assert doctor_result.returncode != 0
+    assert "pytest is required for project-local shell parity checks" in doctor_result.stderr
+    assert "No module named pytest" not in doctor_result.stderr
+
+    verify_result = run_installed_cli(ralph_bin, "verify", "--project-dir", str(project_dir), cwd=outside_cwd, env=runtime_env)
+    assert verify_result.returncode != 0
+    assert "pytest is required for project-local shell parity checks" in verify_result.stderr
+    assert "No module named pytest" not in verify_result.stderr
 
 
 def test_packaged_resource_bundling_audit_covers_cli_command_dependencies(tmp_path: Path) -> None:
