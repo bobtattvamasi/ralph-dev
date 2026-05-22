@@ -92,6 +92,12 @@ def prepare_fixture_project(
     return project_dir, env
 
 
+def write_bad_tail_log(project_dir: Path) -> None:
+    logs_dir = project_dir / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    (logs_dir / "ralph_2026-05-19.log").write_bytes(b"ok\n\xd1bad\nlast\n")
+
+
 def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
     bin_dir, python_bin, ralph_bin, outside_cwd = install_cli(tmp_path)
 
@@ -127,6 +133,7 @@ def test_cli_entrypoint_install_and_core_commands(tmp_path: Path) -> None:
         with_project_shell=True,
         with_parity_test=True,
     )
+    write_bad_tail_log(project_dir)
     runtime_env = env.copy()
     runtime_env["PATH"] = f"{bin_dir}:{runtime_env['PATH']}"
 

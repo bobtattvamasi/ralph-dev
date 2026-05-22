@@ -356,7 +356,7 @@ def latest_log_file(project_dir: Path) -> Path | None:
 
 
 def tail_lines(path: Path, line_count: int) -> list[str]:
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     return lines[-line_count:]
 
 

@@ -221,6 +221,19 @@ def test_execute_tail_prints_last_requested_lines(capsys: pytest.CaptureFixture[
     assert captured.err == ""
 
 
+def test_execute_tail_replaces_invalid_utf8_bytes(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "ralph_2026-05-19.log").write_bytes(b"ok\n\xd1bad\nlast\n")
+
+    exit_code = ralph_cli.execute_tail(Namespace(command="tail", project_dir=str(tmp_path), lines=3))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == "ok\n�bad\nlast\n"
+    assert captured.err == ""
+
+
 def test_execute_log_lists_log_files_newest_first(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
