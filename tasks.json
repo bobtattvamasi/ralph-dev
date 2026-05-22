@@ -5093,6 +5093,58 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-19T14:50:29.722908+00:00"
+    },
+    {
+      "id": "R25-01",
+      "phase": "R25",
+      "status": "verified_done",
+      "title": "Make CLI tail robust to non-UTF8 logs",
+      "description": "Update ralph tail so it never crashes on non-UTF8 or partially corrupted log files and instead prints a readable replacement-decoded tail.",
+      "target_files": [
+        "src/ralph/cli.py",
+        "tests/test_ralph_cli.py",
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "ralph tail reads logs with encoding errors using replacement instead of crashing.",
+        "tail preserves the --lines behavior.",
+        "tail returns nonzero only when no logs exist or log file cannot be read at all.",
+        "Focused tests cover invalid UTF-8 bytes in logs.",
+        "Installed-mode packaging smoke covers tail against a non-UTF8 log.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "critical",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T06:21:40.545864+00:00"
+    },
+    {
+      "id": "R25-02",
+      "phase": "R25",
+      "status": "pending",
+      "title": "Graceful pytest-missing behavior for doctor and verify",
+      "description": "Make installed ralph doctor/verify report a clear actionable message when project-local pytest checks are requested but pytest is not installed.",
+      "target_files": [
+        "src/ralph/cli.py",
+        "tests/test_ralph_cli.py",
+        "tests/test_cli_packaging.py",
+        "docs/INSTALL.md"
+      ],
+      "acceptance_criteria": [
+        "doctor/verify do not show raw 'No module named pytest' as the only explanation.",
+        "When pytest is missing and tests/test_shell_parity.py exists, output suggests installing pytest or using a dev extra.",
+        "Exit code remains nonzero for verify when required check cannot run.",
+        "Focused tests cover missing pytest behavior.",
+        "INSTALL.md documents pytest/dev dependency expectation for verify/doctor parity checks.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "critical",
+      "complexity": "moderate",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
     }
   ]
 }
