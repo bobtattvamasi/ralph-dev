@@ -5277,6 +5277,32 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-22T11:23:39.791910+00:00"
+    },
+    {
+      "id": "R26-04",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Make doctor skip missing project-local parity test",
+      "description": "Align ralph doctor with ralph verify so missing tests/test_shell_parity.py is reported as skipped instead of running pytest against a missing file.",
+      "target_files": [
+        "src/ralph/cli.py",
+        "tests/test_ralph_cli.py",
+        "tests/test_cli_packaging.py"
+      ],
+      "acceptance_criteria": [
+        "ralph doctor skips project-local shell parity when tests/test_shell_parity.py is missing.",
+        "doctor output clearly says the parity check was skipped because the file is missing.",
+        "doctor still returns nonzero for real failing checks.",
+        "verify behavior remains unchanged.",
+        "Installed-mode smoke covers doctor in a freshly initialized project without tests/test_shell_parity.py.",
+        "No runtime behavior in ralph.sh changes."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-22T12:20:29.177014+00:00"
     }
   ]
 }
