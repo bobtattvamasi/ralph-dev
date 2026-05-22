@@ -204,6 +204,39 @@ def test_installed_cli_reports_missing_pytest_for_doctor_and_verify(tmp_path: Pa
     assert "No module named pytest" not in verify_result.stderr
 
 
+def test_installed_cli_uses_project_dir_from_project_cwd_without_flag(tmp_path: Path) -> None:
+    bin_dir, _, ralph_bin, outside_cwd = install_cli(tmp_path)
+
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    project_dir, env = prepare_fixture_project(
+        runtime_root,
+        with_docs=True,
+        with_logs=True,
+        with_project_shell=True,
+        with_parity_test=True,
+    )
+    write_bad_tail_log(project_dir)
+    runtime_env = env.copy()
+    runtime_env["PATH"] = f"{bin_dir}:{runtime_env['PATH']}"
+
+    smoke_cases = [
+        ("status", ("Git state:", "Task counts:", "Active backlog:", "Next auto-safe state:")),
+        ("doctor", ("==> git status --short", "==> python -m json.tool tasks.json", "==> python -m pytest tests/test_shell_parity.py -q")),
+        ("verify", ("==> bash -n packaged ralph.sh", "==> bash -n project ralph.sh", "==> python -m pytest tests/test_shell_parity.py -q")),
+        ("next", ('"id": "T01"',)),
+        ("explain", ("\"has_pending\": true", "\"reason\":")),
+    ]
+
+    for command, expected_snippets in smoke_cases:
+        result = run_installed_cli(ralph_bin, command, cwd=project_dir, env=runtime_env)
+        assert result.returncode == 0, command
+        for snippet in expected_snippets:
+            assert snippet in result.stdout, (command, snippet, result.stdout)
+
+    assert run_installed_cli(ralph_bin, "status", cwd=project_dir, env=runtime_env).returncode == 0
+
+
 def test_packaged_resource_bundling_audit_covers_cli_command_dependencies(tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()
