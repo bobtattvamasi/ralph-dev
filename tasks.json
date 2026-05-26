@@ -5303,6 +5303,59 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-22T12:20:29.177014+00:00"
+    },
+    {
+      "id": "R26-05",
+      "phase": "R26",
+      "status": "pending",
+      "title": "Ignore Python build artifacts",
+      "description": "Update .gitignore so local package install/build artifacts do not pollute git status after pip/pipx smoke tests.",
+      "target_files": [
+        ".gitignore"
+      ],
+      "acceptance_criteria": [
+        ".gitignore ignores build/.",
+        ".gitignore ignores dist/.",
+        ".gitignore ignores *.egg-info/ including src/*.egg-info/.",
+        "Running local install smoke no longer leaves build artifacts visible in git status.",
+        "No runtime code changes."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
+    },
+    {
+      "id": "R26-06",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Refresh governance docs for installed CLI packaging stage",
+      "description": "Update Ralph governance and architecture docs to reflect the current installed CLI, pipx, Python 3.11+, package smoke, and release-polish direction.",
+      "target_files": [
+        "system_promt.md",
+        "AGENTS.md",
+        "AGENTS_CODER.md",
+        "AGENTS_LEAD.md",
+        "ARCHITECTURE.md"
+      ],
+      "acceptance_criteria": [
+        "system_promt.md describes Ralph as an installed CLI-enabled AI execution layer, not only a bash/Telegram orchestrator.",
+        "system_promt.md current priority reflects release/distribution polish, package smoke, and human install UX.",
+        "AGENTS.md documents Python 3.11+ baseline, packaged resources, and installed CLI command surface.",
+        "AGENTS_CODER.md warns against python3 when local python3 may be 3.9 and forbids committing build/egg-info artifacts.",
+        "AGENTS_LEAD.md includes installed CLI/package UX review checks for packaging tasks.",
+        "ARCHITECTURE.md documents CLI layer, packaged resources, pipx install model, and project-local default behavior.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": true,
+      "selection_warnings": [
+        "docs-only governance refresh touches 5 files intentionally"
+      ],
+      "completed_at": "2026-05-26T05:01:28.191411+00:00"
     }
   ]
 }
