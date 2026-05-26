@@ -134,3 +134,19 @@ Stage `R24` is checkpoint-complete.
 - bootstrap/kickoff
 - release polish
 - product-factory planning
+
+## Release Readiness Checkpoint
+Current checkpoint status for the installed CLI packaging lane:
+- local `pipx` install works on Python 3.11+
+- installed `ralph init` no longer leaks internal package paths
+- `ralph status`, `ralph doctor`, `ralph verify`, `ralph next`, and `ralph explain` work from project-local cwd
+- `ralph doctor` now skips missing project-local `tests/test_shell_parity.py` the same way `verify` does
+- Python build artifacts are ignored and `src/ralph_dev.egg-info` is untracked
+- branch `dev/auto-pilot` has been pushed to GitHub
+- GitHub Actions package smoke workflow exists, but it is currently blocked by GitHub account billing rather than a known code failure
+
+## Remaining Blockers Before Main Merge / v0.1.0 Tag
+- unblock GitHub Actions package smoke so installed CLI packaging can be verified in hosted CI
+- prove the release/tag flow on top of the pushed `dev/auto-pilot` branch
+- finish the release-polish pass for merge readiness notes, operator install expectations, and post-merge packaging confidence
+- keep PyPI publishing deferred until CI and tag flow are stable

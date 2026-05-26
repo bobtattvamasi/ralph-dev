@@ -154,3 +154,22 @@ Stage `R24` is complete when:
 - installed-mode path cleanup
 - console script UX polish for `--project-dir`
 - cross-platform packaging CI expansion
+
+## Release Readiness
+Current release-readiness checkpoint:
+- installed CLI works through `pipx` from a GitHub URL or local checkout
+- supported baseline is Python 3.11+
+- `ralph init` now prints operator-facing next steps without leaking internal package paths
+- `ralph status`, `doctor`, `verify`, `next`, and `explain` work from project-local cwd
+- `doctor` skips missing project-local `tests/test_shell_parity.py` the same way `verify` does
+- Python build artifacts are ignored and generated `*.egg-info` content is no longer expected to pollute git state
+
+Distribution stance at this checkpoint:
+- current install path is `pipx` from GitHub or local checkout
+- PyPI publishing comes later, after CI is healthy and the tag/release flow is proven
+- `dev/auto-pilot` has already been pushed for GitHub-based install and review flow
+- GitHub Actions package smoke exists but is currently blocked by account billing, not by a known packaging failure
+
+Platform note:
+- macOS and Linux remain the primary supported platforms
+- Windows should still be treated as bash-capable / Git Bash only until CI proves more than the current bash-backed path
