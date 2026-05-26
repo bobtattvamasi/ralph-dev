@@ -5381,6 +5381,31 @@
       "role": "coder",
       "scope_too_wide": false,
       "selection_warnings": []
+    },
+    {
+      "id": "R26-07",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Release readiness checkpoint",
+      "description": "Document what is ready for first external install and what remains blocked before main merge or v0.1.0 tag.",
+      "target_files": [
+        "docs/ACTIVE_BACKLOG.md",
+        "docs/PACKAGING_PLAN.md",
+        "progress.md"
+      ],
+      "acceptance_criteria": [
+        "Documents pipx install now works locally with Python 3.11.",
+        "Documents dev/auto-pilot has been pushed to GitHub.",
+        "Documents GitHub Actions package smoke is blocked by billing, not by known code failure.",
+        "Lists remaining blockers before main merge.",
+        "No runtime code is changed."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T05:13:15.145012+00:00"
     }
   ]
 }
