@@ -5487,6 +5487,31 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-26T06:09:39.098514+00:00"
+    },
+    {
+      "id": "R26-11",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "System capability audit",
+      "description": "Audit current Ralph capabilities against the intended installed CLI workflow and identify gaps before real-project pilot.",
+      "target_files": [
+        "docs/SYSTEM_AUDIT.md",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "SYSTEM_AUDIT.md lists implemented CLI commands and their current status.",
+        "SYSTEM_AUDIT.md distinguishes read-only commands from execution commands.",
+        "SYSTEM_AUDIT.md identifies missing workflows: project analysis, automatic task generation, update flow, real-project pilot, hosted CI.",
+        "SYSTEM_AUDIT.md recommends the next 3-5 implementation tasks.",
+        "ACTIVE_BACKLOG.md links to SYSTEM_AUDIT.md.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T06:16:40.728257+00:00"
     }
   ]
 }
