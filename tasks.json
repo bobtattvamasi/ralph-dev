@@ -5512,6 +5512,33 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-26T11:05:38.822649+00:00"
+    },
+    {
+      "id": "R26-12",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Document manual planning workflow for first real-project test",
+      "description": "Document the current supported workflow where the operator and ChatGPT manually prepare phases/tasks for a target project, then Ralph executes the resulting tasks.json.",
+      "target_files": [
+        "docs/PILOT.md",
+        "docs/ACTIVE_BACKLOG.md",
+        "README.md"
+      ],
+      "acceptance_criteria": [
+        "PILOT.md explains the current manual planning workflow: operator describes project goals, ChatGPT helps produce phases/tasks, Ralph executes tasks.json.",
+        "PILOT.md distinguishes current manual planning from future ralph analyze/propose-tasks automation.",
+        "PILOT.md defines the first real-project test sequence: init, status, doctor, verify, next, one explicit task, then optional auto --safe.",
+        "PILOT.md defines success and stop criteria for real-project testing.",
+        "README.md links to PILOT.md as the current way to test Ralph on a real project.",
+        "ACTIVE_BACKLOG.md lists manual real-project pilot as the next step.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T11:13:30.779122+00:00"
     }
   ]
 }
