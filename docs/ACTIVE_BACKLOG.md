@@ -146,6 +146,7 @@ Current checkpoint status for the installed CLI packaging lane:
 - GitHub Actions package smoke workflow exists, but it is currently blocked by GitHub account billing rather than a known code failure
 - system capability audit: `docs/SYSTEM_AUDIT.md`
 - pilot workflow: `docs/PILOT.md`
+- Project GPT source pack: `docs/GPT_PROJECT_CONTEXT.md`
 
 ## Remaining Blockers Before Main Merge / v0.1.0 Tag
 - local RC smoke is available as a fallback, but hosted GitHub Actions package smoke is still blocked by billing
