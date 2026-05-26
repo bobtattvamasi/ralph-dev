@@ -5539,6 +5539,48 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-26T11:13:30.779122+00:00"
+    },
+    {
+      "id": "R26-13",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Audit and align public docs and agent instructions",
+      "description": "Audit README, docs, architecture, agent instructions, and Project GPT prompt files so they consistently describe the current installed CLI, pipx, Telegram, pilot, and release-readiness state.",
+      "target_files": [
+        "README.md",
+        "docs/INSTALL.md",
+        "docs/RELEASE.md",
+        "docs/PILOT.md",
+        "docs/SYSTEM_AUDIT.md",
+        "docs/PACKAGING_PLAN.md",
+        "docs/ACTIVE_BACKLOG.md",
+        "docs/BACKLOG_POLICY.md",
+        "ARCHITECTURE.md",
+        "AGENTS.md",
+        "AGENTS_CODER.md",
+        "AGENTS_LEAD.md",
+        "system_promt.md"
+      ],
+      "acceptance_criteria": [
+        "Docs consistently describe Python 3.11+ and pipx as the primary install path.",
+        "Docs consistently describe Ralph as an installed CLI-enabled AI execution layer with packaged bash runtime.",
+        "Docs list the current CLI command surface without claiming unimplemented commands.",
+        "Docs explain Telegram as an optional control/observation layer.",
+        "Docs distinguish current manual planning from future analyze/propose-tasks automation.",
+        "Docs explain the first real-project pilot workflow and safety gates.",
+        "Docs state GitHub Actions package smoke is blocked by billing and hosted CI proof is missing.",
+        "Docs keep v0.1.0 tag and PyPI publishing deferred until CI or explicit manual release decision.",
+        "Agent instructions mention Python 3.11+, no build/egg-info artifacts, and packaging/CLI test expectations.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": true,
+      "selection_warnings": [
+        "docs-only cross-document consistency audit intentionally touches many docs"
+      ],
+      "completed_at": "2026-05-26T11:39:01.314317+00:00"
     }
   ]
 }
