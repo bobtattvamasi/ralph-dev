@@ -9,6 +9,7 @@ Supported Python baseline is 3.11+.
 
 Operator install steps and smoke guidance live in [INSTALL.md](INSTALL.md).
 Packaging audit details live in [PACKAGING_AUDIT.md](PACKAGING_AUDIT.md).
+Release and tag flow guidance lives in [RELEASE.md](RELEASE.md).
 
 ## Target Install And Use Flow
 Preferred operator flow:
@@ -169,6 +170,7 @@ Distribution stance at this checkpoint:
 - PyPI publishing comes later, after CI is healthy and the tag/release flow is proven
 - `dev/auto-pilot` has already been pushed for GitHub-based install and review flow
 - GitHub Actions package smoke exists but is currently blocked by account billing, not by a known packaging failure
+- first release-tag flow is documented in [RELEASE.md](RELEASE.md)
 
 Platform note:
 - macOS and Linux remain the primary supported platforms

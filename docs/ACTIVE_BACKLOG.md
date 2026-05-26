@@ -147,6 +147,6 @@ Current checkpoint status for the installed CLI packaging lane:
 
 ## Remaining Blockers Before Main Merge / v0.1.0 Tag
 - unblock GitHub Actions package smoke so installed CLI packaging can be verified in hosted CI
-- prove the release/tag flow on top of the pushed `dev/auto-pilot` branch
+- document and then prove the release/tag flow on top of the pushed `dev/auto-pilot` branch
 - finish the release-polish pass for merge readiness notes, operator install expectations, and post-merge packaging confidence
 - keep PyPI publishing deferred until CI and tag flow are stable
