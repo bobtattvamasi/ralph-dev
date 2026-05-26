@@ -5612,6 +5612,32 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-26T11:46:57.909412+00:00"
+    },
+    {
+      "id": "R26-15",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Create Project GPT source pack",
+      "description": "Create a compact Project GPT context file and source update guide so the custom GPT/project sources stay aligned with the current Ralph CLI, pilot, Telegram, and packaging state.",
+      "target_files": [
+        "docs/GPT_PROJECT_CONTEXT.md",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "GPT_PROJECT_CONTEXT.md summarizes the current installed CLI state.",
+        "GPT_PROJECT_CONTEXT.md lists files Project GPT should use as sources.",
+        "GPT_PROJECT_CONTEXT.md includes Python 3.11+, pipx, CLI commands, Telegram optional role, manual planning, and pilot workflow.",
+        "GPT_PROJECT_CONTEXT.md explicitly says analyze/propose-tasks are future workflows.",
+        "GPT_PROJECT_CONTEXT.md warns not to use stale uploaded sources.",
+        "ACTIVE_BACKLOG.md links to GPT_PROJECT_CONTEXT.md.",
+        "No runtime code is changed."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T11:54:27.607723+00:00"
     }
   ]
 }
