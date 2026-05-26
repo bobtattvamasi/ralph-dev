@@ -31,3 +31,9 @@ ralph_codex.pgid
 venv/
 .pytest_cache/
 __pycache__/
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+src/*.egg-info/
