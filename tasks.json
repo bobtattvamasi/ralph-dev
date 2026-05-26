@@ -5581,6 +5581,37 @@
         "docs-only cross-document consistency audit intentionally touches many docs"
       ],
       "completed_at": "2026-05-26T11:39:01.314317+00:00"
+    },
+    {
+      "id": "R26-14",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Document Telegram control layer",
+      "description": "Add current Telegram bot setup and command reference as an optional control/observation layer, aligned with installed CLI docs.",
+      "target_files": [
+        "docs/TELEGRAM.md",
+        "README.md",
+        "docs/INSTALL.md",
+        "docs/SYSTEM_AUDIT.md",
+        "ARCHITECTURE.md"
+      ],
+      "acceptance_criteria": [
+        "TELEGRAM.md explains Telegram as optional control/observation layer, not the primary interface.",
+        "TELEGRAM.md documents setup through .env and ralph bot.",
+        "TELEGRAM.md lists current Telegram commands based on actual bot implementation.",
+        "TELEGRAM.md distinguishes read-only/status commands from execution/control commands.",
+        "README.md links to TELEGRAM.md.",
+        "INSTALL.md mentions Telegram setup as optional.",
+        "SYSTEM_AUDIT.md references Telegram command docs.",
+        "ARCHITECTURE.md links Telegram layer to TELEGRAM.md.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T11:46:57.909412+00:00"
     }
   ]
 }
