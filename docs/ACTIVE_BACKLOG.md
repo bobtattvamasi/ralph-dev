@@ -146,7 +146,9 @@ Current checkpoint status for the installed CLI packaging lane:
 - GitHub Actions package smoke workflow exists, but it is currently blocked by GitHub account billing rather than a known code failure
 
 ## Remaining Blockers Before Main Merge / v0.1.0 Tag
-- unblock GitHub Actions package smoke so installed CLI packaging can be verified in hosted CI
+- local RC smoke is available as a fallback, but hosted GitHub Actions package smoke is still blocked by billing
+- local RC smoke does not replace hosted cross-platform CI proof
 - document and then prove the release/tag flow on top of the pushed `dev/auto-pilot` branch
 - finish the release-polish pass for merge readiness notes, operator install expectations, and post-merge packaging confidence
 - keep PyPI publishing deferred until CI and tag flow are stable
+- keep `v0.1.0` tag blocked until hosted CI is restored or an explicit manual release decision is made

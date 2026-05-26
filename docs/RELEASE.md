@@ -80,6 +80,39 @@ ralph next
 ralph explain
 ```
 
+## Local Release Candidate Smoke
+Use this fallback path while hosted GitHub Actions package smoke is blocked by
+account billing.
+
+This local smoke does not replace hosted cross-platform CI. It is only the
+documented release-candidate fallback for the current billing-blocked period.
+
+Run the exact local RC smoke commands:
+
+```bash
+python3.11 -m pytest tests/test_cli_packaging.py -q
+python3.11 -m pytest tests/test_ralph_cli.py -q
+python3.11 -m ralph.cli verify
+python3.11 -m pipx install --force .
+python3.11 -m pipx inject ralph-dev pytest --force
+mkdir -p /tmp/ralph-release-smoke
+cd /tmp/ralph-release-smoke
+ralph init
+git init
+ralph status
+ralph doctor
+ralph verify
+ralph next
+ralph explain
+```
+
+Expected interpretation:
+- local Python 3.11 release-candidate smoke passed
+- packaged `pipx` reinstall path works locally
+- `ralph init` smoke works in a fresh temp directory
+- project-local `ralph status`, `ralph doctor`, `ralph verify`, `ralph next`, and `ralph explain` work after init
+- hosted GitHub Actions and cross-platform CI proof are still missing until billing is unblocked or an explicit manual release decision is made
+
 ## Non-Goals
 - no PyPI publish step yet
 - no claim of native Windows PowerShell or cmd.exe runtime support yet
