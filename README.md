@@ -195,5 +195,6 @@ ralph auto --safe
 - [docs/INSTALL.md](docs/INSTALL.md) — install and day-to-day usage
 - [docs/RELEASE.md](docs/RELEASE.md) — release tag flow and local RC smoke
 - [docs/PACKAGING_PLAN.md](docs/PACKAGING_PLAN.md) — packaging model and install path
+- [docs/PILOT.md](docs/PILOT.md) — first real-project test and manual planning workflow
 - [docs/ACTIVE_BACKLOG.md](docs/ACTIVE_BACKLOG.md) — current stage and release blockers
 - [ARCHITECTURE.md](ARCHITECTURE.md) — execution model and runtime architecture

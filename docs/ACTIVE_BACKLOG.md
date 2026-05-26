@@ -153,3 +153,8 @@ Current checkpoint status for the installed CLI packaging lane:
 - finish the release-polish pass for merge readiness notes, operator install expectations, and post-merge packaging confidence
 - keep PyPI publishing deferred until CI and tag flow are stable
 - keep `v0.1.0` tag blocked until hosted CI is restored or an explicit manual release decision is made
+
+## Next Real-Project Step
+- run the first manual real-project pilot in a separate throwaway/simple webapp repo
+- use `docs/PILOT.md` as the operator workflow for init, health checks, manual planning, first `ralph task <ID>`, and later `ralph auto --safe`
+- keep automatic analysis and automatic task generation as future workflow, not current CLI capability
