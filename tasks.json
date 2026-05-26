@@ -5433,6 +5433,30 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-26T05:28:50.283513+00:00"
-    }
+    },
+    {
+  "id": "R26-09",
+  "phase": "R26",
+  "status": "pending",
+  "title": "Local release candidate smoke",
+  "description": "Run and document a local release-candidate smoke path while GitHub Actions is blocked by billing.",
+  "target_files": [
+    "docs/RELEASE.md",
+    "docs/ACTIVE_BACKLOG.md",
+    "progress.md"
+  ],
+  "acceptance_criteria": [
+    "RELEASE.md documents local release-candidate smoke when hosted CI is unavailable.",
+    "Local smoke includes Python 3.11 packaging tests, ralph verify, pipx reinstall from local checkout, ralph init smoke, and project-local status/doctor/verify.",
+    "ACTIVE_BACKLOG.md distinguishes local RC smoke from hosted CI proof.",
+    "progress.md records that hosted CI remains blocked by billing.",
+    "No runtime code is changed."
+  ],
+  "priority": "medium",
+  "complexity": "simple",
+  "role": "coder",
+  "scope_too_wide": false,
+  "selection_warnings": []
+}
   ]
 }
