@@ -5458,6 +5458,35 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-26T05:55:43.513255+00:00"
+    },
+    {
+      "id": "R26-10",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "README and operator workflow",
+      "description": "Rewrite README.md so a new user understands what Ralph is, how to install it, how to use it in a new or existing project, and what workflows are currently supported.",
+      "target_files": [
+        "README.md",
+        "docs/INSTALL.md",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "README.md explains Ralph as an installed CLI-enabled AI execution layer.",
+        "README.md documents pipx install from GitHub/local checkout with Python 3.11+.",
+        "README.md documents new project setup with ralph init.",
+        "README.md documents existing project setup with ralph init and governance files.",
+        "README.md documents safe read-only commands: status, doctor, verify, next, explain, groom, log, tail.",
+        "README.md documents execution commands: task <ID> and auto --safe.",
+        "README.md clearly states that analyze/plan/project-task generation is a future or separate workflow if not implemented.",
+        "README.md links to INSTALL.md, RELEASE.md, PACKAGING_PLAN.md, and ACTIVE_BACKLOG.md.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T06:09:39.098514+00:00"
     }
   ]
 }
