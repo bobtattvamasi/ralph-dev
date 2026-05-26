@@ -5406,6 +5406,33 @@
       "scope_too_wide": false,
       "selection_warnings": [],
       "completed_at": "2026-05-26T05:17:59.789136+00:00"
+    },
+    {
+      "id": "R26-08",
+      "phase": "R26",
+      "status": "verified_done",
+      "title": "Release tag flow plan",
+      "description": "Document the first v0.1.0 release/tag flow for Ralph before PyPI publishing.",
+      "target_files": [
+        "docs/RELEASE.md",
+        "docs/PACKAGING_PLAN.md",
+        "docs/ACTIVE_BACKLOG.md"
+      ],
+      "acceptance_criteria": [
+        "RELEASE.md documents pre-release checks.",
+        "RELEASE.md documents version verification from pyproject.toml.",
+        "RELEASE.md documents creating and pushing a v0.1.0 git tag.",
+        "RELEASE.md documents installing Ralph from a GitHub tag with pipx.",
+        "RELEASE.md explicitly keeps PyPI publishing deferred.",
+        "PACKAGING_PLAN.md links to RELEASE.md.",
+        "No runtime code is changed."
+      ],
+      "priority": "medium",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T05:28:50.283513+00:00"
     }
   ]
 }
