@@ -4,8 +4,13 @@
 Ralph is a project-agnostic AI execution layer for software delivery workflows.
 It sits on top of an existing repository, reads structured tasks, runs AI agents,
 collects outputs, applies review gates, and coordinates human escalation.
+It now also exposes an installed CLI so operators can work through a packaged
+entrypoint instead of depending on repo-local shell invocation alone.
 
 ## Core Components
+- `src/ralph/cli.py` — installed CLI layer and console-script entrypoint
+- `pyproject.toml` console script — publishes the `ralph` command
+- `src/ralph/resources/ralph.sh` — packaged runtime shell and helper resources
 - `ralph.sh` — orchestrator loop and execution policy
 - `scripts/ralph_bot.py` — Telegram control plane
 - `codex exec` — tool runtime used for Coder and Tech Lead agents
@@ -14,14 +19,15 @@ collects outputs, applies review gates, and coordinates human escalation.
 - `scripts/*.py` — task, progress, notification, and memory helpers
 
 ## Execution Model
-1. Select next pending task from `tasks.json`
-2. Build coder prompt from task payload, repo docs, memory, and optional human comment
-3. Run Coder agent through `codex exec`
-4. If `assets_manifest.json` exists, validate it, wait for missing required assets, and sync them into target paths
-5. Run the runtime Tester phase with the configured test command and emit `TESTER_START`, `TESTER_DONE`, `TESTER_TIMEOUT`, and `TESTER_REPORT`
-6. Run Tech Lead review through `codex exec` against the diff, acceptance criteria, and tester report
-7. Run closure verification to confirm the approved change matches task evidence expectations
-8. Finalize by persisting audit, task status, commit flow, progress, memory, logs, and metrics
+1. Operator enters through the installed CLI or Telegram control layer
+2. Select next pending task from `tasks.json`
+3. Build coder prompt from task payload, repo docs, memory, and optional human comment
+4. Run Coder agent through `codex exec`
+5. If `assets_manifest.json` exists, validate it, wait for missing required assets, and sync them into target paths
+6. Run the runtime Tester phase with the configured test command and emit `TESTER_START`, `TESTER_DONE`, `TESTER_TIMEOUT`, and `TESTER_REPORT`
+7. Run Tech Lead review through `codex exec` against the diff, acceptance criteria, and tester report
+8. Run closure verification to confirm the approved change matches task evidence expectations
+9. Finalize by persisting audit, task status, commit flow, progress, memory, logs, and metrics
 
 ## Execution Pipeline
 Ralph now runs as:
@@ -48,6 +54,51 @@ Responsibilities:
 - git commit flow for agent-produced changes
 - task lifecycle updates and human alerting
 
+Repo and package parity matters here: `ralph.sh` in the repository and
+`src/ralph/resources/ralph.sh` in the packaged distribution should behave the
+same for operator-visible runtime flows.
+
+## CLI Layer
+The CLI layer lives in `src/ralph/cli.py` and is published through the
+`pyproject.toml` console script as `ralph`.
+
+Current operator-facing commands include:
+- `ralph init`
+- `ralph status`
+- `ralph doctor`
+- `ralph verify`
+- `ralph next`
+- `ralph explain`
+- `ralph groom`
+- `ralph tail`
+- `ralph log`
+- `ralph task <ID>`
+- `ralph auto --safe`
+- `ralph bot`
+
+Default operator behavior is project-local: `cd <project> && ralph status`
+should work without requiring users to reference internal package paths.
+
+## Install And Distribution Model
+The current distribution path is install-first rather than publish-first:
+- `pipx` is the primary install path during this stage
+- GitHub URL or local checkout install flows come before PyPI
+- PyPI remains a later distribution milestone, not the current baseline
+
+GitHub Actions package smoke exists to protect the install path, although some
+CI coverage may be blocked by account billing constraints.
+
+## Packaged Resources Model
+Packaged runtime assets live under `src/ralph/resources/`.
+
+This directory is the package source of truth for:
+- `ralph.sh`
+- helper shell scripts shipped with the installed CLI
+- runtime assets needed by the console-script entrypoint
+
+The package resource model must preserve runtime shell parity between the repo
+checkout and the installed distribution.
+
 ## Tool Runtime
 Ralph currently depends on:
 - `codex exec` for both agent roles
@@ -55,6 +106,11 @@ Ralph currently depends on:
 - `git` for diffing and commits
 - `gtimeout` for bounded runs
 - `python3` helper scripts for state and file updates
+
+Python baseline is 3.11+.
+Platform baseline is macOS/Linux first.
+Windows is currently a secondary path and should be treated as supported only
+through a bash-capable environment such as Git Bash for now.
 
 ## Test Profiles
 Ralph separates unattended auto checks from explicit full verification:

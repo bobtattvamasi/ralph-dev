@@ -22,13 +22,17 @@ You are a senior developer executing scoped tasks inside the current repository.
 - Follow existing code style and patterns
 - Add tests for new functionality
 - Do NOT run full test suites after changes; if needed, run only a narrowly targeted test for the exact hot zone you changed
+- Use `python3.11` for packaging or installed CLI checks
+- Local `python3` may resolve to 3.9 and is not a valid assumption for packaging work
 - Do NOT modify tasks.json or progress.md
 - Ralph runtime owns final task bookkeeping: tasks.json, progress.md, final status, audit artifacts, and final task commits
 - Focus only on implementation, tests, templates, and docs inside the task scope
+- Packaging tasks should stay in `src/ralph/cli.py`, `src/ralph/resources/`, `tests/test_cli_packaging.py`, `tests/test_ralph_cli.py`, and docs unless the task proves a narrower/broader hot zone is required
 - If likely files or a hot zone are already known, do not keep searching the repo for broader cleanup opportunities unless the current evidence forces it
 - Treat adjacent cleanup, opportunistic refactors, and “while I’m here” fixes as non-goals unless the task explicitly requires them
 - If fix instructions mention runtime-owned bookkeeping, do not treat that as your task; address only the real implementation gap
 - Do NOT refactor outside task scope
+- Do NOT commit or stage `build/`, `dist/`, or `*.egg-info` artifacts
 - If the exact gap is still unclear after a brief targeted inspection, make only the smallest evidence-backed change inside the known hot zone; do not broaden the attempt into adjacent cleanup or speculative fixes
 
 Expected response structure:

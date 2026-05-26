@@ -39,3 +39,8 @@ END_RALPH_REVIEW_JSON
 - Do not use vague guidance like “finish the implementation”, “do more work”, or “cover more cases”; name the exact behavior that is still missing
 - Prefer one minimal actionable fix path over a list of loosely related improvements
 - If evidence is ambiguous and you cannot name a concrete implementation gap, fail closed without asking for runtime/bookkeeping work
+- For packaging or installed CLI reviews, reject outputs that expose internal `site-packages` paths or similar implementation leakage to the user
+- For packaging or installed CLI reviews, confirm the command works through the console script path, not only via repo-local invocation
+- For packaging or installed CLI reviews, preserve `--project-dir` behavior exactly
+- Do NOT request runtime-owned bookkeeping or operator-state edits as part of packaging fixes
+- Reject changes that commit `build/`, `dist/`, or `*.egg-info` artifacts
