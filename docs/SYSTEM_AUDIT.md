@@ -135,6 +135,7 @@ What this means:
 - `ralph tail`
 - package resource resolution outside repo root
 - local release-candidate smoke path
+- manual/operator-guided planning with ChatGPT feeding `tasks.json`
 
 ### Implemented But Not Fully Proven In Hosted CI
 - installed package smoke in GitHub Actions workflow

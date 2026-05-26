@@ -4,7 +4,7 @@ Ralph supports Python 3.11+.
 Python 3.9 is unsupported and not recommended.
 
 ## Preferred Install: pipx
-`pipx` is the recommended way to install Ralph before it is published to PyPI.
+`pipx` is the recommended way to install Ralph during the current pre-PyPI stage.
 
 If `pipx` is not installed:
 
@@ -36,6 +36,12 @@ Upgrade from the Git-installed package name:
 
 ```bash
 python3.11 -m pipx upgrade ralph-dev
+```
+
+Reinstall directly from GitHub when you want to force-refresh the installed package:
+
+```bash
+python3.11 -m pipx install --force --python python3.11 git+https://github.com/<OWNER>/<REPO>.git
 ```
 
 Inject pytest for parity checks:
@@ -109,7 +115,7 @@ For an installed toolchain, smoke these commands from a cwd outside the Ralph so
 
 ## Cross-Platform Notes
 - macOS and Linux are the primary supported installed-mode platforms.
-- Windows is currently supported through CI smoke using a bash-capable environment such as Git Bash.
+- Windows is currently an intended bash-capable path such as Git Bash, but hosted CI proof is still blocked by billing.
 - Native PowerShell or cmd.exe runtime support is not claimed yet because Ralph still shells out to `bash`.
 
 ## Parity Check Dependency

@@ -6,13 +6,15 @@ It sits on top of an existing repository, reads structured tasks, runs AI agents
 collects outputs, applies review gates, and coordinates human escalation.
 It now also exposes an installed CLI so operators can work through a packaged
 entrypoint instead of depending on repo-local shell invocation alone.
+Planning remains manual/operator-guided today: Ralph executes `tasks.json`
+rather than generating project plans automatically.
 
 ## Core Components
 - `src/ralph/cli.py` — installed CLI layer and console-script entrypoint
 - `pyproject.toml` console script — publishes the `ralph` command
 - `src/ralph/resources/ralph.sh` — packaged runtime shell and helper resources
 - `ralph.sh` — orchestrator loop and execution policy
-- `scripts/ralph_bot.py` — Telegram control plane
+- `scripts/ralph_bot.py` — optional Telegram control/observation layer
 - `codex exec` — tool runtime used for Coder and Tech Lead agents
 - runtime Tester gate — authoritative configured test execution between Coder and Lead
 - `scripts/verify_task_closure.py` — closure evidence verifier before finalization
@@ -86,7 +88,7 @@ The current distribution path is install-first rather than publish-first:
 - PyPI remains a later distribution milestone, not the current baseline
 
 GitHub Actions package smoke exists to protect the install path, although some
-CI coverage may be blocked by account billing constraints.
+CI coverage is currently blocked by account billing constraints.
 
 ## Packaged Resources Model
 Packaged runtime assets live under `src/ralph/resources/`.
@@ -143,7 +145,8 @@ Persistent memory lives in `.ralph/memory/` and is partially injected into agent
 See `MEMORY_SYSTEM.md` for the memory layers and update rules.
 
 ## Human Control Layer
-Telegram is the primary remote control interface.
+The installed CLI is the default operator entrypoint.
+Telegram is an optional control/observation layer when configured.
 
 Current control surface:
 - start a task, phase, or full auto mode

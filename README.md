@@ -29,6 +29,7 @@ What is working now:
 - project-local `ralph status`, `ralph doctor`, `ralph verify`, `ralph next`, and `ralph explain`
 - installed CLI usage without leaking internal package paths
 - local release-candidate smoke for packaging and operator commands
+- manual/operator-guided planning with ChatGPT helping define phases and tasks
 
 What is not proven yet:
 - hosted GitHub Actions package smoke is currently blocked by billing
@@ -143,7 +144,7 @@ Read-only or low-risk operator commands:
 Commands that execute or start agent work:
 - `ralph task <ID>` — run one explicit task
 - `ralph auto --safe` — run the safe unattended queue
-- `ralph bot` — start the Telegram control layer
+- `ralph bot` — start the optional Telegram control/observation layer
 
 Bootstrap command:
 - `ralph init` — create the Ralph baseline for a new project
@@ -196,5 +197,6 @@ ralph auto --safe
 - [docs/RELEASE.md](docs/RELEASE.md) — release tag flow and local RC smoke
 - [docs/PACKAGING_PLAN.md](docs/PACKAGING_PLAN.md) — packaging model and install path
 - [docs/PILOT.md](docs/PILOT.md) — first real-project test and manual planning workflow
+- [docs/SYSTEM_AUDIT.md](docs/SYSTEM_AUDIT.md) — implemented vs future capability audit
 - [docs/ACTIVE_BACKLOG.md](docs/ACTIVE_BACKLOG.md) — current stage and release blockers
 - [ARCHITECTURE.md](ARCHITECTURE.md) — execution model and runtime architecture

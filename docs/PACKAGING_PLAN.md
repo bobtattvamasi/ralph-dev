@@ -72,7 +72,7 @@ What each smoke should prove:
 
 ## Cross-Platform Notes
 - macOS and Linux are supported for normal installed-mode use.
-- Windows is supported through CI smoke on a bash-capable environment, currently using Git Bash semantics for the bash-backed runtime checks.
+- Windows should currently be treated as a bash-capable / Git Bash path; hosted CI proof is still blocked by billing.
 - Native PowerShell or cmd.exe runtime support is not claimed yet because Ralph still shells out to `bash`.
 
 ## Python Baseline

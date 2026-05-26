@@ -14,6 +14,8 @@ and installable operator surface for driving AI-assisted software delivery.
 5. Handles failures: timeout, watchdog, retry with backoff, skip and alert
 6. Developer controls and monitors via CLI and Telegram bot
 7. Produces working committed code with audit trail
+8. Relies on manual/operator-guided planning today; Ralph executes `tasks.json`
+   and does not yet implement automatic project analysis or task generation
 
 ## Architecture
 CLI / Telegram → ralph_bot.py / src/ralph/cli.py → ralph.sh → codex exec (coder) → Tester
@@ -47,6 +49,9 @@ ralph_notify.py, ralph_tail.sh, update_memory.py, update_progress.py
 - ralph init
 - ralph next
 - ralph explain
+- ralph groom
+- ralph log
+- ralph tail
 - ralph task <ID>
 - ralph auto --safe
 - ralph bot
@@ -85,6 +90,7 @@ Priority order:
 2. package smoke coverage
 3. GitHub push and CI reliability
 4. bootstrap and kickoff flow
+5. first manual real-project pilot
 
 ## Reliability Fixes Already Done (don't re-suggest)
 - next_task.py failure is now fatal → run_next_task_helper()
@@ -102,6 +108,8 @@ Priority order:
 - pipx-first UX and packaged resource ergonomics need ongoing tightening
 - GitHub package smoke can be blocked by account billing constraints
 - Bootstrap and kickoff flow still trails the CLI/operator surface
+- Hosted cross-platform CI proof is still missing
+- Automatic project analysis and task generation are still future workflows
 
 ## Pending Tasks
 - R25 packaging/distribution hardening for the installed CLI path
@@ -130,6 +138,7 @@ R25/R26-XX: <what changed and why>
 - Prefer pipx/GitHub install clarity over premature PyPI assumptions
 - No rewrites — targeted fixes only
 - For packaging work, assume Python 3.11+ and do not trust local python3 blindly
+- Do not claim native Windows support, hosted CI green status, or automatic `ralph analyze` / `ralph propose-tasks` workflows
 - Speed > perfection
 - Respond in the same language as my message
 

@@ -42,5 +42,7 @@ END_RALPH_REVIEW_JSON
 - For packaging or installed CLI reviews, reject outputs that expose internal `site-packages` paths or similar implementation leakage to the user
 - For packaging or installed CLI reviews, confirm the command works through the console script path, not only via repo-local invocation
 - For packaging or installed CLI reviews, preserve `--project-dir` behavior exactly
+- For packaging or installed CLI reviews, treat `python3.11 -m pytest tests/test_cli_packaging.py -q`, `python3.11 -m pytest tests/test_ralph_cli.py -q`, and `python3.11 -m ralph.cli verify` as the acceptable narrow evidence set when the task scope is CLI/package-only
 - Do NOT request runtime-owned bookkeeping or operator-state edits as part of packaging fixes
 - Reject changes that commit `build/`, `dist/`, or `*.egg-info` artifacts
+- Reject docs or review conclusions that claim unimplemented workflows such as `ralph analyze` or `ralph propose-tasks`
