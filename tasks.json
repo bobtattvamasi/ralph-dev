@@ -5307,7 +5307,7 @@
     {
       "id": "R26-05",
       "phase": "R26",
-      "status": "pending",
+      "status": "verified_done",
       "title": "Ignore Python build artifacts",
       "description": "Update .gitignore so local package install/build artifacts do not pollute git status after pip/pipx smoke tests.",
       "target_files": [
@@ -5324,7 +5324,8 @@
       "complexity": "simple",
       "role": "coder",
       "scope_too_wide": false,
-      "selection_warnings": []
+      "selection_warnings": [],
+      "completed_at": "2026-05-26T05:07:35.646190+00:00"
     },
     {
       "id": "R26-06",
@@ -5356,6 +5357,30 @@
         "docs-only governance refresh touches 5 files intentionally"
       ],
       "completed_at": "2026-05-26T05:01:28.191411+00:00"
+    },
+    {
+      "id": "R26-05",
+      "phase": "R26",
+      "status": "pending",
+      "title": "Ignore and untrack Python build artifacts",
+      "description": "Stop local pip/pipx install smoke from polluting git status with build and egg-info artifacts.",
+      "target_files": [
+        ".gitignore",
+        "src/ralph_dev.egg-info"
+      ],
+      "acceptance_criteria": [
+        ".gitignore ignores build/.",
+        ".gitignore ignores dist/.",
+        ".gitignore ignores *.egg-info/ and src/*.egg-info/.",
+        "Tracked src/ralph_dev.egg-info files are removed from the Git index if currently tracked.",
+        "After local package install smoke, build artifacts do not appear in git status.",
+        "No runtime code is changed."
+      ],
+      "priority": "high",
+      "complexity": "simple",
+      "role": "coder",
+      "scope_too_wide": false,
+      "selection_warnings": []
     }
   ]
 }
