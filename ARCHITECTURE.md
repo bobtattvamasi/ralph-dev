@@ -147,6 +147,7 @@ See `MEMORY_SYSTEM.md` for the memory layers and update rules.
 ## Human Control Layer
 The installed CLI is the default operator entrypoint.
 Telegram is an optional control/observation layer when configured.
+See [docs/TELEGRAM.md](docs/TELEGRAM.md) for the command reference and setup details.
 
 Current control surface:
 - start a task, phase, or full auto mode

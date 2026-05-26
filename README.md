@@ -198,5 +198,6 @@ ralph auto --safe
 - [docs/PACKAGING_PLAN.md](docs/PACKAGING_PLAN.md) — packaging model and install path
 - [docs/PILOT.md](docs/PILOT.md) — first real-project test and manual planning workflow
 - [docs/SYSTEM_AUDIT.md](docs/SYSTEM_AUDIT.md) — implemented vs future capability audit
+- [docs/TELEGRAM.md](docs/TELEGRAM.md) — optional Telegram control/observation reference
 - [docs/ACTIVE_BACKLOG.md](docs/ACTIVE_BACKLOG.md) — current stage and release blockers
 - [ARCHITECTURE.md](ARCHITECTURE.md) — execution model and runtime architecture

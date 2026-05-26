@@ -88,6 +88,9 @@ ralph init demo-project
 
 The generated next steps should use `ralph task`, `ralph auto --safe`, and `ralph bot`, not internal package paths.
 
+Optional Telegram setup and command reference:
+- [TELEGRAM.md](TELEGRAM.md)
+
 ## When `--project-dir` Is Needed
 Use `--project-dir` only when you run Ralph from outside the target project directory:
 
